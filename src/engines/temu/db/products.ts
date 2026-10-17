@@ -51,7 +51,7 @@ export async function upsertTemuProducts(
       } else if (prev.id != null) {
         let changed = false;
         const merged: TemuProduct = { ...prev };
-        const nullableFields: Array<keyof TemuProduct & string> = [
+        const nullableFields: Array<keyof Omit<TemuProduct, 'id'>> = [
           'title',
           'price',
           'listPrice',
