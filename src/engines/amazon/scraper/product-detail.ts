@@ -145,7 +145,7 @@ export function parseAmazonProductDetail(
 
   const asinResult = extractDetailAsin(activeDoc, sourceUrl, ldJson?.asin);
   fieldTiers.asin = asinResult.tier;
-  const asin = asinResult.value;
+  const asin = asinResult.asin;
   if (!asin) {
     telemetry?.recordCard(fieldTiers, false);
     return null;
