@@ -1,8 +1,9 @@
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
+import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
+import { ScrollController } from '@/lib/scraper/scroll-controller';
 import {
   AmazonDeduplicationEngine,
   AmazonParseCache,
-  ScrollController,
   countProductCards,
   createChurnResistantDebounce,
   defaultAmazonDriftTelemetry,
@@ -357,22 +358,60 @@ export default defineContentScript({
       }
     };
 
-    const handleCommand = (message: unknown) => {
-      if (!message || typeof message !== 'object') return;
+    const handleCommand = (
+      message: unknown,
+      sendResponse?: (res?: unknown) => void,
+    ): boolean => {
+      if (!message || typeof message !== 'object') return false;
       const msg = message as { type?: string; payload?: unknown };
 
-      switch (msg.type) {
+      if (msg.type === 'PING_CONTENT_SCRIPT') {
+        sendResponse?.({ ok: true, url: window.location.href });
+        return false;
+      }
+
+      if (msg.type === 'HIDE_PAGE_OVERLAY') {
+        document.getElementById('pphunt-extension-overlay-host')?.remove();
+        sendResponse?.({ ok: true });
+        return false;
+      }
+
+      const outcome = validateExtensionMessage(message);
+      if (outcome.status === 'invalid') {
+        console.warn(
+          '[PPHunt] Invalid content message rejected:',
+          outcome.issues,
+        );
+        sendResponse?.({ ok: false, error: 'INVALID_MESSAGE' });
+        return false;
+      }
+      if (outcome.status === 'unknown') {
+        return false;
+      }
+
+      const validMsg = outcome.message;
+
+      switch (validMsg.type) {
         case 'COLLECT_PRODUCTS':
+          sendResponse?.({ ok: true });
           handleCollectProducts(
-            (msg.payload ?? { mode: 'manual', targetCount: 100 }) as CollectProductsCommandPayload,
+            validMsg.payload as CollectProductsCommandPayload,
           );
           break;
 
+        case 'PAUSE_SCROLLING':
+          sendResponse?.({ ok: true });
+          scrollController?.pause();
+          break;
+
+        case 'STOP_COLLECTION_CMD':
         case 'STOP_COLLECTION':
+          sendResponse?.({ ok: true });
           finishCollection('manual_stop');
           break;
 
         case 'RESUME_SCROLLING':
+          sendResponse?.({ ok: true });
           isCollecting = true;
           if (scrollController) {
             scrollController.resume();
@@ -384,13 +423,11 @@ export default defineContentScript({
           }
           break;
 
-        case 'HIDE_PAGE_OVERLAY':
-          document.getElementById('pphunt-extension-overlay-host')?.remove();
-          break;
-
         default:
           break;
       }
+
+      return false;
     };
 
     const runtimeListener = (
@@ -398,9 +435,7 @@ export default defineContentScript({
       _sender: unknown,
       sendResponse?: (res?: unknown) => void,
     ) => {
-      handleCommand(message);
-      sendResponse?.({ ok: true });
-      return false;
+      return handleCommand(message, sendResponse);
     };
 
     const domBridgeListener = (event: Event) => {

@@ -125,6 +125,13 @@ export function parsePrice(
 }
 
 /**
+ * Infers the ISO 4217 currency code from an Amazon marketplace URL, defaulting to `'USD'`.
+ */
+export function inferCurrencyFromUrl(url: string | null | undefined): string {
+  return resolvePageCurrency(url) ?? 'USD';
+}
+
+/**
  * Parses split Amazon price elements (`.a-price-whole`, `.a-price-fraction`, `.a-price-symbol`).
  */
 export function parsePriceFromElements(

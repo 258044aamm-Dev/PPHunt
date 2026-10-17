@@ -1,39 +1,27 @@
-import type { AmazonErrorCode } from '../types';
+import type {
+  AmazonErrorCode,
+  ErrorDiagnostic,
+  SafeDiagnosticContext,
+} from '../types';
 
 export type DiagnosticConfidence = 'confirmed' | 'likely' | 'uncertain';
 export type DiagnosticRecoveryAction =
   | 'resume'
   | 'reload-and-retry'
   | 'retry'
-  | 'switch-tab';
+  | 'switch-tab'
+  | 'dismiss';
 
 export interface DiagnosticInputOptions {
   code?: AmazonErrorCode | string;
   url?: string | null;
+  pageType?: string | null;
   tabStatus?: string | null;
   preservedCount?: number;
   driftReasons?: string[];
 }
 
-export interface ErrorDiagnosisReport {
-  code: AmazonErrorCode;
-  title: string;
-  confidence: DiagnosticConfidence;
-  confidenceLabel: string;
-  recoveryAction: DiagnosticRecoveryAction;
-  rootCause: string;
-  whatIsKnown: string;
-  whatIsUncertain: string | null;
-  potentialCauses: string[];
-  troubleshootingSteps: string[];
-  safeContext: {
-    sanitizedUrl: string;
-    tabStatus: string;
-    preservedCount: number;
-    sanitizedMessage: string;
-    timestamp: string;
-  };
-}
+export type ErrorDiagnosisReport = ErrorDiagnostic;
 
 /**
  * Strips query parameters, hashes, session IDs, and internal browser URL details
@@ -77,30 +65,25 @@ export function redactSensitiveText(
 
   let text = rawText;
 
-  // Replace extension URLs first
   text = text.replace(
     /(?:chrome-extension|moz-extension):\/\/[^\s)'"]+/gi,
     '[extension-resource]',
   );
 
-  // Sanitize any http/https URLs in the text by stripping query strings & fragments
   text = text.replace(/https?:\/\/[^\s)'"]+/gi, (matchedUrl) =>
     sanitizeUrlForDiagnostics(matchedUrl),
   );
 
-  // Redact Unix and Windows filesystem paths
   text = text.replace(
     /(?:\/home\/|\/Users\/|\/var\/|\/tmp\/|[A-Z]:\\)[^\s):'"]+(?::\d+(?::\d+)?)?/g,
     '[local-path]',
   );
 
-  // Redact email addresses
   text = text.replace(
     /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
     '[redacted-email]',
   );
 
-  // Redact explicit key=value secrets/tokens/session-ids
   text = text.replace(
     /\b(?:session[-_]?id|token|auth|secret|api[-_]?key|promotionsSearchLastSeenAsin|promotionsSearchStartIndex)\s*=\s*[^\s&)'"]+/gi,
     '[redacted-param]',
@@ -121,6 +104,7 @@ function classifyErrorCode(
       upper === 'BLOCKED' ||
       upper === 'SIGN_IN' ||
       upper === 'SCRIPT_DISCONNECTED' ||
+      upper === 'INJECTION_BLOCKED' ||
       upper === 'TAB_CLOSED' ||
       upper === 'NOT_AMAZON' ||
       upper === 'UNKNOWN'
@@ -180,34 +164,47 @@ function classifyErrorCode(
 export function diagnoseError(
   rawMessage: string | null | undefined,
   options: DiagnosticInputOptions = {},
-): ErrorDiagnosisReport {
+): ErrorDiagnostic {
   const messageText = rawMessage ?? 'An unexpected collection error occurred.';
   const sanitizedUrl = sanitizeUrlForDiagnostics(options.url);
   const sanitizedMessage = redactSensitiveText(messageText);
   const preservedCount = Math.max(0, options.preservedCount ?? 0);
   const tabStatus = options.tabStatus ?? 'complete';
   const code = classifyErrorCode(messageText, options.code);
+  const nowIso = new Date().toISOString();
 
   const preservedSentence =
     preservedCount > 0
       ? `All ${preservedCount} product(s) collected so far remain safely saved.`
       : 'No previously collected products were lost.';
 
-  const safeContext = {
+  const buildSafeContext = (
+    confidence: DiagnosticConfidence,
+  ): SafeDiagnosticContext => ({
+    errorCode: code,
+    confidence,
     sanitizedUrl,
+    pageType: options.pageType ?? null,
     tabStatus,
+    preservedProductsCount: preservedCount,
     preservedCount,
     sanitizedMessage,
-    timestamp: new Date().toISOString(),
-  };
+    occurredAt: nowIso,
+    timestamp: nowIso,
+  });
 
   switch (code) {
     case 'CAPTCHA':
       return {
         code,
-        title: 'Amazon CAPTCHA Challenge Detected',
+        category: 'Bot Verification Challenge',
+        title: 'CAPTCHA Detected',
         confidence: 'confirmed',
         confidenceLabel: 'Confirmed Cause',
+        summary:
+          sanitizedMessage ||
+          'Amazon displayed a verification challenge that paused product collection.',
+        message: sanitizedMessage,
         recoveryAction: 'resume',
         rootCause:
           'Amazon presented an anti-bot verification challenge before serving additional product cards.',
@@ -222,15 +219,20 @@ export function diagnoseError(
           'Complete the CAPTCHA verification challenge shown on the page.',
           'Wait for the product listing to reload, then click "Resume" below to continue without losing progress.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('confirmed'),
       };
 
     case 'RATE_LIMITED':
       return {
         code,
+        category: 'Rate Limiting',
         title: 'Amazon Rate Limit / 503 Response',
         confidence: 'confirmed',
         confidenceLabel: 'Confirmed Cause',
+        summary:
+          sanitizedMessage ||
+          'Amazon temporarily throttled requests from this browser session.',
+        message: sanitizedMessage,
         recoveryAction: 'reload-and-retry',
         rootCause:
           'Amazon temporarily throttled requests from this browser session (HTTP 503 / rate-limit page).',
@@ -245,15 +247,20 @@ export function diagnoseError(
           'Increase "Scroll Interval" or "Wait After Scroll" in Settings to reduce request rate.',
           'Click "Reload Tab & Retry" to refresh the listing page and continue.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('confirmed'),
       };
 
     case 'BLOCKED':
       return {
         code,
+        category: 'Page Error',
         title: 'Amazon Error / Dogs of Amazon Page',
         confidence: 'confirmed',
         confidenceLabel: 'Confirmed Cause',
+        summary:
+          sanitizedMessage ||
+          'Amazon served an error screen ("Dogs of Amazon") instead of product cards.',
+        message: sanitizedMessage,
         recoveryAction: 'reload-and-retry',
         rootCause:
           'Amazon served a fallback error page ("Dogs of Amazon") instead of product cards.',
@@ -268,15 +275,20 @@ export function diagnoseError(
           'Pause for a brief interval if you have been running back-to-back collections.',
           'Click "Reload Tab & Retry" to reload the Amazon tab and restart extraction.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('confirmed'),
       };
 
     case 'SIGN_IN':
       return {
         code,
+        category: 'Authentication Required',
         title: 'Amazon Sign-In Required',
         confidence: 'confirmed',
         confidenceLabel: 'Confirmed Cause',
+        summary:
+          sanitizedMessage ||
+          'Amazon redirected the page to an authentication prompt.',
+        message: sanitizedMessage,
         recoveryAction: 'resume',
         rootCause:
           'Amazon redirected the page to an authentication prompt before showing additional results.',
@@ -291,18 +303,27 @@ export function diagnoseError(
           'Confirm product cards are visible on the page.',
           'Click "Resume" to continue collection.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('confirmed'),
       };
 
+    case 'INJECTION_BLOCKED':
     case 'SCRIPT_DISCONNECTED': {
       const isLoading = tabStatus === 'loading';
+      const confidence: DiagnosticConfidence = isLoading
+        ? 'confirmed'
+        : 'likely';
       return {
         code,
+        category: 'Connection Interrupted',
         title: isLoading
           ? 'Amazon Page Still Loading'
           : 'Page Helper Script Disconnected',
-        confidence: isLoading ? 'confirmed' : 'likely',
+        confidence,
         confidenceLabel: isLoading ? 'Confirmed Cause' : 'Likely Cause',
+        summary:
+          sanitizedMessage ||
+          'PPHunt lost its communication channel with the Amazon page helper script.',
+        message: sanitizedMessage,
         recoveryAction: 'reload-and-retry',
         rootCause: isLoading
           ? 'The Amazon tab is still loading its document and the content script has not finished initializing.'
@@ -321,16 +342,21 @@ export function diagnoseError(
           'Click "Reload Tab & Retry" below so PPHunt refreshes the tab and re-attaches its helper script.',
           'If the issue persists, switch to the Amazon tab once and click Retry.',
         ],
-        safeContext,
+        safeContext: buildSafeContext(confidence),
       };
     }
 
     case 'TAB_CLOSED':
       return {
         code,
+        category: 'Tab Lifecycle',
         title: 'Collection Tab Was Closed',
         confidence: 'confirmed',
         confidenceLabel: 'Confirmed Cause',
+        summary:
+          sanitizedMessage ||
+          'The Amazon browser tab being scraped was closed before collection finished.',
+        message: sanitizedMessage,
         recoveryAction: 'retry',
         rootCause:
           'The Amazon browser tab being scraped was closed before collection finished.',
@@ -345,15 +371,20 @@ export function diagnoseError(
           'Open a new Amazon search or category tab to start a new collection.',
           'Keep the Amazon tab open while automatic scrolling is running.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('confirmed'),
       };
 
     case 'NOT_AMAZON':
       return {
         code,
+        category: 'Unsupported Page',
         title: 'Unsupported Page URL',
         confidence: 'confirmed',
         confidenceLabel: 'Confirmed Cause',
+        summary:
+          sanitizedMessage ||
+          'The target tab is no longer on a supported Amazon marketplace page.',
+        message: sanitizedMessage,
         recoveryAction: 'switch-tab',
         rootCause:
           'The target tab is no longer on a supported Amazon marketplace page.',
@@ -366,16 +397,21 @@ export function diagnoseError(
           'Navigate the tab to an Amazon Search, Best Sellers, Deals, Category, or Product Detail page.',
           'Click "Retry" once product listings are visible.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('confirmed'),
       };
 
     case 'UNKNOWN':
     default:
       return {
         code: 'UNKNOWN',
+        category: 'Unexpected Interruption',
         title: 'Unexpected Collection Interruption',
         confidence: 'uncertain',
         confidenceLabel: 'Uncertain Cause',
+        summary:
+          sanitizedMessage ||
+          'Collection stopped due to an unclassified page or runtime interruption.',
+        message: sanitizedMessage,
         recoveryAction: 'retry',
         rootCause:
           'Collection stopped due to an unclassified page or runtime interruption.',
@@ -393,7 +429,7 @@ export function diagnoseError(
           'Click "Retry" or "Reload Tab & Retry" to re-synchronize with the page.',
           'If automatic scrolling repeatedly stalls, switch to Manual mode or copy the diagnostic summary below.',
         ],
-        safeContext,
+        safeContext: buildSafeContext('uncertain'),
       };
   }
 }
@@ -404,16 +440,16 @@ export const diagnoseAmazonError = diagnoseError;
  * Formats a sanitized, human-readable diagnostic summary for clipboard export.
  */
 export function formatDiagnosticReportForClipboard(
-  report: ErrorDiagnosisReport,
+  report: ErrorDiagnostic,
 ): string {
   const lines: string[] = [
     '=== PPHunt Diagnostic Summary ===',
     `Title: ${report.title}`,
-    `Code: ${report.code} (${report.confidenceLabel})`,
-    `Page: ${report.safeContext.sanitizedUrl}`,
-    `Tab Status: ${report.safeContext.tabStatus}`,
-    `Preserved Products: ${report.safeContext.preservedCount}`,
-    `Message: ${report.safeContext.sanitizedMessage}`,
+    `Code: ${report.code} (${report.confidenceLabel ?? report.confidence})`,
+    `Page: ${report.safeContext.sanitizedUrl ?? 'unknown-url'}`,
+    `Tab Status: ${report.safeContext.tabStatus ?? 'unknown'}`,
+    `Preserved Products: ${report.safeContext.preservedProductsCount}`,
+    `Summary: ${report.summary}`,
     '',
     'What Is Known:',
     `  ${report.whatIsKnown}`,

@@ -162,16 +162,26 @@ export const parseSearchCard = parseAmazonSearchCard;
 export function parseAmazonSearchResults(
   doc: Document = document,
   pageUrl?: string,
-  cacheOrOptions?: AmazonParseCache | SearchResultsParseOptions,
+  pageTypeOrCacheOrOptions?:
+    | string
+    | AmazonParseCache
+    | SearchResultsParseOptions,
+  explicitCache?: AmazonParseCache,
 ): ScrapedAmazonProduct[] {
   const activeUrl =
     pageUrl ??
     (typeof window !== 'undefined' && window.location ? window.location.href : undefined);
 
   const options: SearchResultsParseOptions =
-    cacheOrOptions instanceof AmazonParseCache
-      ? { cache: cacheOrOptions }
-      : (cacheOrOptions ?? {});
+    pageTypeOrCacheOrOptions instanceof AmazonParseCache
+      ? { cache: pageTypeOrCacheOrOptions }
+      : typeof pageTypeOrCacheOrOptions === 'string'
+        ? { cache: explicitCache }
+        : { ...(pageTypeOrCacheOrOptions ?? {}) };
+
+  if (explicitCache && !options.cache) {
+    options.cache = explicitCache;
+  }
 
   const cache = options.cache ?? defaultAmazonParseCache;
 
@@ -208,27 +218,33 @@ export function parseAmazonSearchResults(
   }
 
   if (cards.length === 0) {
+    const structural = discoverStructuralProductCards(mainRoot);
     const asinCards = safeQuerySelectorAll(
       mainRoot,
       '[data-asin]:not([data-asin=""])',
     ).filter((el) => !el.closest('.a-carousel-card'));
-    if (asinCards.length > 0) {
-      cards = asinCards;
-    }
-  }
-
-  if (cards.length === 0) {
-    cards = discoverStructuralProductCards(mainRoot);
+    cards =
+      structural.length >= asinCards.length && structural.length > 0
+        ? structural
+        : asinCards.length > 0
+          ? asinCards
+          : structural;
   }
 
   const results: ScrapedAmazonProduct[] = [];
+  const seenAsinsInPass = new Set<string>();
 
   for (const card of cards) {
     try {
+      const quickAsin = extractCardAsinWithTier(card).value;
+      if (quickAsin && seenAsinsInPass.has(quickAsin)) {
+        continue;
+      }
       const parsed = cache.getOrParse(card, (el) =>
         parseAmazonSearchCard(el, activeUrl, options),
       );
-      if (parsed) {
+      if (parsed && !seenAsinsInPass.has(parsed.asin)) {
+        seenAsinsInPass.add(parsed.asin);
         results.push(parsed);
       }
     } catch (err) {

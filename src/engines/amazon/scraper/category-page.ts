@@ -218,16 +218,26 @@ export const parseCategoryCard = parseAmazonCategoryCard;
 export function parseAmazonCategoryPage(
   doc: Document = document,
   pageUrl?: string,
-  cacheOrOptions?: AmazonParseCache | CategoryPageParseOptions,
+  pageTypeOrCacheOrOptions?:
+    | string
+    | AmazonParseCache
+    | CategoryPageParseOptions,
+  explicitCache?: AmazonParseCache,
 ): ScrapedAmazonProduct[] {
   const activeUrl =
     pageUrl ??
     (typeof window !== 'undefined' && window.location ? window.location.href : undefined);
 
   const options: CategoryPageParseOptions =
-    cacheOrOptions instanceof AmazonParseCache
-      ? { cache: cacheOrOptions }
-      : { ...(cacheOrOptions ?? {}) };
+    pageTypeOrCacheOrOptions instanceof AmazonParseCache
+      ? { cache: pageTypeOrCacheOrOptions }
+      : typeof pageTypeOrCacheOrOptions === 'string'
+        ? { cache: explicitCache }
+        : { ...(pageTypeOrCacheOrOptions ?? {}) };
+
+  if (explicitCache && !options.cache) {
+    options.cache = explicitCache;
+  }
 
   const cache = options.cache ?? defaultAmazonParseCache;
   if (options.categoryName === undefined) {
@@ -237,7 +247,10 @@ export function parseAmazonCategoryPage(
   const candidateSelectors = [
     ...AMAZON_SELECTORS.category.bestSellerCards,
     ...AMAZON_SELECTORS.category.dealCards,
-    ...AMAZON_SELECTORS.category.browseCards,
+    '[data-component-type="s-search-result"][data-asin]:not([data-asin=""])',
+    '.s-result-item[data-asin]:not([data-asin=""])',
+    '.octopus-pc-item',
+    '.apb-browse-searchresults-product',
   ];
 
   const seenElements = new Set<Element>();
@@ -254,11 +267,27 @@ export function parseAmazonCategoryPage(
     }
   }
 
-  let leafCards = dropNestedCards(rawCandidates, { dropDuplicates: true });
-
-  if (leafCards.length === 0) {
-    leafCards = discoverStructuralProductCards(doc);
+  if (rawCandidates.length === 0) {
+    const structural = discoverStructuralProductCards(doc);
+    const asinFallbacks = safeQuerySelectorAll(
+      doc,
+      '[data-asin]:not([data-asin=""])',
+    ).filter((el) => !el.closest('.a-carousel-card'));
+    const fallbackList =
+      structural.length >= asinFallbacks.length && structural.length > 0
+        ? structural
+        : asinFallbacks.length > 0
+          ? asinFallbacks
+          : structural;
+    for (const el of fallbackList) {
+      if (!seenElements.has(el)) {
+        seenElements.add(el);
+        rawCandidates.push(el);
+      }
+    }
   }
+
+  const leafCards = dropNestedCards(rawCandidates, { dropDuplicates: true });
 
   const results: ScrapedAmazonProduct[] = [];
   const seenAsinsInPass = new Set<string>();

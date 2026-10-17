@@ -232,17 +232,27 @@ export function cleanSeller(raw: string | null | undefined): string | null {
 }
 
 /**
- * Picks the highest-resolution image URL from an `<img>` element (`data-old-hires`,
- * `data-a-dynamic-image`, `srcset`, `src`, or `data-src`).
+ * Picks the highest-resolution image URL from an `<img>` element (`data-old-hires`, `data-a-hires`,
+ * `data-a-dynamic-image`, `srcset`, `<picture><source srcset>`, `src`, `data-src`, or `data-lazy-src`).
  */
 export function extractBestImageUrl(
   img: Element | null | undefined,
 ): string | null {
   if (!img) return null;
 
-  const oldHires = img.getAttribute('data-old-hires')?.trim();
-  if (oldHires && /^https?:\/\//i.test(oldHires)) {
-    return upgradeAmazonImageUrl(oldHires) || null;
+  if (
+    img.getAttribute('width') === '1' ||
+    img.getAttribute('height') === '1' ||
+    img.classList.contains('deal-badge')
+  ) {
+    return null;
+  }
+
+  const hires =
+    img.getAttribute('data-old-hires')?.trim() ||
+    img.getAttribute('data-a-hires')?.trim();
+  if (hires && /^https?:\/\//i.test(hires)) {
+    return upgradeAmazonImageUrl(hires) || null;
   }
 
   const dynamicJson = img.getAttribute('data-a-dynamic-image');
@@ -275,7 +285,14 @@ export function extractBestImageUrl(
     }
   }
 
-  const srcset = img.getAttribute('srcset')?.trim();
+  let srcset = img.getAttribute('srcset')?.trim();
+  if (!srcset) {
+    const picture = img.closest('picture');
+    if (picture) {
+      const sourceEl = safeQuerySelector(picture, 'source[srcset]');
+      srcset = sourceEl?.getAttribute('srcset')?.trim();
+    }
+  }
   if (srcset) {
     const urls = srcset
       .split(',')
@@ -288,8 +305,16 @@ export function extractBestImageUrl(
   }
 
   const src =
-    img.getAttribute('src')?.trim() ?? img.getAttribute('data-src')?.trim();
-  if (src && /^https?:\/\//i.test(src)) {
+    img.getAttribute('src')?.trim() ||
+    img.getAttribute('data-src')?.trim() ||
+    img.getAttribute('data-lazy-src')?.trim();
+  if (
+    src &&
+    /^https?:\/\//i.test(src) &&
+    !/badges\/|prime-badge|1x1|sprite|transparent-pixel|grey-pixel|nav-sprite/i.test(
+      src,
+    )
+  ) {
     return upgradeAmazonImageUrl(src) || null;
   }
 
@@ -742,12 +767,11 @@ export function extractCardImageWithTier(
     [...AMAZON_SELECTORS.cardFields.image, 'img'].join(', '),
   );
   for (const img of images) {
-    const src = img.getAttribute('src') ?? img.getAttribute('data-src') ?? '';
-    if (/sprite|transparent-pixel|grey-pixel|nav-sprite/i.test(src)) continue;
     const best = extractBestImageUrl(img);
     if (best) {
       const hasDynamic =
         img.hasAttribute('data-old-hires') ||
+        img.hasAttribute('data-a-hires') ||
         img.hasAttribute('data-a-dynamic-image');
       return {
         value: best,

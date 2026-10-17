@@ -11,6 +11,7 @@ import {
   cleanBrand,
   cleanSeller,
   extractBestImageUrl,
+  extractCardPastMonthSales,
   extractCardPricingAndDiscounts,
   normalizeDiscountBadge,
   normalizeWhitespace,
@@ -365,6 +366,11 @@ export function parseAmazonProductDetail(
         pastMonthSales = match[1].trim();
       }
     }
+    if (!pastMonthSales && (doc.body || doc.documentElement)) {
+      pastMonthSales = extractCardPastMonthSales(
+        (doc.body ?? doc.documentElement)!,
+      );
+    }
 
     // Rating & Review count
     let rating: number | null = null;
@@ -475,7 +481,7 @@ export function parseAmazonProductDetail(
     const isPrime = Boolean(
       safeQuerySelector(
         doc,
-        '#bbop-sbbop-container, #desktop_buybox i.a-icon-prime, #apex_desktop i.a-icon-prime, #mir-layout-DELIVERY_BLOCK [data-csa-c-delivery-price="FREE"]',
+        '#bbop-sbbop-container, #buybox i.a-icon-prime, #desktop_buybox i.a-icon-prime, #apex_desktop i.a-icon-prime, i.a-icon-prime, #mir-layout-DELIVERY_BLOCK [data-csa-c-delivery-price="FREE"]',
       ) ||
         (delivery && /\bFREE delivery\b/i.test(delivery)),
     );

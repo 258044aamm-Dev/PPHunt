@@ -18,9 +18,11 @@ import {
   writeActiveSession,
   type ActiveSessionPointer,
 } from '../db';
+import { ProductSchema } from '../schemas/product';
 import { ScrapedProductSchema } from '../schemas/scraped-product';
 import { validateExtensionMessage } from '../schemas/validate-message';
 import { detectAmazonPageType } from '../scraper/page-detector';
+import { validateAndNormalizeScrapedProduct } from '../scraper/field-parsers';
 import type {
   AmazonCollectionStatus,
   CollectionMode,
@@ -168,6 +170,7 @@ export interface AmazonBackgroundController {
   handleMessage: (
     rawMessage: unknown,
     sender?: { tab?: { id?: number; url?: string } },
+    sendResponse?: (response?: unknown) => void,
   ) => boolean;
   handleTabRemoved: (tabId: number) => void;
   handleTabUpdated: (
@@ -425,33 +428,63 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
 
     const rawProducts = Array.isArray(payload.products) ? payload.products : [];
     const validProducts: ScrapedProduct[] = [];
+    const rejectedDetails: Array<{ asin: string; issues: string }> = [];
+    const nowIso = new Date().toISOString();
 
     for (const raw of rawProducts) {
-      const parsed = ScrapedProductSchema.safeParse(raw);
-      if (parsed.success) {
-        validProducts.push(parsed.data);
+      const rec =
+        raw && typeof raw === 'object'
+          ? (raw as Record<string, unknown>)
+          : {};
+      const rawAsin = typeof rec.asin === 'string' ? rec.asin : 'UNKNOWN';
+
+      const normalized = validateAndNormalizeScrapedProduct(
+        rec as Partial<ScrapedProduct>,
+        senderUrl ?? active.url,
+      );
+      if (!normalized) {
+        rejectedDetails.push({
+          asin: rawAsin,
+          issues: 'Failed scraped product normalization',
+        });
+        continue;
+      }
+
+      const candidateProduct = {
+        ...normalized,
+        collectedAt:
+          typeof rec.collectedAt === 'string' ? rec.collectedAt : nowIso,
+        sessionKey: active.sessionKey,
+      };
+
+      const productParsed = ProductSchema.safeParse(candidateProduct);
+      if (!productParsed.success) {
+        rejectedDetails.push({
+          asin: normalized.asin,
+          issues: productParsed.error.issues
+            .map((iss) => `${iss.path.join('.') || 'root'}: ${iss.message}`)
+            .join('; '),
+        });
+        continue;
+      }
+
+      const scrapedCheck = ScrapedProductSchema.safeParse(normalized);
+      if (scrapedCheck.success) {
+        validProducts.push(scrapedCheck.data);
       }
     }
 
-    const rejected = rawProducts.length - validProducts.length;
+    const rejected = rejectedDetails.length;
     const rejectedOf = rawProducts.length;
 
-    if (rawProducts.length > 0 && validProducts.length === 0) {
+    if (rejected > 0) {
       console.warn(
-        '[PPHunt] All products in PRODUCTS_COLLECTED batch failed schema validation',
+        `[PPHunt] ProductSchema rejected ${rejected}/${rejectedOf} products in batch:`,
+        rejectedDetails,
       );
-      broadcastRuntimeMessage({
-        type: 'UPDATE_PROGRESS',
-        payload: {
-          collected: active.lastCollectedCount,
-          target: active.targetCount,
-          status: 'collecting',
-          error: null,
-          sessionKey: active.sessionKey,
-          rejected,
-          rejectedOf,
-        },
-      });
+    }
+
+    if (rawProducts.length > 0 && validProducts.length === 0) {
       return;
     }
 
@@ -564,6 +597,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
   const handleMessage = (
     rawMessage: unknown,
     sender?: { tab?: { id?: number; url?: string } },
+    sendResponse?: (response?: unknown) => void,
   ): boolean => {
     // Handle legacy content-script COLLECTION_COMPLETE / COLLECTION_ERROR / PAGE_INFO messages
     if (rawMessage && typeof rawMessage === 'object') {
@@ -582,6 +616,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
           target: activeCollection?.targetCount ?? 50,
           status: 'completed',
         });
+        sendResponse?.({ ok: true });
         return false;
       }
 
@@ -595,6 +630,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
             ? candidate.payload.collectedSoFar
             : undefined;
         void handleContentError(errText, collectedSoFar);
+        sendResponse?.({ ok: true });
         return false;
       }
 
@@ -602,21 +638,30 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
         return false;
       }
 
-      if (
-        candidate.type === 'PRODUCTS_COLLECTED' &&
-        candidate.payload &&
-        typeof candidate.payload === 'object' &&
-        Array.isArray(candidate.payload.products) &&
-        typeof candidate.payload.totalCount === 'number' &&
-        Number.isInteger(candidate.payload.totalCount) &&
-        candidate.payload.totalCount >= 0 &&
-        typeof candidate.payload.isNewBatch === 'boolean'
-      ) {
+      if (candidate.type === 'PRODUCTS_COLLECTED') {
+        const p = candidate.payload;
+        if (
+          !p ||
+          typeof p !== 'object' ||
+          !Array.isArray(p.products) ||
+          typeof p.totalCount !== 'number' ||
+          !Number.isInteger(p.totalCount) ||
+          p.totalCount < 0 ||
+          typeof p.isNewBatch !== 'boolean'
+        ) {
+          console.warn(
+            '[PPHunt] Rejected invalid PRODUCTS_COLLECTED envelope',
+          );
+          sendResponse?.({ ok: false, error: 'INVALID_MESSAGE' });
+          return false;
+        }
+
+        sendResponse?.({ ok: true });
         void handleProductsCollected(
           {
-            products: candidate.payload.products as unknown[],
-            totalCount: candidate.payload.totalCount,
-            isNewBatch: candidate.payload.isNewBatch,
+            products: p.products as unknown[],
+            totalCount: p.totalCount,
+            isNewBatch: p.isNewBatch,
           },
           sender?.tab?.url,
         );
@@ -625,11 +670,15 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     }
 
     const outcome = validateExtensionMessage(rawMessage);
-    if (outcome.status !== 'valid') {
+    if (outcome.status === 'unknown') {
+      return false;
+    }
+    if (outcome.status === 'invalid') {
       console.warn(
         '[PPHunt] Rejected invalid extension message:',
-        outcome.status === 'invalid' ? outcome.issues : 'unknown',
+        outcome.issues,
       );
+      sendResponse?.({ ok: false, error: 'INVALID_MESSAGE' });
       return false;
     }
 
@@ -637,39 +686,47 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
 
     switch (validated.type) {
       case 'START_COLLECTION':
+        sendResponse?.({ ok: true });
         void startOrRetryCollection(validated.payload, false);
         break;
 
       case 'RELOAD_AND_RETRY_COLLECTION':
+        sendResponse?.({ ok: true });
         void startOrRetryCollection(validated.payload, true);
         break;
 
       case 'PAUSE_COLLECTION':
+        sendResponse?.({ ok: true });
         void handlePauseCollection(validated.payload.tabId);
         break;
 
       case 'RESUME_COLLECTION':
+        sendResponse?.({ ok: true });
         void handleResumeCollection(validated.payload.tabId);
         break;
 
       case 'STOP_COLLECTION':
+        sendResponse?.({ ok: true });
         void handleStopCollection(validated.payload.tabId);
         break;
 
       case 'PRODUCTS_COLLECTED':
+        sendResponse?.({ ok: true });
         void handleProductsCollected(validated.payload, sender?.tab?.url);
         break;
 
       case 'COLLECTION_PROGRESS':
+        sendResponse?.({ ok: true });
         void handleCollectionProgress(validated.payload);
         break;
 
       case 'CONTENT_ERROR':
+        sendResponse?.({ ok: true });
         void handleContentError(validated.payload.message);
         break;
 
       default:
-        break;
+        return false;
     }
 
     return false;

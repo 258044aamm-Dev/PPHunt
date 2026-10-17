@@ -58,6 +58,10 @@ function isValidActiveSessionPointer(
   );
 }
 
+export function isSessionStorageAvailable(): boolean {
+  return getSessionStorageArea() !== null;
+}
+
 /**
  * Reads the active collection session pointer from `browser.storage.session`.
  * Degrades gracefully to `null` when `storage.session` is unavailable or holds malformed data.

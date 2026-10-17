@@ -187,3 +187,8 @@ export const clearSessionProducts = deleteProductsBySession;
 export async function deleteProduct(id: number): Promise<void> {
   await db.products.delete(id);
 }
+
+export async function deleteProducts(ids: number[]): Promise<void> {
+  if (!ids || ids.length === 0) return;
+  await db.products.bulkDelete(ids);
+}

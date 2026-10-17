@@ -37,6 +37,7 @@ export type SessionStatus = AmazonCollectionStatus;
 export type AmazonErrorCode =
   | 'BLOCKED'
   | 'CAPTCHA'
+  | 'INJECTION_BLOCKED'
   | 'NOT_AMAZON'
   | 'RATE_LIMITED'
   | 'SCRIPT_DISCONNECTED'
@@ -44,6 +45,41 @@ export type AmazonErrorCode =
   | 'TAB_CLOSED'
   | 'UNKNOWN';
 export type ErrorCode = AmazonErrorCode;
+
+export interface SafeDiagnosticContext {
+  errorCode: AmazonErrorCode;
+  confidence: 'confirmed' | 'likely' | 'uncertain';
+  sanitizedUrl: string | null;
+  pageType?: string | null;
+  tabStatus: string | null;
+  preservedProductsCount: number;
+  preservedCount?: number;
+  sanitizedMessage?: string;
+  occurredAt: string;
+  timestamp?: string;
+}
+
+export interface ErrorDiagnostic {
+  code: AmazonErrorCode;
+  category: string;
+  title: string;
+  confidence: 'confirmed' | 'likely' | 'uncertain';
+  confidenceLabel?: string;
+  summary: string;
+  message?: string;
+  recoveryAction:
+    | 'resume'
+    | 'reload-and-retry'
+    | 'retry'
+    | 'switch-tab'
+    | 'dismiss';
+  rootCause: string;
+  whatIsKnown: string;
+  whatIsUncertain: string | null;
+  potentialCauses: string[];
+  troubleshootingSteps: string[];
+  safeContext: SafeDiagnosticContext;
+}
 
 export type AmazonExtractionTier =
   | 'tier1_json'
@@ -112,8 +148,8 @@ export interface EnabledFieldsConfig {
 
 export type OpeningMode = 'sidepanel' | 'overlay' | 'window' | 'tab' | 'ask';
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ExportFormat = 'csv' | 'xlsx' | 'clipboard';
-export type ExcelImageBudgetMode = 'default' | 'always' | 'never';
+export type ExportFormat = 'csv' | 'excel' | 'clipboard';
+export type ExcelImageBudgetMode = 'auto' | 'always' | 'never';
 
 export interface AmazonSettings {
   id?: string;
@@ -123,11 +159,10 @@ export interface AmazonSettings {
   scrollInterval: number;
   waitAfterScroll: number;
   duplicateDetection: boolean;
-  includeSponsored: boolean;
-  defaultExportFormat: ExportFormat;
-  excelIncludeImages: ExcelImageBudgetMode;
-  theme: ThemeMode;
-  openingMode: OpeningMode;
+  exportFormat: ExportFormat;
+  exportFilename: string;
+  exportImages: ExcelImageBudgetMode;
+  includeBOM: boolean;
   notifications: boolean;
   enabledFields: EnabledFieldsConfig;
 }
@@ -146,6 +181,7 @@ export interface AmazonHistoryEntry {
   status: AmazonCollectionStatus;
 }
 export type HistoryEntry = AmazonHistoryEntry;
+export type CollectionHistory = AmazonHistoryEntry;
 
 export interface ScrollRuntimeSettingsPayload {
   scrollAmount: number;

@@ -60,14 +60,16 @@ export async function getSettings(): Promise<AppSettings> {
   return parseStoredSettingsSafe(row);
 }
 
+export type SettingsUpdate = Partial<Omit<AppSettings, 'enabledFields'>> & {
+  enabledFields?: Partial<EnabledFieldsConfig>;
+};
+
 /**
  * Deep-merges a partial settings update into the stored `default` row inside a serialized write queue
  * so rapid concurrent toggles never clobber sibling keys.
  */
 export function updateSettings(
-  partial: Partial<Omit<AppSettings, 'enabledFields'>> & {
-    enabledFields?: Partial<EnabledFieldsConfig>;
-  },
+  partial: SettingsUpdate,
 ): Promise<AppSettings> {
   const nextOp = settingsWriteQueue.then(async () => {
     const currentRaw = await db.settings.get('default');

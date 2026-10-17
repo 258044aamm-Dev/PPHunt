@@ -33,7 +33,8 @@ export class AmazonDeduplicationEngine {
 
   public seed(asins: Iterable<string>): void {
     for (const raw of asins) {
-      const normalized = normalizeASIN(raw);
+      if (typeof raw !== 'string') continue;
+      const normalized = normalizeASIN(raw) ?? raw.trim().toUpperCase();
       if (normalized) {
         this.seenAsins.add(normalized);
       }
@@ -161,7 +162,7 @@ export class AmazonDeduplicationEngine {
         source[key] !== null &&
         source[key] !== undefined
       ) {
-        (target as Record<string, unknown>)[key] = source[key];
+        (target as unknown as Record<string, unknown>)[key] = source[key];
         changed = true;
       }
     }

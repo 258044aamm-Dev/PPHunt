@@ -1,7 +1,10 @@
 export type ProductSource = 'search' | 'category' | 'detail';
 
-export interface AmazonProduct {
-  id?: number;
+/**
+ * Clean-slate scraped Amazon product record produced by the 4-tier self-healing parser.
+ * Optional deal/BSR keys are omitted when absent so snapshot shapes remain clean and deterministic.
+ */
+export interface ScrapedAmazonProduct {
   asin: string;
   url: string;
   title: string | null;
@@ -26,14 +29,18 @@ export interface AmazonProduct {
   description?: string | null;
   features?: string[];
   source: ProductSource;
+}
+
+/**
+ * Stored Amazon product record in IndexedDB (`PPHuntDB.products`).
+ */
+export interface AmazonProduct extends Omit<ScrapedAmazonProduct, 'title'> {
+  id?: number;
+  title?: string | null;
+  pageUrl?: string;
   collectedAt: string;
   sessionKey: string;
 }
 
-export type ScrapedAmazonProduct = Omit<
-  AmazonProduct,
-  'id' | 'collectedAt' | 'sessionKey'
->;
-
-export type Product = AmazonProduct;
 export type ScrapedProduct = ScrapedAmazonProduct;
+export type Product = AmazonProduct;

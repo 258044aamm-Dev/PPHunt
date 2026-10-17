@@ -1,9 +1,18 @@
 import { z } from 'zod';
 import {
   DEFAULT_ENABLED_FIELDS,
+  DEFAULT_TARGET_COUNT,
+  SCROLL_INTERVAL_MAX,
+  SCROLL_INTERVAL_MIN,
+  SCROLL_SPEED_MAX,
+  SCROLL_SPEED_MIN,
   TARGET_MAX,
   TARGET_MIN,
+  WAIT_AFTER_SCROLL_MAX,
+  WAIT_AFTER_SCROLL_MIN,
 } from '../constants/defaults';
+
+export { DEFAULT_ENABLED_FIELDS };
 
 export const EnabledFieldsSchema = z.object({
   title: z.boolean().default(true),
@@ -31,21 +40,43 @@ export const EnabledFieldsSchema = z.object({
   features: z.boolean().default(false),
 });
 
+const ExportFormatSchema = z.preprocess(
+  (val) => (val === 'xlsx' ? 'excel' : val),
+  z.enum(['csv', 'excel', 'clipboard']).default('csv'),
+);
+
 export const AmazonSettingsSchema = z.object({
   id: z.string().default('default'),
   defaultMode: z.enum(['manual', 'automatic']).default('manual'),
-  defaultTargetCount: z.number().int().min(TARGET_MIN).max(TARGET_MAX).default(100),
-  scrollSpeed: z.number().int().min(200).max(2000).default(800),
-  scrollInterval: z.number().int().min(200).max(5000).default(500),
-  waitAfterScroll: z.number().int().min(500).max(5000).default(1500),
+  defaultTargetCount: z
+    .number()
+    .int()
+    .min(TARGET_MIN)
+    .max(TARGET_MAX)
+    .default(DEFAULT_TARGET_COUNT),
+  scrollSpeed: z
+    .number()
+    .int()
+    .min(SCROLL_SPEED_MIN)
+    .max(SCROLL_SPEED_MAX)
+    .default(800),
+  scrollInterval: z
+    .number()
+    .int()
+    .min(SCROLL_INTERVAL_MIN)
+    .max(SCROLL_INTERVAL_MAX)
+    .default(500),
+  waitAfterScroll: z
+    .number()
+    .int()
+    .min(WAIT_AFTER_SCROLL_MIN)
+    .max(WAIT_AFTER_SCROLL_MAX)
+    .default(1500),
   duplicateDetection: z.boolean().default(true),
-  includeSponsored: z.boolean().default(true),
-  defaultExportFormat: z.enum(['csv', 'xlsx', 'clipboard']).default('csv'),
-  excelIncludeImages: z.enum(['default', 'always', 'never']).default('default'),
-  theme: z.enum(['light', 'dark', 'system']).default('light'),
-  openingMode: z
-    .enum(['sidepanel', 'overlay', 'window', 'tab', 'ask'])
-    .default('sidepanel'),
+  exportFormat: ExportFormatSchema,
+  exportFilename: z.string().default(''),
+  exportImages: z.enum(['auto', 'always', 'never']).default('auto'),
+  includeBOM: z.boolean().default(true),
   notifications: z.boolean().default(true),
   enabledFields: EnabledFieldsSchema.default(() => ({
     ...DEFAULT_ENABLED_FIELDS,
@@ -55,18 +86,40 @@ export const AmazonSettingsSchema = z.object({
 export const PartialAmazonSettingsSchema = z.object({
   id: z.string().optional(),
   defaultMode: z.enum(['manual', 'automatic']).optional(),
-  defaultTargetCount: z.number().int().min(TARGET_MIN).max(TARGET_MAX).optional(),
-  scrollSpeed: z.number().int().min(200).max(2000).optional(),
-  scrollInterval: z.number().int().min(200).max(5000).optional(),
-  waitAfterScroll: z.number().int().min(500).max(5000).optional(),
-  duplicateDetection: z.boolean().optional(),
-  includeSponsored: z.boolean().optional(),
-  defaultExportFormat: z.enum(['csv', 'xlsx', 'clipboard']).optional(),
-  excelIncludeImages: z.enum(['default', 'always', 'never']).optional(),
-  theme: z.enum(['light', 'dark', 'system']).optional(),
-  openingMode: z
-    .enum(['sidepanel', 'overlay', 'window', 'tab', 'ask'])
+  defaultTargetCount: z
+    .number()
+    .int()
+    .min(TARGET_MIN)
+    .max(TARGET_MAX)
     .optional(),
+  scrollSpeed: z
+    .number()
+    .int()
+    .min(SCROLL_SPEED_MIN)
+    .max(SCROLL_SPEED_MAX)
+    .optional(),
+  scrollInterval: z
+    .number()
+    .int()
+    .min(SCROLL_INTERVAL_MIN)
+    .max(SCROLL_INTERVAL_MAX)
+    .optional(),
+  waitAfterScroll: z
+    .number()
+    .int()
+    .min(WAIT_AFTER_SCROLL_MIN)
+    .max(WAIT_AFTER_SCROLL_MAX)
+    .optional(),
+  duplicateDetection: z.boolean().optional(),
+  exportFormat: z
+    .preprocess(
+      (val) => (val === 'xlsx' ? 'excel' : val),
+      z.enum(['csv', 'excel', 'clipboard']),
+    )
+    .optional(),
+  exportFilename: z.string().optional(),
+  exportImages: z.enum(['auto', 'always', 'never']).optional(),
+  includeBOM: z.boolean().optional(),
   notifications: z.boolean().optional(),
   enabledFields: EnabledFieldsSchema.partial().optional(),
 });
@@ -75,6 +128,7 @@ export const SettingsSchema = AmazonSettingsSchema;
 export const PartialSettingsSchema = PartialAmazonSettingsSchema;
 
 export type ValidatedAmazonSettings = z.infer<typeof AmazonSettingsSchema>;
+export type ValidatedSettings = ValidatedAmazonSettings;
 export type ValidatedPartialAmazonSettings = z.infer<
   typeof PartialAmazonSettingsSchema
 >;

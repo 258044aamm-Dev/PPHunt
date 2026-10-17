@@ -297,8 +297,11 @@ export function safeQuerySelector<T extends Element = Element>(
 ): T | null {
   try {
     return root.querySelector<T>(selector);
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof DOMException) {
+      return null;
+    }
+    throw err;
   }
 }
 
@@ -308,8 +311,11 @@ export function safeQuerySelectorAll<T extends Element = Element>(
 ): T[] {
   try {
     return Array.from(root.querySelectorAll<T>(selector));
-  } catch {
-    return [];
+  } catch (err) {
+    if (err instanceof DOMException) {
+      return [];
+    }
+    throw err;
   }
 }
 

@@ -6,6 +6,13 @@ export const DEFAULT_TARGET_COUNT = 50;
 export const TARGET_QUICK_SELECT = [50, 100, 200, 300] as const;
 export const MAX_SEEDED_ASINS = 2000;
 
+export const SCROLL_SPEED_MIN = 200;
+export const SCROLL_SPEED_MAX = 2000;
+export const SCROLL_INTERVAL_MIN = 200;
+export const SCROLL_INTERVAL_MAX = 5000;
+export const WAIT_AFTER_SCROLL_MIN = 500;
+export const WAIT_AFTER_SCROLL_MAX = 5000;
+
 export function clampTargetCount(value: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_TARGET_COUNT;
@@ -71,16 +78,15 @@ export const DEFAULT_VISIBLE_COLUMNS = [...AMAZON_DEFAULT_VISIBLE_COLUMNS];
 export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   id: 'default',
   defaultMode: 'manual',
-  defaultTargetCount: 100,
+  defaultTargetCount: DEFAULT_TARGET_COUNT,
   scrollSpeed: 800,
   scrollInterval: 500,
   waitAfterScroll: 1500,
   duplicateDetection: true,
-  includeSponsored: true,
-  defaultExportFormat: 'csv',
-  excelIncludeImages: 'default',
-  theme: 'light',
-  openingMode: 'sidepanel',
+  exportFormat: 'csv',
+  exportFilename: '',
+  exportImages: 'auto',
+  includeBOM: true,
   notifications: true,
   enabledFields: { ...DEFAULT_ENABLED_FIELDS },
 };
