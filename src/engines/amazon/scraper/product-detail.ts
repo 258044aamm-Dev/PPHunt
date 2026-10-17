@@ -1,416 +1,525 @@
 import type { ScrapedAmazonProduct } from '../types';
 import {
-  buildCanonicalAmazonProductUrl,
-  extractAsinFromUrl,
-  isAmazonUrl,
-  normalizeAsin,
+  extractASIN,
+  normalizeASIN,
+  resolveProductUrl,
 } from '../utils/amazon-url';
-import { resolveAmazonCurrency } from '../utils/currency';
-import type { AmazonDriftTelemetry } from './drift-telemetry';
+import { isIsoCurrency, resolvePageCurrency } from '../utils/currency';
+import { parsePrice } from '../utils/price-parser';
 import {
-  type CardFieldTierMap,
-  cleanAmazonBrandText,
-  extractCardBoughtInPastMonth,
-  extractCardBsr,
-  extractCardCouponText,
-  extractCardDealBadge,
-  extractCardDiscountPercentage,
-  extractCardIsPrime,
-  extractCardListPrice,
-  extractCardPriceWithTier,
-  extractCardRatingWithTier,
-  extractCardReviewCountWithTier,
-  extractCardStatusBadge,
-  extractImageWithTier,
-  extractTier1LdJsonProduct,
+  cleanAvailability,
+  cleanBrand,
+  cleanSeller,
+  extractBestImageUrl,
+  extractCardPricingAndDiscounts,
+  normalizeDiscountBadge,
+  normalizeWhitespace,
+  parseRating,
+  parseReviewCount,
+  validateAndNormalizeScrapedProduct,
 } from './field-parsers';
 import {
   AMAZON_SELECTORS,
-  queryFirstMatching,
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
 
-function normalizeWhitespace(raw: string | null | undefined): string {
-  if (!raw) return '';
-  return raw
-    .replace(/[\u00A0\u202F\u2007\u200B-\u200F\u202A-\u202E]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+function isInsideExcludedDetailSubtree(el: Element): boolean {
+  for (const selector of AMAZON_SELECTORS.detail.excludedSubtrees) {
+    try {
+      if (el.closest(selector)) {
+        return true;
+      }
+    } catch {
+      // Ignore selector error
+    }
+  }
+  return false;
 }
 
-function isInsideExcludedAdSubtree(el: Element): boolean {
-  const excludedSelector = AMAZON_SELECTORS.detail.excludedSubtrees.join(', ');
-  try {
-    return el.closest(excludedSelector) !== null;
-  } catch {
-    return false;
-  }
+interface JsonLdProductMetadata {
+  asin?: string;
+  title?: string;
+  brand?: string;
+  imageUrl?: string;
+  description?: string;
+  price?: number;
+  currency?: string;
+  rating?: number;
+  reviewCount?: number;
 }
 
-function resolveDetailSourceUrl(
-  doc?: Document | null,
-  explicitUrl?: string,
-): string {
-  if (explicitUrl && isAmazonUrl(explicitUrl)) {
-    return explicitUrl;
+function extractProductJsonLd(doc: Document): JsonLdProductMetadata {
+  const result: JsonLdProductMetadata = {};
+  const scripts = safeQuerySelectorAll<HTMLScriptElement>(
+    doc,
+    'script[type="application/ld+json"]',
+  );
+
+  for (const script of scripts) {
+    const raw = script.textContent?.trim();
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const rec = item as Record<string, unknown>;
+        if (rec['@type'] !== 'Product') continue;
+
+        const asinCandidate = normalizeASIN(
+          (rec.sku as string | undefined) ??
+            (rec.productID as string | undefined) ??
+            (rec.mpn as string | undefined),
+        );
+        if (asinCandidate && !result.asin) result.asin = asinCandidate;
+
+        if (typeof rec.name === 'string' && rec.name.trim() && !result.title) {
+          result.title = normalizeWhitespace(rec.name);
+        }
+
+        if (rec.brand && typeof rec.brand === 'object' && !result.brand) {
+          const brandName = (rec.brand as Record<string, unknown>).name;
+          if (typeof brandName === 'string') {
+            result.brand = cleanBrand(brandName) ?? undefined;
+          }
+        }
+
+        if (typeof rec.image === 'string' && !result.imageUrl) {
+          result.imageUrl = rec.image;
+        } else if (
+          Array.isArray(rec.image) &&
+          typeof rec.image[0] === 'string' &&
+          !result.imageUrl
+        ) {
+          result.imageUrl = rec.image[0];
+        }
+
+        if (typeof rec.description === 'string' && !result.description) {
+          result.description = normalizeWhitespace(rec.description);
+        }
+
+        const offers = rec.offers as Record<string, unknown> | undefined;
+        if (offers && typeof offers === 'object') {
+          const rawPrice = offers.price ?? offers.lowPrice;
+          if (
+            (typeof rawPrice === 'number' || typeof rawPrice === 'string') &&
+            result.price === undefined
+          ) {
+            const num =
+              typeof rawPrice === 'number'
+                ? rawPrice
+                : Number.parseFloat(rawPrice);
+            if (Number.isFinite(num) && num >= 0) {
+              result.price = Math.round(num * 100) / 100;
+            }
+          }
+          if (
+            typeof offers.priceCurrency === 'string' &&
+            isIsoCurrency(offers.priceCurrency)
+          ) {
+            result.currency = offers.priceCurrency.toUpperCase();
+          }
+        }
+      }
+    } catch {
+      // Ignore malformed JSON-LD
+    }
   }
-  const canonicalLink = doc
-    ? safeQuerySelector<HTMLLinkElement>(doc, 'link[rel="canonical"]')
-    : null;
-  const canonicalHref = canonicalLink?.getAttribute('href');
-  if (canonicalHref && isAmazonUrl(canonicalHref)) {
-    return canonicalHref;
-  }
-  const docUrl = doc?.location?.href;
-  if (docUrl && isAmazonUrl(docUrl)) {
-    return docUrl;
-  }
-  if (
-    typeof window !== 'undefined' &&
-    window.location?.href &&
-    isAmazonUrl(window.location.href)
-  ) {
-    return window.location.href;
-  }
-  return explicitUrl || 'https://www.amazon.com';
+
+  return result;
 }
 
 function extractDetailAsin(
   doc: Document,
-  sourceUrl: string,
-  ldJsonAsin?: string,
-): { asin: string | null; tier: 'tier1_json' | 'tier2_semantic' | 'tier3_structural' | 'missing' } {
-  // 1. Canonical URL or active source URL `/dp/<ASIN>`
-  const urlAsin = extractAsinFromUrl(sourceUrl);
-  if (urlAsin) {
-    return { asin: urlAsin, tier: 'tier2_semantic' };
+  pageUrl?: string,
+  jsonLd?: JsonLdProductMetadata,
+): string | null {
+  const fromUrl = extractASIN(pageUrl);
+  if (fromUrl) return fromUrl;
+
+  const hiddenInputs = safeQuerySelectorAll<HTMLInputElement>(
+    doc,
+    'input#ASIN, input[name="ASIN"], input[name="ASIN.0"], input[name="idx.asin"]',
+  );
+  for (const input of hiddenInputs) {
+    const asin = normalizeASIN(input.value || input.getAttribute('value'));
+    if (asin) return asin;
   }
 
-  const canonicalHref = safeQuerySelector<HTMLLinkElement>(
+  const canonical = safeQuerySelector<HTMLLinkElement>(
     doc,
     'link[rel="canonical"]',
-  )?.getAttribute('href');
-  const canonicalAsin = extractAsinFromUrl(canonicalHref);
-  if (canonicalAsin) {
-    return { asin: canonicalAsin, tier: 'tier2_semantic' };
-  }
-
-  // 2. Hidden input#ASIN or [data-asin] on #dp / #averageCustomerReviews
-  const asinInput = safeQuerySelector<HTMLInputElement>(
-    doc,
-    'input#ASIN, input[name="ASIN"], input[name="ASIN.0"]',
   );
-  const inputAsin = normalizeAsin(asinInput?.value ?? asinInput?.getAttribute('value'));
-  if (inputAsin) {
-    return { asin: inputAsin, tier: 'tier2_semantic' };
-  }
+  const fromCanonical = extractASIN(canonical?.getAttribute('href'));
+  if (fromCanonical) return fromCanonical;
 
-  const dpAsinNode = safeQuerySelector(
+  const detailRoot = safeQuerySelector(
     doc,
-    '#dp[data-asin], #dp-container[data-asin], #averageCustomerReviews[data-asin], [data- detail-asin]',
+    '#dp-container[data-asin], #dp[data-asin], [data-asin]',
   );
-  const dpAsin = normalizeAsin(dpAsinNode?.getAttribute('data-asin'));
-  if (dpAsin) {
-    return { asin: dpAsin, tier: 'tier2_semantic' };
-  }
+  const fromDataAttr = normalizeASIN(detailRoot?.getAttribute('data-asin'));
+  if (fromDataAttr) return fromDataAttr;
 
-  // 3. Tier 1 JSON-LD
-  if (ldJsonAsin) {
-    const normalized = normalizeAsin(ldJsonAsin);
-    if (normalized) {
-      return { asin: normalized, tier: 'tier1_json' };
+  if (jsonLd?.asin) return jsonLd.asin;
+
+  return null;
+}
+
+function extractDetailBsr(doc: Document): string | undefined {
+  for (const selector of AMAZON_SELECTORS.detail.bsr) {
+    const container = safeQuerySelector(doc, selector);
+    if (!container) continue;
+    const rawText = normalizeWhitespace(container.textContent);
+    if (!/Best Sellers Rank/i.test(rawText)) continue;
+
+    // Strip parenthetical "(See Top 100 in ...)" before extracting rank clauses
+    const cleaned = rawText.replace(/\(\s*See Top\s+\d+[^)]*\)/gi, ' ');
+    const rankMatches = Array.from(
+      cleaned.matchAll(/#\d[\d,]*\s+in\s+[A-Za-z0-9 &,'/-]+/g),
+      (m) => normalizeWhitespace(m[0]),
+    ).filter(Boolean);
+
+    if (rankMatches.length >= 2) {
+      return `${rankMatches[0]} (${rankMatches[1]})`;
+    }
+    if (rankMatches.length === 1) {
+      return rankMatches[0];
     }
   }
-
-  return { asin: null, tier: 'missing' };
+  return undefined;
 }
 
 /**
- * Extracts a single product from an Amazon Product Detail Page (PDP).
- * Prioritizes buybox/corePriceDisplay containers over peripheral ad carousels.
+ * Parses an Amazon Product Detail (`/dp/<ASIN>`) page.
+ * Prioritizes `#corePriceDisplay_desktop_feature_div` / `#buybox` over ad carousels.
  */
 export function parseAmazonProductDetail(
-  doc?: Document | null,
-  explicitSourceUrl?: string,
-  telemetry?: AmazonDriftTelemetry,
+  doc: Document = document,
+  pageUrl?: string,
 ): ScrapedAmazonProduct | null {
-  const activeDoc =
-    doc ?? (typeof document !== 'undefined' ? document : null);
-  if (!activeDoc) return null;
+  try {
+    const activeUrl =
+      pageUrl ??
+      (typeof window !== 'undefined' && window.location
+        ? window.location.href
+        : 'https://www.amazon.com');
 
-  const sourceUrl = resolveDetailSourceUrl(activeDoc, explicitSourceUrl);
-  const ldJson = extractTier1LdJsonProduct(activeDoc, sourceUrl);
-  const fieldTiers: CardFieldTierMap = {};
-
-  const asinResult = extractDetailAsin(activeDoc, sourceUrl, ldJson?.asin);
-  fieldTiers.asin = asinResult.tier;
-  const asin = asinResult.asin;
-  if (!asin) {
-    telemetry?.recordCard(fieldTiers, false);
-    return null;
-  }
-
-  // Title extraction (DOM `#productTitle` -> JSON-LD `name`)
-  let title = '';
-  for (const selector of AMAZON_SELECTORS.detail.title) {
-    const el = safeQuerySelector(activeDoc, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (text) {
-      title = text;
-      fieldTiers.title = 'tier2_semantic';
-      break;
+    const jsonLd = extractProductJsonLd(doc);
+    const asin = extractDetailAsin(doc, activeUrl, jsonLd);
+    if (!asin) {
+      return null;
     }
-  }
-  if (!title && ldJson?.title) {
-    title = ldJson.title;
-    fieldTiers.title = 'tier1_json';
-  }
-  if (!title) {
-    telemetry?.recordCard(fieldTiers, false);
-    return null;
-  }
 
-  // Price extraction scoped to main buybox / corePriceDisplay first (avoiding ad carousels!)
-  let price: number | null = null;
-  let currency = resolveAmazonCurrency(undefined, sourceUrl);
-  let listPrice: number | null = null;
-  let discountPercentage: number | null = null;
-  fieldTiers.price = 'missing';
-
-  for (const scopeSelector of AMAZON_SELECTORS.detail.buyboxScopes) {
-    const scopeEl = safeQuerySelector(activeDoc, scopeSelector);
-    if (!scopeEl || isInsideExcludedAdSubtree(scopeEl)) continue;
-
-    const scopedPrice = extractCardPriceWithTier(scopeEl, sourceUrl);
-    if (scopedPrice.value.price !== null) {
-      price = scopedPrice.value.price;
-      currency = scopedPrice.value.currency;
-      fieldTiers.price = scopedPrice.tier;
-      listPrice = extractCardListPrice(scopeEl, price, sourceUrl);
-      discountPercentage = extractCardDiscountPercentage(
-        scopeEl,
-        price,
-        listPrice,
-      );
-      break;
-    }
-  }
-
-  if (price === null && ldJson?.price !== undefined && ldJson.price !== null) {
-    price = ldJson.price;
-    currency = ldJson.currency || currency;
-    fieldTiers.price = 'tier1_json';
-  }
-
-  // Fallback to main root container (`#centerCol` / `#ppd` / `#dp-container`) while skipping excluded ad carousels
-  if (price === null) {
-    const { element: rootContainer } = queryFirstMatching(
-      activeDoc,
-      AMAZON_SELECTORS.detail.rootContainers,
-    );
-    const searchRoot = rootContainer ?? activeDoc.body ?? activeDoc.documentElement;
-    if (searchRoot) {
-      for (const selector of AMAZON_SELECTORS.cardFields.sellingPrice) {
-        const candidates = safeQuerySelectorAll(searchRoot, selector);
-        for (const el of candidates) {
-          if (isInsideExcludedAdSubtree(el)) continue;
-          if (el.closest('[data-a-strike="true"], s, del')) continue;
-          const scopedPrice = extractCardPriceWithTier(
-            el.parentElement ?? el,
-            sourceUrl,
-          );
-          if (scopedPrice.value.price !== null) {
-            price = scopedPrice.value.price;
-            currency = scopedPrice.value.currency;
-            fieldTiers.price = scopedPrice.tier;
-            break;
-          }
+    // Title
+    let title: string | null = null;
+    for (const selector of AMAZON_SELECTORS.detail.title) {
+      const el = safeQuerySelector(doc, selector);
+      if (el && !isInsideExcludedDetailSubtree(el)) {
+        const text = normalizeWhitespace(el.textContent);
+        if (text) {
+          title = text;
+          break;
         }
-        if (price !== null) break;
       }
     }
-  }
-
-  // Rating & Review Count
-  const reviewRoot =
-    safeQuerySelector(
-      activeDoc,
-      '#averageCustomerReviews, #acrPopover, #reviewsMedley',
-    ) ?? activeDoc.documentElement;
-  const ratingResult = extractCardRatingWithTier(reviewRoot);
-  const rating = ratingResult.value ?? ldJson?.rating ?? null;
-  fieldTiers.rating =
-    ratingResult.value !== null
-      ? ratingResult.tier
-      : ldJson?.rating !== undefined && ldJson.rating !== null
-        ? 'tier1_json'
-        : 'missing';
-
-  const reviewCountResult = extractCardReviewCountWithTier(
-    safeQuerySelector(activeDoc, '#averageCustomerReviews, #centerCol, #ppd') ??
-      activeDoc.documentElement,
-  );
-  const reviewCount = reviewCountResult.value ?? ldJson?.reviewCount ?? null;
-  fieldTiers.reviewCount =
-    reviewCountResult.value !== null
-      ? reviewCountResult.tier
-      : ldJson?.reviewCount !== undefined && ldJson.reviewCount !== null
-        ? 'tier1_json'
-        : 'missing';
-
-  // High-resolution Image URL
-  const imageScope =
-    safeQuerySelector(
-      activeDoc,
-      '#imageBlock, #imgTagWrapperId, #leftCol, #dp-container',
-    ) ?? activeDoc.documentElement;
-  const imageResult = extractImageWithTier(imageScope);
-  const imageUrl = imageResult.value || ldJson?.imageUrl || '';
-  fieldTiers.imageUrl = imageResult.value
-    ? imageResult.tier
-    : ldJson?.imageUrl
-      ? 'tier1_json'
-      : 'missing';
-
-  // Brand
-  let brand: string | undefined;
-  for (const selector of AMAZON_SELECTORS.detail.brand) {
-    const el = safeQuerySelector(activeDoc, selector);
-    const cleaned = cleanAmazonBrandText(el?.textContent);
-    if (cleaned) {
-      brand = cleaned;
-      break;
+    if (!title && jsonLd.title) {
+      title = jsonLd.title;
     }
-  }
-  if (!brand && ldJson?.brand) {
-    brand = cleanAmazonBrandText(ldJson.brand);
-  }
-
-  // BSR, Badges, Coupon, Bought in past month
-  const bsr = extractCardBsr(activeDoc.documentElement);
-  const centerScope =
-    safeQuerySelector(activeDoc, '#centerCol, #ppd, #dp-container') ??
-    activeDoc.documentElement;
-  const dealBadge = extractCardDealBadge(centerScope);
-  const statusBadge = extractCardStatusBadge(centerScope);
-  const couponText = extractCardCouponText(centerScope);
-  const boughtInPastMonth = extractCardBoughtInPastMonth(centerScope);
-  const isPrime = extractCardIsPrime(
-    safeQuerySelector(activeDoc, '#buybox, #apex_desktop, #centerCol, #ppd') ??
-      activeDoc.documentElement,
-  );
-
-  // Availability
-  let availability: string | undefined;
-  for (const selector of AMAZON_SELECTORS.detail.availability) {
-    const el = safeQuerySelector(activeDoc, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (text) {
-      availability = text;
-      break;
+    if (!title) {
+      return null;
     }
-  }
-  if (!availability && ldJson?.availability) {
-    availability = ldJson.availability;
-  }
 
-  // Delivery info
-  let deliveryInfo: string | undefined;
-  for (const selector of AMAZON_SELECTORS.detail.delivery) {
-    const el = safeQuerySelector(activeDoc, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (text) {
-      deliveryInfo = text;
-      break;
+    // Brand
+    let brand: string | null = null;
+    for (const selector of AMAZON_SELECTORS.detail.brand) {
+      const el = safeQuerySelector(doc, selector);
+      if (el && !isInsideExcludedDetailSubtree(el)) {
+        brand = cleanBrand(el.textContent);
+        if (brand) break;
+      }
     }
-  }
-
-  // Seller
-  let seller: string | undefined;
-  for (const selector of AMAZON_SELECTORS.detail.seller) {
-    const el = safeQuerySelector(activeDoc, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (text) {
-      seller = text
-        .replace(/^Ships from and sold by\s+/i, '')
-        .replace(/^Sold by\s+/i, '')
-        .replace(/\s+and\s+Fulfilled by Amazon\.?$/i, '')
-        .trim();
-      if (seller) break;
+    if (!brand && jsonLd.brand) {
+      brand = jsonLd.brand;
     }
-  }
 
-  // Description
-  let description: string | undefined;
-  for (const selector of AMAZON_SELECTORS.detail.description) {
-    const el = safeQuerySelector(activeDoc, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (text && text.length >= 10) {
-      description = text.slice(0, 2000);
-      break;
-    }
-  }
-  if (!description && ldJson?.description) {
-    description = ldJson.description.slice(0, 2000);
-  }
+    // Scoped Buybox Pricing & Discounts
+    const pageCurrency = resolvePageCurrency(activeUrl);
+    let price: number | null = null;
+    let currency: string | null = pageCurrency;
+    let listPrice: number | undefined;
+    let discountPercentage: string | undefined;
+    let dealBadge: string | undefined;
+    let coupon: string | undefined;
 
-  // Bullet Features
-  const features: string[] = [];
-  for (const selector of AMAZON_SELECTORS.detail.features) {
-    const items = safeQuerySelectorAll(activeDoc, selector);
-    for (const item of items) {
-      const bullet = normalizeWhitespace(item.textContent);
+    for (const scopeSelector of AMAZON_SELECTORS.detail.buyboxScopes) {
+      const scopeEl = safeQuerySelector(doc, scopeSelector);
+      if (!scopeEl || isInsideExcludedDetailSubtree(scopeEl)) continue;
+
+      const scopedPricing = extractCardPricingAndDiscounts(scopeEl, activeUrl);
+      if (price === null && scopedPricing.price !== null) {
+        price = scopedPricing.price;
+        currency = scopedPricing.currency ?? pageCurrency;
+      }
+      if (listPrice === undefined && scopedPricing.listPrice !== undefined) {
+        listPrice = scopedPricing.listPrice;
+      }
       if (
-        bullet &&
-        bullet.length >= 3 &&
-        !/^make sure this fits/i.test(bullet) &&
-        !features.includes(bullet)
+        discountPercentage === undefined &&
+        scopedPricing.discountPercentage !== undefined
       ) {
-        features.push(bullet);
+        discountPercentage = scopedPricing.discountPercentage;
+      }
+      if (dealBadge === undefined && scopedPricing.dealBadge !== undefined) {
+        dealBadge = scopedPricing.dealBadge;
+      }
+      if (coupon === undefined && scopedPricing.coupon !== undefined) {
+        coupon = scopedPricing.coupon;
+      }
+      if (price !== null) break;
+    }
+
+    // Check legacy `#priceblock_ourprice` / `#priceblock_dealprice` if still null
+    if (price === null) {
+      const legacyEl = safeQuerySelector(
+        doc,
+        '#priceblock_dealprice, #priceblock_ourprice, #price_inside_buybox',
+      );
+      if (legacyEl && !isInsideExcludedDetailSubtree(legacyEl)) {
+        const parsed = parsePrice(legacyEl.textContent, pageCurrency);
+        if (parsed.value !== null) {
+          price = parsed.value;
+          currency = parsed.currency ?? pageCurrency;
+        }
       }
     }
-    if (features.length > 0) break;
+
+    if (price === null && jsonLd.price !== undefined) {
+      price = jsonLd.price;
+      currency = jsonLd.currency ?? pageCurrency;
+    }
+
+    if (listPrice === undefined) {
+      const strikeEls = safeQuerySelectorAll(
+        doc,
+        '#corePriceDisplay_desktop_feature_div [data-a-strike="true"] .a-offscreen, #corePrice_feature_div [data-a-strike="true"] .a-offscreen, #apex_desktop .basisPrice .a-offscreen, #listPrice',
+      );
+      for (const el of strikeEls) {
+        if (isInsideExcludedDetailSubtree(el)) continue;
+        const parsed = parsePrice(el.textContent, currency ?? pageCurrency);
+        if (
+          parsed.value !== null &&
+          (price === null || parsed.value > price)
+        ) {
+          listPrice = parsed.value;
+          break;
+        }
+      }
+    }
+
+    if (discountPercentage === undefined) {
+      const savEl = safeQuerySelector(
+        doc,
+        '#corePriceDisplay_desktop_feature_div .savingsPercentage, #corePrice_feature_div .savingsPercentage, #apex_desktop .savingsPercentage',
+      );
+      if (savEl && !isInsideExcludedDetailSubtree(savEl)) {
+        discountPercentage = normalizeDiscountBadge(savEl.textContent);
+      }
+    }
+
+    if (dealBadge === undefined) {
+      for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
+        const el = safeQuerySelector(doc, selector);
+        if (!el || isInsideExcludedDetailSubtree(el)) continue;
+        const text = normalizeWhitespace(el.textContent);
+        if (text && /deal|limited|lightning|prime day|black friday/i.test(text)) {
+          dealBadge = text;
+          break;
+        }
+      }
+    }
+
+    if (coupon === undefined) {
+      for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
+        const el = safeQuerySelector(doc, selector);
+        if (!el || isInsideExcludedDetailSubtree(el)) continue;
+        const text = normalizeWhitespace(el.textContent);
+        if (text && /coupon|voucher|rabatt/i.test(text)) {
+          coupon = text.replace(/\s*Terms\s*$/i, '').trim();
+          break;
+        }
+      }
+    }
+
+    // Past Month Sales
+    let pastMonthSales: string | undefined;
+    const boughtEl = safeQuerySelector(
+      doc,
+      '#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought',
+    );
+    if (boughtEl && !isInsideExcludedDetailSubtree(boughtEl)) {
+      const text = normalizeWhitespace(boughtEl.textContent);
+      const match =
+        /(\d+(?:[.,]\d+)?\s*[KkMm+]?\+?\s*bought in past month)/i.exec(text);
+      if (match?.[1]) {
+        pastMonthSales = match[1].trim();
+      }
+    }
+
+    // Rating & Review count
+    let rating: number | null = null;
+    const acrPopover = safeQuerySelector(
+      doc,
+      '#acrPopover, #averageCustomerReviews [data-action="acrStarsLink-click-metrics"]',
+    );
+    if (acrPopover && !isInsideExcludedDetailSubtree(acrPopover)) {
+      rating = parseRating(
+        acrPopover.getAttribute('title') ||
+          acrPopover.getAttribute('aria-label') ||
+          acrPopover.textContent,
+      );
+    }
+    if (rating === null && jsonLd.rating !== undefined) {
+      rating = jsonLd.rating;
+    }
+
+    let reviewCount: number | null = null;
+    const reviewEl = safeQuerySelector(doc, '#acrCustomerReviewText');
+    if (reviewEl && !isInsideExcludedDetailSubtree(reviewEl)) {
+      reviewCount = parseReviewCount(reviewEl.textContent);
+    }
+    if (reviewCount === null && jsonLd.reviewCount !== undefined) {
+      reviewCount = jsonLd.reviewCount;
+    }
+
+    // Availability
+    let availability: string | null = null;
+    for (const selector of AMAZON_SELECTORS.detail.availability) {
+      const el = safeQuerySelector(doc, selector);
+      if (el && !isInsideExcludedDetailSubtree(el)) {
+        availability = cleanAvailability(el.textContent);
+        if (availability) break;
+      }
+    }
+
+    // Delivery
+    let delivery: string | undefined;
+    for (const selector of AMAZON_SELECTORS.detail.delivery) {
+      const el = safeQuerySelector(doc, selector);
+      if (el && !isInsideExcludedDetailSubtree(el)) {
+        const text = normalizeWhitespace(el.textContent);
+        if (text) {
+          delivery = text;
+          break;
+        }
+      }
+    }
+
+    // Seller
+    let seller: string | null = null;
+    for (const selector of AMAZON_SELECTORS.detail.seller) {
+      const el = safeQuerySelector(doc, selector);
+      if (el && !isInsideExcludedDetailSubtree(el)) {
+        seller = cleanSeller(el.textContent);
+        if (seller) break;
+      }
+    }
+
+    // Features
+    const features: string[] = [];
+    for (const selector of AMAZON_SELECTORS.detail.features) {
+      const items = safeQuerySelectorAll(doc, selector);
+      for (const item of items) {
+        if (isInsideExcludedDetailSubtree(item)) continue;
+        const text = normalizeWhitespace(item.textContent);
+        if (text && !features.includes(text)) {
+          features.push(text);
+        }
+      }
+      if (features.length > 0) break;
+    }
+
+    // Description
+    let description: string | null = null;
+    for (const selector of AMAZON_SELECTORS.detail.description) {
+      const el = safeQuerySelector(doc, selector);
+      if (el && !isInsideExcludedDetailSubtree(el)) {
+        const text = normalizeWhitespace(el.textContent);
+        if (text) {
+          description = text;
+          break;
+        }
+      }
+    }
+    if (!description && jsonLd.description) {
+      description = jsonLd.description;
+    }
+
+    // High-res Image
+    let imageUrl: string | null = null;
+    for (const selector of AMAZON_SELECTORS.detail.images) {
+      const img = safeQuerySelector(doc, selector);
+      if (img && !isInsideExcludedDetailSubtree(img)) {
+        imageUrl = extractBestImageUrl(img);
+        if (imageUrl) break;
+      }
+    }
+    if (!imageUrl && jsonLd.imageUrl) {
+      imageUrl = jsonLd.imageUrl;
+    }
+
+    // BSR
+    const bestSellersRank = extractDetailBsr(doc);
+
+    // Prime
+    const isPrime = Boolean(
+      safeQuerySelector(
+        doc,
+        '#bbop-sbbop-container, #desktop_buybox i.a-icon-prime, #apex_desktop i.a-icon-prime, #mir-layout-DELIVERY_BLOCK [data-csa-c-delivery-price="FREE"]',
+      ) ||
+        (delivery && /\bFREE delivery\b/i.test(delivery)),
+    );
+
+    const url = resolveProductUrl(null, asin, activeUrl);
+
+    const candidate: Partial<ScrapedAmazonProduct> = {
+      asin,
+      url,
+      title,
+      price,
+      currency: currency ?? pageCurrency ?? 'USD',
+      rating,
+      reviewCount,
+      imageUrl,
+      isSponsored: false,
+      isPrime,
+      brand,
+      availability,
+      seller,
+      description,
+      features,
+      source: 'detail',
+    };
+
+    if (listPrice !== undefined) candidate.listPrice = listPrice;
+    if (discountPercentage !== undefined) {
+      candidate.discountPercentage = discountPercentage;
+    }
+    if (dealBadge !== undefined) candidate.dealBadge = dealBadge;
+    if (bestSellersRank !== undefined) {
+      candidate.bestSellersRank = bestSellersRank;
+    }
+    if (pastMonthSales !== undefined) {
+      candidate.pastMonthSales = pastMonthSales;
+    }
+    if (coupon !== undefined) candidate.coupon = coupon;
+    if (delivery !== undefined) candidate.delivery = delivery;
+
+    return validateAndNormalizeScrapedProduct(candidate, activeUrl);
+  } catch (err) {
+    console.warn('[PPHunt] Failed to parse product detail page:', err);
+    return null;
   }
-
-  telemetry?.recordCard(fieldTiers, true);
-
-  const productUrl = buildCanonicalAmazonProductUrl(asin, sourceUrl);
-
-  const scraped: ScrapedAmazonProduct = {
-    asin,
-    title,
-    price,
-    currency,
-    rating,
-    reviewCount,
-    isPrime,
-    isSponsored: false,
-    imageUrl,
-    productUrl,
-    sourceUrl: isAmazonUrl(sourceUrl) ? sourceUrl : productUrl,
-    pageType: 'detail',
-  };
-
-  if (brand !== undefined) scraped.brand = brand;
-  if (listPrice !== null) scraped.listPrice = listPrice;
-  if (discountPercentage !== null) {
-    scraped.discountPercentage = discountPercentage;
-  }
-  if (dealBadge !== undefined) scraped.dealBadge = dealBadge;
-  if (statusBadge !== undefined) scraped.statusBadge = statusBadge;
-  if (couponText !== undefined) scraped.couponText = couponText;
-  if (boughtInPastMonth !== undefined) {
-    scraped.boughtInPastMonth = boughtInPastMonth;
-  }
-  if (bsr !== undefined) scraped.bsr = bsr;
-  if (deliveryInfo !== undefined) scraped.deliveryInfo = deliveryInfo;
-  if (availability !== undefined) scraped.availability = availability;
-  if (seller !== undefined) scraped.seller = seller;
-  if (description !== undefined) scraped.description = description;
-  if (features.length > 0) scraped.features = features;
-
-  return scraped;
 }
 
 export const parseProductDetail = parseAmazonProductDetail;

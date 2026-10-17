@@ -1,22 +1,20 @@
 import type { ScrapedAmazonProduct } from '../types';
-import { normalizeAsin } from '../utils/amazon-url';
+import { normalizeASIN } from '../utils/amazon-url';
 
-export interface AmazonBatchDedupResult {
-  unique: ScrapedAmazonProduct[];
-  duplicatesSkipped: number;
-  enriched: ScrapedAmazonProduct[];
+export interface MergeAndFilterResult {
+  newProducts: ScrapedAmazonProduct[];
+  updatedExisting: boolean;
 }
 
 /**
- * ASIN-based deduplication & late-hydration enrichment engine for Amazon products.
- * Supports toggling `duplicateDetection` on/off via `setEnabled(boolean)` and seeding
- * previously persisted session ASINs across service worker restarts.
+ * ASIN-based deduplication & late-hydration enrichment engine (`AmazonDeduplicationEngine`).
+ * Supports seeding session ASINs, toggling duplicate detection, and enriching previously
+ * collected items when lazy hydration populates missing fields.
  */
 export class AmazonDeduplicationEngine {
   private seenAsins = new Set<string>();
-  private productByAsin = new Map<string, ScrapedAmazonProduct>();
   private duplicatesSkippedCount = 0;
-  private enabled: boolean;
+  private enabled = true;
 
   constructor(initialAsins?: Iterable<string>, enabled = true) {
     this.enabled = enabled;
@@ -25,174 +23,182 @@ export class AmazonDeduplicationEngine {
     }
   }
 
-  setEnabled(enabled: boolean): void {
+  public setEnabled(enabled: boolean): void {
     this.enabled = Boolean(enabled);
   }
 
-  isEnabled(): boolean {
+  public isEnabled(): boolean {
     return this.enabled;
   }
 
-  seed(asins: Iterable<string>): void {
+  public seed(asins: Iterable<string>): void {
     for (const raw of asins) {
-      const normalized = normalizeAsin(raw);
+      const normalized = normalizeASIN(raw);
       if (normalized) {
         this.seenAsins.add(normalized);
       }
     }
   }
 
-  has(asin: string): boolean {
+  public has(asin: string): boolean {
     if (!this.enabled) return false;
-    const normalized = normalizeAsin(asin);
+    const normalized = normalizeASIN(asin);
     if (!normalized) return false;
     return this.seenAsins.has(normalized);
   }
 
-  add(asinOrProduct: string | ScrapedAmazonProduct): boolean {
+  public add(asinOrProduct: string | ScrapedAmazonProduct): boolean {
     const rawAsin =
       typeof asinOrProduct === 'string' ? asinOrProduct : asinOrProduct.asin;
-    const normalized = normalizeAsin(rawAsin);
+    const normalized = normalizeASIN(rawAsin);
     if (!normalized) return false;
 
     if (this.enabled && this.seenAsins.has(normalized)) {
       this.duplicatesSkippedCount += 1;
-      if (typeof asinOrProduct !== 'string') {
-        this.mergeHydratedFields(normalized, asinOrProduct);
-      }
       return false;
     }
 
     this.seenAsins.add(normalized);
-    if (typeof asinOrProduct !== 'string') {
-      this.productByAsin.set(normalized, {
-        ...asinOrProduct,
-        asin: normalized,
-      });
-    }
     return true;
   }
 
-  /**
-   * Filters a batch of scraped products, returning only newly discovered products
-   * (or all valid products when `duplicateDetection` is disabled).
-   */
-  filterNew(products: readonly ScrapedAmazonProduct[]): ScrapedAmazonProduct[] {
-    return this.processBatch(products).unique;
+  public filterNew(
+    products: readonly ScrapedAmazonProduct[],
+  ): ScrapedAmazonProduct[] {
+    const fresh: ScrapedAmazonProduct[] = [];
+    for (const product of products) {
+      const normalized = normalizeASIN(product.asin);
+      if (!normalized) continue;
+      if (this.enabled && this.seenAsins.has(normalized)) {
+        this.duplicatesSkippedCount += 1;
+        continue;
+      }
+      this.seenAsins.add(normalized);
+      fresh.push(product);
+    }
+    return fresh;
   }
 
   /**
-   * Processes a batch of scraped products, tracking unique items, skipped duplicates,
-   * and any previously seen items that gained newly hydrated fields (e.g. price or rating).
+   * Enriches previously null/missing fields on `existingProducts` when a re-parse after
+   * lazy DOM hydration yields newly populated fields, and returns any genuinely new products.
    */
-  processBatch(
-    products: readonly ScrapedAmazonProduct[],
-  ): AmazonBatchDedupResult {
-    const unique: ScrapedAmazonProduct[] = [];
-    const enriched: ScrapedAmazonProduct[] = [];
-    let batchDuplicates = 0;
+  public mergeAndFilterNew(
+    existingProducts: ScrapedAmazonProduct[],
+    incomingProducts: readonly ScrapedAmazonProduct[],
+  ): MergeAndFilterResult {
+    const existingByAsin = new Map<string, ScrapedAmazonProduct>();
+    for (const item of existingProducts) {
+      const asin = normalizeASIN(item.asin);
+      if (asin) {
+        existingByAsin.set(asin, item);
+        this.seenAsins.add(asin);
+      }
+    }
 
-    for (const item of products) {
-      const normalized = normalizeAsin(item.asin);
-      if (!normalized) continue;
+    const newProducts: ScrapedAmazonProduct[] = [];
+    let updatedExisting = false;
 
-      const normalizedItem: ScrapedAmazonProduct = {
-        ...item,
-        asin: normalized,
-      };
+    for (const incoming of incomingProducts) {
+      const asin = normalizeASIN(incoming.asin);
+      if (!asin) continue;
 
       if (!this.enabled) {
-        this.seenAsins.add(normalized);
-        this.productByAsin.set(normalized, normalizedItem);
-        unique.push(normalizedItem);
+        newProducts.push(incoming);
         continue;
       }
 
-      if (this.seenAsins.has(normalized)) {
-        batchDuplicates += 1;
+      const existing = existingByAsin.get(asin);
+      if (existing) {
         this.duplicatesSkippedCount += 1;
-        const merged = this.mergeHydratedFields(normalized, normalizedItem);
-        if (merged) {
-          enriched.push(merged);
+        if (this.enrichProductInPlace(existing, incoming)) {
+          updatedExisting = true;
         }
         continue;
       }
 
-      this.seenAsins.add(normalized);
-      this.productByAsin.set(normalized, normalizedItem);
-      unique.push(normalizedItem);
+      if (this.seenAsins.has(asin)) {
+        this.duplicatesSkippedCount += 1;
+        continue;
+      }
+
+      this.seenAsins.add(asin);
+      existingByAsin.set(asin, incoming);
+      newProducts.push(incoming);
     }
 
-    return {
-      unique,
-      duplicatesSkipped: batchDuplicates,
-      enriched,
-    };
+    return { newProducts, updatedExisting };
   }
 
-  private mergeHydratedFields(
-    asin: string,
-    incoming: ScrapedAmazonProduct,
-  ): ScrapedAmazonProduct | null {
-    const existing = this.productByAsin.get(asin);
-    if (!existing) return null;
-
+  private enrichProductInPlace(
+    target: ScrapedAmazonProduct,
+    source: ScrapedAmazonProduct,
+  ): boolean {
     let changed = false;
-    const updated: ScrapedAmazonProduct = { ...existing };
 
-    if (updated.price === null && incoming.price !== null) {
-      updated.price = incoming.price;
-      updated.currency = incoming.currency || updated.currency;
-      changed = true;
+    const nullableFields = [
+      'price',
+      'listPrice',
+      'discountPercentage',
+      'dealBadge',
+      'rating',
+      'reviewCount',
+      'bestSellersRank',
+      'pastMonthSales',
+      'coupon',
+      'badge',
+      'delivery',
+      'imageUrl',
+      'brand',
+      'availability',
+      'seller',
+      'description',
+    ] as const;
+
+    for (const key of nullableFields) {
+      if (
+        (target[key] === null || target[key] === undefined) &&
+        source[key] !== null &&
+        source[key] !== undefined
+      ) {
+        (target as Record<string, unknown>)[key] = source[key];
+        changed = true;
+      }
     }
-    if (updated.rating === null && incoming.rating !== null) {
-      updated.rating = incoming.rating;
-      changed = true;
-    }
-    if (updated.reviewCount === null && incoming.reviewCount !== null) {
-      updated.reviewCount = incoming.reviewCount;
-      changed = true;
-    }
-    if (!updated.imageUrl && incoming.imageUrl) {
-      updated.imageUrl = incoming.imageUrl;
-      changed = true;
-    }
-    if (!updated.brand && incoming.brand) {
-      updated.brand = incoming.brand;
-      changed = true;
-    }
-    if (!updated.dealBadge && incoming.dealBadge) {
-      updated.dealBadge = incoming.dealBadge;
-      changed = true;
-    }
-    if (!updated.boughtInPastMonth && incoming.boughtInPastMonth) {
-      updated.boughtInPastMonth = incoming.boughtInPastMonth;
+
+    if (
+      source.price !== null &&
+      source.price !== undefined &&
+      source.currency &&
+      target.currency !== source.currency
+    ) {
+      target.currency = source.currency;
       changed = true;
     }
 
-    if (changed) {
-      this.productByAsin.set(asin, updated);
-      return updated;
+    if (!target.isPrime && source.isPrime) {
+      target.isPrime = true;
+      changed = true;
     }
-    return null;
+
+    return changed;
   }
 
-  get size(): number {
+  public get size(): number {
     return this.seenAsins.size;
   }
 
-  get duplicatesSkipped(): number {
+  public get duplicatesSkipped(): number {
     return this.duplicatesSkippedCount;
   }
 
-  getSeenAsins(): string[] {
-    return Array.from(this.seenAsins);
+  public clear(): void {
+    this.seenAsins.clear();
+    this.duplicatesSkippedCount = 0;
   }
 
-  reset(): void {
-    this.seenAsins.clear();
-    this.productByAsin.clear();
-    this.duplicatesSkippedCount = 0;
+  public reset(): void {
+    this.clear();
   }
 }
 

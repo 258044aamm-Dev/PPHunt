@@ -4,37 +4,41 @@ export const AmazonAsinSchema = z
   .string()
   .regex(/^[A-Z0-9]{10}$/, 'ASIN must be a 10-character uppercase alphanumeric string');
 
-export const AmazonListingPageTypeSchema = z.enum(['search', 'category', 'detail']);
+export const ProductSourceSchema = z.enum(['search', 'category', 'detail']);
 
 export const AmazonProductSchema = z.object({
   id: z.number().int().positive().optional(),
   asin: AmazonAsinSchema,
-  title: z.string().min(1, 'Product title is required'),
-  brand: z.string().optional(),
-  price: z.number().nonnegative().nullable(),
-  currency: z.string().min(1),
-  listPrice: z.number().nonnegative().nullable().optional(),
-  discountPercentage: z.number().min(0).max(100).nullable().optional(),
-  dealBadge: z.string().optional(),
-  statusBadge: z.string().optional(),
-  couponText: z.string().optional(),
-  boughtInPastMonth: z.string().optional(),
-  bsr: z.string().optional(),
-  rating: z.number().min(0).max(5).nullable(),
-  reviewCount: z.number().int().nonnegative().nullable(),
-  isPrime: z.boolean(),
-  isSponsored: z.boolean(),
-  deliveryInfo: z.string().optional(),
-  availability: z.string().optional(),
-  seller: z.string().optional(),
-  imageUrl: z.string(),
-  productUrl: z.string().url(),
-  description: z.string().optional(),
-  features: z.array(z.string()).optional(),
+  url: z.string().url(),
+  title: z.string().nullable().optional().default(null),
+  price: z.number().nullable().optional().default(null),
+  listPrice: z.number().nullable().optional(),
+  discountPercentage: z.string().nullable().optional(),
+  dealBadge: z.string().nullable().optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter uppercase ISO 4217 code')
+    .nullable()
+    .optional()
+    .default(null),
+  rating: z.number().min(0).max(5).nullable().optional().default(null),
+  reviewCount: z.number().int().min(0).nullable().optional().default(null),
+  bestSellersRank: z.string().nullable().optional(),
+  pastMonthSales: z.string().nullable().optional(),
+  coupon: z.string().nullable().optional(),
+  badge: z.string().nullable().optional(),
+  delivery: z.string().nullable().optional(),
+  imageUrl: z.string().url().nullable().optional().default(null),
+  isSponsored: z.boolean().optional().default(false),
+  isPrime: z.boolean().optional().default(false),
+  brand: z.string().nullable().optional().default(null),
+  availability: z.string().nullable().optional().default(null),
+  seller: z.string().nullable().optional().default(null),
+  description: z.string().nullable().optional().default(null),
+  features: z.array(z.string()).optional().default([]),
+  source: ProductSourceSchema,
   collectedAt: z.iso.datetime({ offset: true }),
-  sourceUrl: z.string().url(),
-  pageType: AmazonListingPageTypeSchema,
-  sessionId: z.string().min(1),
+  sessionKey: z.string().min(1),
 });
 
 export const ProductSchema = AmazonProductSchema;

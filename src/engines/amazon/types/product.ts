@@ -1,37 +1,39 @@
-export type AmazonListingPageType = 'search' | 'category' | 'detail';
+export type ProductSource = 'search' | 'category' | 'detail';
 
 export interface AmazonProduct {
   id?: number;
   asin: string;
-  title: string;
-  brand?: string;
-  price: number | null;
-  currency: string;
+  url: string;
+  title: string | null;
+  price?: number | null;
   listPrice?: number | null;
-  discountPercentage?: number | null;
-  dealBadge?: string;
-  statusBadge?: string;
-  couponText?: string;
-  boughtInPastMonth?: string;
-  bsr?: string;
-  rating: number | null;
-  reviewCount: number | null;
-  isPrime: boolean;
-  isSponsored: boolean;
-  deliveryInfo?: string;
-  availability?: string;
-  seller?: string;
-  imageUrl: string;
-  productUrl: string;
-  description?: string;
+  discountPercentage?: string | null;
+  dealBadge?: string | null;
+  currency?: string | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  bestSellersRank?: string | null;
+  pastMonthSales?: string | null;
+  coupon?: string | null;
+  badge?: string | null;
+  delivery?: string | null;
+  imageUrl?: string | null;
+  isSponsored?: boolean;
+  isPrime?: boolean;
+  brand?: string | null;
+  availability?: string | null;
+  seller?: string | null;
+  description?: string | null;
   features?: string[];
+  source: ProductSource;
   collectedAt: string;
-  sourceUrl: string;
-  pageType: AmazonListingPageType;
-  sessionId: string;
+  sessionKey: string;
 }
 
-export type ScrapedAmazonProduct = Omit<AmazonProduct, 'id' | 'collectedAt' | 'sessionId'>;
+export type ScrapedAmazonProduct = Omit<
+  AmazonProduct,
+  'id' | 'collectedAt' | 'sessionKey'
+>;
 
 export type Product = AmazonProduct;
 export type ScrapedProduct = ScrapedAmazonProduct;

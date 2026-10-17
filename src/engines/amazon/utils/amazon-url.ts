@@ -94,10 +94,15 @@ export function isAmazonUrl(url: string | null | undefined): boolean {
   }
 }
 
+export function isValidASIN(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  return ASIN_EXACT_REGEX.test(raw.trim().toUpperCase());
+}
+
 /**
  * Normalizes a raw 10-character ASIN candidate or extracts one from an Amazon URL/path.
  */
-export function normalizeAsin(raw: string | null | undefined): string | null {
+export function normalizeASIN(raw: string | null | undefined): string | null {
   if (!raw || typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -107,14 +112,16 @@ export function normalizeAsin(raw: string | null | undefined): string | null {
     return upper;
   }
 
-  return extractAsinFromUrl(trimmed);
+  return extractASIN(trimmed);
 }
+
+export const normalizeAsin = normalizeASIN;
 
 /**
  * Extracts a 10-character uppercase ASIN from direct product URLs, mobile URLs,
  * or sponsored `/sspa/click?...&url=%2Fdp%2FB08N5WRWNW` redirect links.
  */
-export function extractAsinFromUrl(rawUrl: string | null | undefined): string | null {
+export function extractASIN(rawUrl: string | null | undefined): string | null {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   const candidate = rawUrl.trim();
   if (!candidate) return null;
@@ -129,7 +136,6 @@ export function extractAsinFromUrl(rawUrl: string | null | undefined): string | 
     }
   }
 
-  // Check query parameters (e.g. /sspa/click?url=%2Fdp%2FB08N5WRWNW or ?asin=B08N5WRWNW)
   try {
     const parsed = new URL(candidate, 'https://www.amazon.com');
     const directAsinParam =
@@ -152,7 +158,7 @@ export function extractAsinFromUrl(rawUrl: string | null | undefined): string | 
       try {
         decoded = decodeURIComponent(nestedUrlParam);
       } catch {
-        // Keep raw nested parameter if already decoded
+        // Keep raw nested parameter
       }
       for (const pattern of ASIN_URL_PATTERNS) {
         const match = pattern.exec(decoded);
@@ -165,7 +171,6 @@ export function extractAsinFromUrl(rawUrl: string | null | undefined): string | 
       }
     }
   } catch {
-    // Ignore malformed URLs and try URL-decoding once
     try {
       const decoded = decodeURIComponent(candidate);
       if (decoded !== candidate) {
@@ -186,6 +191,8 @@ export function extractAsinFromUrl(rawUrl: string | null | undefined): string | 
 
   return null;
 }
+
+export const extractAsinFromUrl = extractASIN;
 
 /**
  * Resolves the canonical origin (`https://www.amazon.<tld>`) from a base URL or hostname.
@@ -217,7 +224,7 @@ export function buildCanonicalAmazonProductUrl(
   asin: string,
   baseUrl?: string | null,
 ): string {
-  const normalized = normalizeAsin(asin);
+  const normalized = normalizeASIN(asin);
   const origin = resolveAmazonOrigin(baseUrl);
   if (!normalized) {
     return origin;
@@ -229,19 +236,18 @@ export function buildCanonicalAmazonProductUrl(
  * Normalizes any product href or ASIN into a clean canonical `/dp/<ASIN>` URL
  * on the active Amazon marketplace domain.
  */
-export function normalizeProductUrl(
+export function resolveProductUrl(
   rawHref: string | null | undefined,
   asin?: string | null,
   baseUrl?: string | null,
 ): string {
   const origin = resolveAmazonOrigin(baseUrl || rawHref);
-  const resolvedAsin = normalizeAsin(asin) ?? extractAsinFromUrl(rawHref);
+  const resolvedAsin = normalizeASIN(asin) ?? extractASIN(rawHref);
 
   if (resolvedAsin) {
-    // If rawHref itself has a valid Amazon host, preserve that marketplace host
-    if (rawHref) {
+    if (rawHref && rawHref.includes('://')) {
       try {
-        const parsedHref = new URL(rawHref, origin);
+        const parsedHref = new URL(rawHref);
         if (isAmazonHostname(parsedHref.hostname)) {
           return `https://${parsedHref.hostname.toLowerCase()}/dp/${resolvedAsin}`;
         }
@@ -261,7 +267,6 @@ export function normalizeProductUrl(
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       return '';
     }
-    // Strip tracking query parameters when no ASIN could be extracted
     const cleanPath = parsed.pathname.replace(/\/ref=[^/]*$/i, '');
     return `https://${parsed.hostname.toLowerCase()}${cleanPath}`;
   } catch {
@@ -269,9 +274,10 @@ export function normalizeProductUrl(
   }
 }
 
+export const normalizeProductUrl = resolveProductUrl;
+
 /**
- * Upgrades Amazon dynamic thumbnail modifiers (`._AC_UL320_.jpg`, `._SX300_SY300_.jpg`, etc.)
- * to clean high-resolution product image URLs.
+ * Normalizes an Amazon image URL without destroying valid regional image paths.
  */
 export function upgradeAmazonImageUrl(rawUrl: string | null | undefined): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -288,12 +294,6 @@ export function upgradeAmazonImageUrl(rawUrl: string | null | undefined): string
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       return '';
     }
-    // Strip Amazon dynamic sizing directives between the image ID and file extension:
-    // e.g. /images/I/71abc123._AC_UL320_.jpg -> /images/I/71abc123.jpg
-    parsed.pathname = parsed.pathname.replace(
-      /\._[A-Za-z0-9,._-]+_\.(jpg|jpeg|png|webp|gif)$/i,
-      '.$1',
-    );
     return parsed.toString();
   } catch {
     return '';

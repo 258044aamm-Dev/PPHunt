@@ -68,6 +68,12 @@ export class AmazonDriftTelemetry {
     }
   }
 
+  recordCardExtraction(
+    fieldTiers: Partial<Record<AmazonTrackedField, AmazonExtractionTier>>,
+  ): void {
+    this.recordCard(fieldTiers, true);
+  }
+
   reset(): void {
     this.cardsInspected = 0;
     this.cardsExtracted = 0;
@@ -138,3 +144,6 @@ export class AmazonDriftTelemetry {
 export function createAmazonDriftTelemetry(): AmazonDriftTelemetry {
   return new AmazonDriftTelemetry();
 }
+
+export const defaultAmazonDriftTelemetry = new AmazonDriftTelemetry();
+

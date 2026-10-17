@@ -3,7 +3,7 @@ import {
   matchAmazonMarketplaceDomain,
 } from './amazon-url';
 
-export const MARKETPLACE_CURRENCY_MAP: Readonly<Record<AmazonMarketplaceDomain, string>> = {
+export const HOST_CURRENCY_MAP: Readonly<Record<AmazonMarketplaceDomain, string>> = {
   'amazon.com': 'USD',
   'amazon.co.uk': 'GBP',
   'amazon.de': 'EUR',
@@ -29,7 +29,59 @@ export const MARKETPLACE_CURRENCY_MAP: Readonly<Record<AmazonMarketplaceDomain, 
   'amazon.cn': 'CNY',
 };
 
-const EXPLICIT_PREFIX_TOKENS: ReadonlyArray<readonly [RegExp, string]> = [
+export const MARKETPLACE_CURRENCY_MAP = HOST_CURRENCY_MAP;
+
+const ISO_CURRENCY_REGEX = /^[A-Z]{3}$/;
+
+/**
+ * Checks whether a value is a bare 3-letter uppercase ISO 4217 currency code (e.g. 'USD', 'EUR').
+ */
+export function isIsoCurrency(value: unknown): value is string {
+  return typeof value === 'string' && ISO_CURRENCY_REGEX.test(value);
+}
+
+/**
+ * Resolves the ISO 4217 currency code from an Amazon page URL or hostname.
+ * Returns `null` (never a guess or the raw URL) when the host is unrecognized or empty.
+ */
+export function resolvePageCurrency(
+  pageUrlOrHost: string | null | undefined,
+): string | null {
+  if (!pageUrlOrHost || typeof pageUrlOrHost !== 'string') {
+    return null;
+  }
+  const trimmed = pageUrlOrHost.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes('://')) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+      const domain = matchAmazonMarketplaceDomain(parsed.hostname);
+      return domain ? (HOST_CURRENCY_MAP[domain] ?? null) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Only treat bare hostname strings if they contain no whitespace
+  if (/\s/.test(trimmed)) return null;
+  const domain = matchAmazonMarketplaceDomain(trimmed);
+  return domain ? (HOST_CURRENCY_MAP[domain] ?? null) : null;
+}
+
+/**
+ * Infers the ISO 4217 currency code from an Amazon URL, defaulting to 'USD' when unknown.
+ */
+export function inferCurrencyFromUrl(url?: string | null): string {
+  return resolvePageCurrency(url) ?? 'USD';
+}
+
+export const inferCurrencyFromHost = inferCurrencyFromUrl;
+
+const EXPLICIT_SYMBOL_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bUS\s*\$/i, 'USD'],
   [/\b(?:CA|CDN)\s*\$/i, 'CAD'],
   [/\b(?:AU|A)\s*\$/i, 'AUD'],
@@ -58,59 +110,57 @@ const EXPLICIT_PREFIX_TOKENS: ReadonlyArray<readonly [RegExp, string]> = [
 ];
 
 /**
- * Infers the ISO 4217 currency code from an Amazon URL or hostname.
- * Defaults to 'USD' when no regional Amazon domain matches.
+ * Extracts an explicit ISO 4217 currency code from a price string's symbol or prefix,
+ * using `fallbackIso` only to disambiguate generic `$` or `¥` symbols.
  */
-export function inferCurrencyFromHost(urlOrHost?: string | null): string {
-  const domain = matchAmazonMarketplaceDomain(urlOrHost);
-  if (domain && MARKETPLACE_CURRENCY_MAP[domain]) {
-    return MARKETPLACE_CURRENCY_MAP[domain];
-  }
-  return 'USD';
-}
+export function extractCurrencyFromSymbol(
+  rawText: string | null | undefined,
+  fallbackIso?: string | null,
+): string | null {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const trimmed = rawText.trim();
+  if (!trimmed) return null;
 
-/**
- * Resolves the ISO 4217 currency code from a raw price string and/or page URL.
- * Disambiguates shared symbols (`$`, `¥`) using the marketplace hostname when available.
- */
-export function resolveAmazonCurrency(
-  priceText?: string | null,
-  pageUrl?: string | null,
-): string {
-  const hostCurrency = inferCurrencyFromHost(pageUrl);
-  if (!priceText || typeof priceText !== 'string') {
-    return hostCurrency;
-  }
-
-  const trimmed = priceText.trim();
-  if (!trimmed) {
-    return hostCurrency;
-  }
-
-  for (const [pattern, code] of EXPLICIT_PREFIX_TOKENS) {
+  for (const [pattern, code] of EXPLICIT_SYMBOL_PATTERNS) {
     if (pattern.test(trimmed)) {
       return code;
     }
   }
 
+  const validFallback = isIsoCurrency(fallbackIso) ? fallbackIso : null;
+
   if (/[¥￥]/.test(trimmed)) {
-    return hostCurrency === 'CNY' ? 'CNY' : 'JPY';
+    return validFallback === 'CNY' ? 'CNY' : 'JPY';
   }
 
   if (trimmed.includes('$')) {
     if (
-      hostCurrency === 'CAD' ||
-      hostCurrency === 'AUD' ||
-      hostCurrency === 'MXN' ||
-      hostCurrency === 'SGD' ||
-      hostCurrency === 'BRL'
+      validFallback === 'CAD' ||
+      validFallback === 'AUD' ||
+      validFallback === 'MXN' ||
+      validFallback === 'SGD' ||
+      validFallback === 'BRL'
     ) {
-      return hostCurrency;
+      return validFallback;
     }
     return 'USD';
   }
 
-  return hostCurrency;
+  return null;
+}
+
+/**
+ * Resolves the ISO 4217 currency code from a raw price string and/or page URL.
+ */
+export function resolveAmazonCurrency(
+  priceText?: string | null,
+  pageUrlOrFallback?: string | null,
+): string {
+  const validFallback = isIsoCurrency(pageUrlOrFallback)
+    ? pageUrlOrFallback
+    : resolvePageCurrency(pageUrlOrFallback);
+  const symbolCurrency = extractCurrencyFromSymbol(priceText, validFallback);
+  return symbolCurrency ?? validFallback ?? 'USD';
 }
 
 export const inferCurrency = resolveAmazonCurrency;

@@ -1,36 +1,45 @@
 import type {
-  AmazonListingPageType,
   AmazonProduct,
   Product,
+  ProductSource,
   ScrapedAmazonProduct,
   ScrapedProduct,
 } from './product';
 
 export type {
-  AmazonListingPageType,
   AmazonProduct,
   Product,
+  ProductSource,
   ScrapedAmazonProduct,
   ScrapedProduct,
 };
 
-export type AmazonPageType = 'search' | 'category' | 'detail' | 'unsupported';
+export type AmazonPageType =
+  | 'search'
+  | 'category'
+  | 'bestsellers'
+  | 'product-detail'
+  | 'other';
 export type PageType = AmazonPageType;
+
+export type CollectionMode = 'manual' | 'automatic';
 
 export type AmazonCollectionStatus =
   | 'idle'
   | 'collecting'
   | 'paused'
   | 'completed'
-  | 'error';
+  | 'error'
+  | 'interrupted';
 export type CollectionStatus = AmazonCollectionStatus;
 
 export type AmazonErrorCode =
-  | 'CAPTCHA_DETECTED'
+  | 'BLOCKED'
+  | 'CAPTCHA'
+  | 'NOT_AMAZON'
   | 'RATE_LIMITED'
-  | 'NETWORK_ERROR'
-  | 'DOM_CHANGED'
-  | 'STORAGE_FULL'
+  | 'SCRIPT_DISCONNECTED'
+  | 'SIGN_IN'
   | 'TAB_CLOSED'
   | 'UNKNOWN';
 export type ErrorCode = AmazonErrorCode;
@@ -58,139 +67,177 @@ export interface AmazonDriftReport {
   driftReasons: string[];
 }
 
-export interface AmazonCollectionSession {
+export interface SessionState {
   id: string;
-  startedAt: string;
-  completedAt?: string;
+  tabId: number;
+  url: string;
   status: AmazonCollectionStatus;
-  sourceUrl: string;
-  pageType: AmazonPageType;
-  searchQuery?: string;
-  totalCollected: number;
-  totalDuplicatesSkipped: number;
-  scrollCount: number;
+  mode: CollectionMode;
+  targetCount: number;
+  collectedCount: number;
+  startedAt: string;
+  updatedAt?: string;
   errorMessage?: string;
 }
-export type CollectionSession = AmazonCollectionSession;
+export type AmazonCollectionSession = SessionState;
+export type CollectionSession = SessionState;
+
+export interface EnabledFieldsConfig {
+  title: boolean;
+  asin: boolean;
+  url: boolean;
+  price: boolean;
+  listPrice: boolean;
+  discountPercentage: boolean;
+  dealBadge: boolean;
+  currency: boolean;
+  rating: boolean;
+  reviewCount: boolean;
+  bestSellersRank: boolean;
+  pastMonthSales: boolean;
+  coupon: boolean;
+  badge: boolean;
+  delivery: boolean;
+  imageUrl: boolean;
+  isSponsored: boolean;
+  isPrime: boolean;
+  brand: boolean;
+  availability: boolean;
+  seller: boolean;
+  description: boolean;
+  features: boolean;
+}
+
+export type OpeningMode = 'sidepanel' | 'overlay' | 'window' | 'tab' | 'ask';
+export type ThemeMode = 'light' | 'dark' | 'system';
+export type ExportFormat = 'csv' | 'xlsx' | 'clipboard';
+export type ExcelImageBudgetMode = 'default' | 'always' | 'never';
 
 export interface AmazonSettings {
-  scrolling: {
-    scrollAmount: number;
-    scrollInterval: number;
-    waitAfterScroll: number;
-    autoScroll: boolean;
-  };
-  collection: {
-    includeSponsored: boolean;
-    duplicateDetection: boolean;
-    maxProducts: number;
-    autoRetryCount: number;
-  };
-  export: {
-    defaultFormat: 'csv' | 'xlsx' | 'clipboard';
-    filenameTemplate: string;
-    includeHeaders: boolean;
-    includeBom: boolean;
-    selectedFields: string[];
-    excelIncludeImages: 'default' | 'always' | 'never';
-  };
-  storage: {
-    maxHistorySessions: number;
-    autoCleanDays: number;
-  };
-  ui: {
-    theme: 'light' | 'dark' | 'system';
-    compactView: boolean;
-    showThumbnails: boolean;
-    visibleColumns: string[];
-    openingMode: 'sidepanel' | 'overlay' | 'window' | 'tab';
-  };
+  id?: string;
+  defaultMode: CollectionMode;
+  defaultTargetCount: number;
+  scrollSpeed: number;
+  scrollInterval: number;
+  waitAfterScroll: number;
+  duplicateDetection: boolean;
+  includeSponsored: boolean;
+  defaultExportFormat: ExportFormat;
+  excelIncludeImages: ExcelImageBudgetMode;
+  theme: ThemeMode;
+  openingMode: OpeningMode;
+  notifications: boolean;
+  enabledFields: EnabledFieldsConfig;
 }
 export type Settings = AmazonSettings;
 
 export interface AmazonHistoryEntry {
   id?: number;
-  sessionId: string;
+  sessionKey: string;
+  url: string;
+  mode: CollectionMode;
+  targetCount: number;
+  collectedCount: number;
   startedAt: string;
-  completedAt?: string;
-  sourceUrl: string;
-  pageType: AmazonPageType;
-  searchQuery?: string;
-  productCount: number;
+  completedAt: string;
   status: AmazonCollectionStatus;
 }
 export type HistoryEntry = AmazonHistoryEntry;
 
-export interface AmazonScrollRuntimeOptions {
-  scrollAmount?: number;
-  scrollInterval?: number;
-  waitAfterScroll?: number;
-  duplicateDetection?: boolean;
+export interface ScrollRuntimeSettingsPayload {
+  scrollAmount: number;
+  scrollInterval: number;
+  waitAfterScroll: number;
+  duplicateDetection: boolean;
 }
 
 export type AmazonExtensionMessage =
   | {
-      type: 'COLLECT_PRODUCTS';
-      sessionId: string;
-      existingAsins?: string[];
-      settings?: AmazonScrollRuntimeOptions;
+      type: 'START_COLLECTION';
+      payload: {
+        mode: CollectionMode;
+        targetCount: number;
+        tabId: number;
+        sessionKey?: string;
+      };
     }
-  | { type: 'PAUSE_COLLECTION' }
-  | { type: 'RESUME_COLLECTION' }
-  | { type: 'STOP_COLLECTION' }
   | {
-      type: 'COLLECT_SINGLE_PAGE';
-      sessionId: string;
-      existingAsins?: string[];
-      duplicateDetection?: boolean;
+      type: 'RELOAD_AND_RETRY_COLLECTION';
+      payload: {
+        mode: CollectionMode;
+        targetCount: number;
+        tabId: number;
+        sessionKey?: string;
+      };
     }
+  | {
+      type: 'PAUSE_COLLECTION';
+      payload: { tabId: number };
+    }
+  | {
+      type: 'RESUME_COLLECTION';
+      payload: { tabId: number };
+    }
+  | {
+      type: 'STOP_COLLECTION';
+      payload: { tabId: number };
+    }
+  | {
+      type: 'COLLECT_PRODUCTS';
+      payload: {
+        mode: CollectionMode;
+        targetCount: number;
+        scroll?: ScrollRuntimeSettingsPayload;
+        existingAsins?: string[];
+      };
+    }
+  | { type: 'PAUSE_SCROLLING' }
+  | { type: 'RESUME_SCROLLING' }
+  | { type: 'STOP_COLLECTION_CMD' }
   | {
       type: 'PRODUCTS_COLLECTED';
-      products: ScrapedAmazonProduct[];
-      sessionId: string;
+      payload: {
+        products: ScrapedAmazonProduct[];
+        totalCount: number;
+        isNewBatch: boolean;
+      };
     }
   | {
       type: 'COLLECTION_PROGRESS';
-      totalCollected: number;
-      scrollCount: number;
-      duplicatesSkipped: number;
-      status: AmazonCollectionStatus;
+      payload: {
+        collected: number;
+        target: number;
+        status: AmazonCollectionStatus;
+      };
     }
   | {
-      type: 'COLLECTION_COMPLETE';
-      sessionId: string;
-      totalCollected: number;
+      type: 'CONTENT_ERROR';
+      payload: {
+        code: AmazonErrorCode;
+        message: string;
+        diagnostic?: Record<string, unknown>;
+      };
     }
-  | {
-      type: 'COLLECTION_ERROR';
-      sessionId: string;
-      error: string;
-      code: AmazonErrorCode;
-    }
-  | { type: 'START_COLLECTION'; tabId: number }
-  | { type: 'COLLECT_MANUAL'; tabId: number }
-  | {
-      type: 'EXPORT_DATA';
-      format: 'csv' | 'xlsx' | 'clipboard';
-      sessionId?: string;
-      fields: string[];
-    }
-  | { type: 'CLEAR_SESSION'; sessionId: string }
   | {
       type: 'UPDATE_PROGRESS';
-      session: AmazonCollectionSession;
-      newProducts: AmazonProduct[];
+      payload: {
+        collected: number;
+        target: number;
+        status: AmazonCollectionStatus;
+        error: string | null;
+        sessionKey?: string;
+        rejected?: number;
+        rejectedOf?: number;
+      };
     }
-  | { type: 'GET_PAGE_STATUS' }
   | {
-      type: 'PAGE_STATUS';
-      pageType: AmazonPageType;
-      url: string;
-      estimatedProducts?: number;
-      isCaptcha?: boolean;
-    }
-  | { type: 'GET_ACTIVE_SESSION' }
-  | { type: 'RESUME_INTERRUPTED_SESSION'; sessionId: string }
-  | { type: 'DISCARD_INTERRUPTED_SESSION'; sessionId: string };
+      type: 'TAB_STATUS_CHANGED';
+      payload: {
+        tabId: number;
+        url: string;
+        isAmazon: boolean;
+        pageType: AmazonPageType | null;
+      };
+    };
 
 export type ExtensionMessage = AmazonExtensionMessage;

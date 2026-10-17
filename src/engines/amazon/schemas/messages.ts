@@ -1,182 +1,178 @@
 import { z } from 'zod';
-import { AmazonProductSchema } from './product';
+import { TARGET_MAX, TARGET_MIN } from '../constants/defaults';
 import { AmazonScrapedProductSchema } from './scraped-product';
 
-export const AmazonPageTypeSchema = z.enum([
-  'search',
-  'category',
-  'detail',
-  'unsupported',
-]);
+export const CollectionModeSchema = z.enum(['manual', 'automatic']);
 
-export const AmazonCollectionStatusSchema = z.enum([
+export const CollectionStatusSchema = z.enum([
   'idle',
   'collecting',
   'paused',
   'completed',
   'error',
+  'interrupted',
 ]);
 
-export const AmazonErrorCodeSchema = z.enum([
-  'CAPTCHA_DETECTED',
+export const AmazonCollectionStatusSchema = CollectionStatusSchema;
+
+export const AmazonPageTypeSchema = z.enum([
+  'search',
+  'category',
+  'bestsellers',
+  'product-detail',
+  'other',
+]);
+
+export const PageTypeSchema = AmazonPageTypeSchema;
+
+export const ErrorCodeSchema = z.enum([
+  'BLOCKED',
+  'CAPTCHA',
+  'NOT_AMAZON',
   'RATE_LIMITED',
-  'NETWORK_ERROR',
-  'DOM_CHANGED',
-  'STORAGE_FULL',
+  'SCRIPT_DISCONNECTED',
+  'SIGN_IN',
   'TAB_CLOSED',
   'UNKNOWN',
 ]);
 
-export const AmazonCollectionSessionSchema = z.object({
-  id: z.string().min(1),
-  startedAt: z.string().min(1),
-  completedAt: z.string().optional(),
-  status: AmazonCollectionStatusSchema,
-  sourceUrl: z.string().min(1),
-  pageType: AmazonPageTypeSchema,
-  searchQuery: z.string().optional(),
-  totalCollected: z.number().int().nonnegative(),
-  totalDuplicatesSkipped: z.number().int().nonnegative(),
-  scrollCount: z.number().int().nonnegative(),
-  errorMessage: z.string().optional(),
-});
+export const AmazonErrorCodeSchema = ErrorCodeSchema;
 
-export const AmazonScrollRuntimeOptionsSchema = z
-  .object({
-    scrollAmount: z.number().int().min(100).max(5000).optional(),
-    scrollInterval: z.number().int().min(500).max(10000).optional(),
-    waitAfterScroll: z.number().int().min(500).max(10000).optional(),
-    duplicateDetection: z.boolean().optional(),
-  })
-  .optional();
-
-export const CollectProductsMessageSchema = z.object({
-  type: z.literal('COLLECT_PRODUCTS'),
-  sessionId: z.string().min(1),
-  existingAsins: z.array(z.string()).optional(),
-  settings: AmazonScrollRuntimeOptionsSchema,
-});
-
-export const PauseCollectionMessageSchema = z.object({
-  type: z.literal('PAUSE_COLLECTION'),
-});
-
-export const ResumeCollectionMessageSchema = z.object({
-  type: z.literal('RESUME_COLLECTION'),
-});
-
-export const StopCollectionMessageSchema = z.object({
-  type: z.literal('STOP_COLLECTION'),
-});
-
-export const CollectSinglePageMessageSchema = z.object({
-  type: z.literal('COLLECT_SINGLE_PAGE'),
-  sessionId: z.string().min(1),
-  existingAsins: z.array(z.string()).optional(),
-  duplicateDetection: z.boolean().optional(),
-});
-
-export const ProductsCollectedMessageSchema = z.object({
-  type: z.literal('PRODUCTS_COLLECTED'),
-  products: z.array(AmazonScrapedProductSchema),
-  sessionId: z.string().min(1),
-});
-
-export const CollectionProgressMessageSchema = z.object({
-  type: z.literal('COLLECTION_PROGRESS'),
-  totalCollected: z.number().int().nonnegative(),
-  scrollCount: z.number().int().nonnegative(),
-  duplicatesSkipped: z.number().int().nonnegative(),
-  status: AmazonCollectionStatusSchema,
-});
-
-export const CollectionCompleteMessageSchema = z.object({
-  type: z.literal('COLLECTION_COMPLETE'),
-  sessionId: z.string().min(1),
-  totalCollected: z.number().int().nonnegative(),
-});
-
-export const CollectionErrorMessageSchema = z.object({
-  type: z.literal('COLLECTION_ERROR'),
-  sessionId: z.string().min(1),
-  error: z.string(),
-  code: AmazonErrorCodeSchema,
+export const ScrollSettingsPayloadSchema = z.object({
+  scrollAmount: z.number().int().min(200).max(2000),
+  scrollInterval: z.number().int().min(200).max(5000),
+  waitAfterScroll: z.number().int().min(500).max(5000),
+  duplicateDetection: z.boolean(),
 });
 
 export const StartCollectionMessageSchema = z.object({
   type: z.literal('START_COLLECTION'),
-  tabId: z.number().int(),
+  payload: z.object({
+    mode: CollectionModeSchema,
+    targetCount: z.number().int().min(TARGET_MIN).max(TARGET_MAX),
+    tabId: z.number().int(),
+    sessionKey: z.string().min(1).optional(),
+  }),
 });
 
-export const CollectManualMessageSchema = z.object({
-  type: z.literal('COLLECT_MANUAL'),
-  tabId: z.number().int(),
+export const ReloadAndRetryCollectionMessageSchema = z.object({
+  type: z.literal('RELOAD_AND_RETRY_COLLECTION'),
+  payload: z.object({
+    mode: CollectionModeSchema,
+    targetCount: z.number().int().min(TARGET_MIN).max(TARGET_MAX),
+    tabId: z.number().int(),
+    sessionKey: z.string().min(1).optional(),
+  }),
 });
 
-export const ExportDataMessageSchema = z.object({
-  type: z.literal('EXPORT_DATA'),
-  format: z.enum(['csv', 'xlsx', 'clipboard']),
-  sessionId: z.string().optional(),
-  fields: z.array(z.string()),
+export const PauseCollectionMessageSchema = z.object({
+  type: z.literal('PAUSE_COLLECTION'),
+  payload: z.object({
+    tabId: z.number().int(),
+  }),
 });
 
-export const ClearSessionMessageSchema = z.object({
-  type: z.literal('CLEAR_SESSION'),
-  sessionId: z.string().min(1),
+export const ResumeCollectionMessageSchema = z.object({
+  type: z.literal('RESUME_COLLECTION'),
+  payload: z.object({
+    tabId: z.number().int(),
+  }),
+});
+
+export const StopCollectionMessageSchema = z.object({
+  type: z.literal('STOP_COLLECTION'),
+  payload: z.object({
+    tabId: z.number().int(),
+  }),
+});
+
+export const CollectProductsMessageSchema = z.object({
+  type: z.literal('COLLECT_PRODUCTS'),
+  payload: z.object({
+    mode: CollectionModeSchema,
+    targetCount: z.number().int().min(TARGET_MIN).max(TARGET_MAX),
+    scroll: ScrollSettingsPayloadSchema.optional(),
+    existingAsins: z.array(z.string()).optional(),
+  }),
+});
+
+export const PauseScrollingMessageSchema = z.object({
+  type: z.literal('PAUSE_SCROLLING'),
+});
+
+export const ResumeScrollingMessageSchema = z.object({
+  type: z.literal('RESUME_SCROLLING'),
+});
+
+export const StopCollectionCmdMessageSchema = z.object({
+  type: z.literal('STOP_COLLECTION_CMD'),
+});
+
+export const ProductsCollectedMessageSchema = z.object({
+  type: z.literal('PRODUCTS_COLLECTED'),
+  payload: z.object({
+    products: z.array(AmazonScrapedProductSchema),
+    totalCount: z.number().int().nonnegative(),
+    isNewBatch: z.boolean(),
+  }),
+});
+
+export const CollectionProgressMessageSchema = z.object({
+  type: z.literal('COLLECTION_PROGRESS'),
+  payload: z.object({
+    collected: z.number().int().nonnegative(),
+    target: z.number().int().nonnegative(),
+    status: CollectionStatusSchema,
+  }),
+});
+
+export const ContentErrorMessageSchema = z.object({
+  type: z.literal('CONTENT_ERROR'),
+  payload: z.object({
+    code: ErrorCodeSchema,
+    message: z.string(),
+    diagnostic: z.record(z.string(), z.unknown()).optional(),
+  }),
 });
 
 export const UpdateProgressMessageSchema = z.object({
   type: z.literal('UPDATE_PROGRESS'),
-  session: AmazonCollectionSessionSchema,
-  newProducts: z.array(AmazonProductSchema),
+  payload: z.object({
+    collected: z.number().int().nonnegative(),
+    target: z.number().int().nonnegative(),
+    status: CollectionStatusSchema,
+    error: z.string().nullable(),
+    sessionKey: z.string().optional(),
+    rejected: z.number().int().nonnegative().optional(),
+    rejectedOf: z.number().int().nonnegative().optional(),
+  }),
 });
 
-export const GetPageStatusMessageSchema = z.object({
-  type: z.literal('GET_PAGE_STATUS'),
-});
-
-export const PageStatusMessageSchema = z.object({
-  type: z.literal('PAGE_STATUS'),
-  pageType: AmazonPageTypeSchema,
-  url: z.string(),
-  estimatedProducts: z.number().int().nonnegative().optional(),
-  isCaptcha: z.boolean().optional(),
-});
-
-export const GetActiveSessionMessageSchema = z.object({
-  type: z.literal('GET_ACTIVE_SESSION'),
-});
-
-export const ResumeInterruptedSessionMessageSchema = z.object({
-  type: z.literal('RESUME_INTERRUPTED_SESSION'),
-  sessionId: z.string().min(1),
-});
-
-export const DiscardInterruptedSessionMessageSchema = z.object({
-  type: z.literal('DISCARD_INTERRUPTED_SESSION'),
-  sessionId: z.string().min(1),
+export const TabStatusChangedMessageSchema = z.object({
+  type: z.literal('TAB_STATUS_CHANGED'),
+  payload: z.object({
+    tabId: z.number().int(),
+    url: z.string(),
+    isAmazon: z.boolean(),
+    pageType: AmazonPageTypeSchema.nullable(),
+  }),
 });
 
 export const AmazonExtensionMessageSchema = z.discriminatedUnion('type', [
-  CollectProductsMessageSchema,
+  StartCollectionMessageSchema,
+  ReloadAndRetryCollectionMessageSchema,
   PauseCollectionMessageSchema,
   ResumeCollectionMessageSchema,
   StopCollectionMessageSchema,
-  CollectSinglePageMessageSchema,
+  CollectProductsMessageSchema,
+  PauseScrollingMessageSchema,
+  ResumeScrollingMessageSchema,
+  StopCollectionCmdMessageSchema,
   ProductsCollectedMessageSchema,
   CollectionProgressMessageSchema,
-  CollectionCompleteMessageSchema,
-  CollectionErrorMessageSchema,
-  StartCollectionMessageSchema,
-  CollectManualMessageSchema,
-  ExportDataMessageSchema,
-  ClearSessionMessageSchema,
+  ContentErrorMessageSchema,
   UpdateProgressMessageSchema,
-  GetPageStatusMessageSchema,
-  PageStatusMessageSchema,
-  GetActiveSessionMessageSchema,
-  ResumeInterruptedSessionMessageSchema,
-  DiscardInterruptedSessionMessageSchema,
+  TabStatusChangedMessageSchema,
 ]);
 
 export const ExtensionMessageSchema = AmazonExtensionMessageSchema;

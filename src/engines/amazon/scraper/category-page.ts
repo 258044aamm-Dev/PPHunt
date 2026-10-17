@@ -1,238 +1,279 @@
 import type { ScrapedAmazonProduct } from '../types';
-import { isAmazonUrl } from '../utils/amazon-url';
-import type { AmazonDriftTelemetry } from './drift-telemetry';
+import { resolveProductUrl } from '../utils/amazon-url';
 import {
-  type CardFieldTierMap,
+  defaultAmazonDriftTelemetry,
+  type AmazonDriftTelemetry,
+  type AmazonTrackedField,
+} from './drift-telemetry';
+import {
   discoverStructuralProductCards,
+  dropNestedCards,
   extractCardAsinWithTier,
-  extractCardBoughtInPastMonth,
-  extractCardBrand,
-  extractCardBsr,
-  extractCardCouponText,
-  extractCardDealBadge,
-  extractCardDeliveryInfo,
-  extractCardDiscountPercentage,
+  extractCardBadge,
+  extractCardDeliveryAndAvailability,
+  extractCardImageWithTier,
   extractCardIsPrime,
   extractCardIsSponsored,
-  extractCardListPrice,
-  extractCardPriceWithTier,
-  extractCardProductUrl,
-  extractCardRatingWithTier,
-  extractCardReviewCountWithTier,
-  extractCardStatusBadge,
-  extractCardTitleWithTier,
-  extractImageWithTier,
+  extractCardPastMonthSales,
+  extractCardPricingAndDiscounts,
+  extractCardRatingAndReviewsWithTier,
+  extractCardSeller,
+  extractCardTitleAndBrandWithTier,
+  normalizeWhitespace,
+  validateAndNormalizeScrapedProduct,
 } from './field-parsers';
-import { AmazonParseCache } from './parse-cache';
-import { AMAZON_SELECTORS, safeQuerySelectorAll } from './selectors';
+import {
+  AmazonParseCache,
+  defaultAmazonParseCache,
+} from './parse-cache';
+import {
+  AMAZON_SELECTORS,
+  safeQuerySelector,
+  safeQuerySelectorAll,
+} from './selectors';
 
-function resolveCategorySourceUrl(
-  doc?: Document | null,
-  explicitUrl?: string,
-): string {
-  if (explicitUrl && isAmazonUrl(explicitUrl)) {
-    return explicitUrl;
-  }
-  const docUrl = doc?.location?.href;
-  if (docUrl && isAmazonUrl(docUrl)) {
-    return docUrl;
-  }
-  if (
-    typeof window !== 'undefined' &&
-    window.location?.href &&
-    isAmazonUrl(window.location.href)
-  ) {
-    return window.location.href;
-  }
-  return explicitUrl || 'https://www.amazon.com/gp/bestsellers';
+export interface CategoryPageParseOptions {
+  cache?: AmazonParseCache;
+  telemetry?: AmazonDriftTelemetry;
+  extractPricing?: typeof extractCardPricingAndDiscounts;
+  categoryName?: string | null;
 }
 
-/**
- * Filters out ancestor containers that wrap other candidate cards in O(N * depth) time
- * using a Set lookup on parent chains rather than O(N^2) `element.contains()`.
- */
-export function filterLeafCandidateCards(candidates: readonly Element[]): Element[] {
-  if (candidates.length <= 1) return [...candidates];
+export const filterLeafCandidateCards = (cards: readonly Element[]): Element[] =>
+  dropNestedCards(cards, { dropDuplicates: false });
 
-  const candidateSet = new Set<Element>(candidates);
-  const ancestorsOfCandidates = new Set<Element>();
+function extractPageCategoryHeading(doc: Document): string | null {
+  const headings = safeQuerySelectorAll(
+    doc,
+    'h1, .zg-banner-text, #zg_listTitle',
+  );
+  for (const h of headings) {
+    const text = normalizeWhitespace(h.textContent);
+    const match =
+      /(?:Best Sellers|New Releases|Movers & Shakers|Most Wished For)\s+in\s+(.+)/i.exec(
+        text,
+      );
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
 
-  for (const el of candidates) {
-    let parent = el.parentElement;
-    while (parent) {
-      if (candidateSet.has(parent)) {
-        ancestorsOfCandidates.add(parent);
-      }
-      parent = parent.parentElement;
+function extractCategoryCardBsr(
+  card: Element,
+  categoryName?: string | null,
+): string | undefined {
+  // Check explicit `#N in <Category>` inside card first
+  const allSpans = safeQuerySelectorAll(card, 'span, div');
+  for (const el of allSpans) {
+    if (el.children.length > 2) continue;
+    const text = normalizeWhitespace(el.textContent);
+    const fullMatch = /(#\d[\d,]*\s+in\s+[A-Za-z0-9 &,'/-]+)/.exec(text);
+    if (fullMatch?.[1]) {
+      return fullMatch[1].trim();
     }
   }
 
-  return candidates.filter((el) => !ancestorsOfCandidates.has(el));
+  // Check Best Sellers badge (`span.zg-bdg-text`, `[class*="zg-bdg"]`, or standalone `#1` span)
+  const rankBadge = safeQuerySelector(
+    card,
+    '.zg-bdg-text, [class*="zg-bdg-text"]',
+  );
+  let rankToken: string | null = null;
+  if (rankBadge?.textContent) {
+    const match = /(#\d{1,5})\b/.exec(normalizeWhitespace(rankBadge.textContent));
+    if (match?.[1]) {
+      rankToken = match[1];
+    }
+  }
+
+  if (!rankToken) {
+    for (const el of allSpans) {
+      if (el.children.length > 0) continue;
+      const text = normalizeWhitespace(el.textContent);
+      if (/^#\d{1,5}$/.test(text)) {
+        rankToken = text;
+        break;
+      }
+    }
+  }
+
+  if (rankToken) {
+    return categoryName ? `${rankToken} in ${categoryName}` : rankToken;
+  }
+
+  return undefined;
 }
 
 /**
- * Parses a single Amazon Category / Best Sellers / Deals / New Releases card element.
+ * Parses a single Category / Best Sellers / Deals card using the 4-tier self-healing cascade.
  */
 export function parseAmazonCategoryCard(
   card: Element,
-  sourceUrl = 'https://www.amazon.com/gp/bestsellers',
-  telemetry?: AmazonDriftTelemetry,
+  pageUrl?: string,
+  options: CategoryPageParseOptions = {},
 ): ScrapedAmazonProduct | null {
-  const fieldTiers: CardFieldTierMap = {};
+  try {
+    const telemetry = options.telemetry ?? defaultAmazonDriftTelemetry;
+    const pricingFn = options.extractPricing ?? extractCardPricingAndDiscounts;
 
-  const asinResult = extractCardAsinWithTier(card);
-  fieldTiers.asin = asinResult.tier;
-  const asin = asinResult.value;
-  if (!asin) {
-    telemetry?.recordCard(fieldTiers, false);
+    const asinResult = extractCardAsinWithTier(card);
+    if (!asinResult.value) {
+      return null;
+    }
+
+    const asin = asinResult.value;
+    const { title: titleResult, brand } = extractCardTitleAndBrandWithTier(
+      card,
+      asin,
+    );
+    if (!titleResult.value) {
+      return null;
+    }
+
+    const pricing = pricingFn(card, pageUrl);
+    const { rating: ratingResult, reviewCount: reviewResult } =
+      extractCardRatingAndReviewsWithTier(card);
+    const imageResult = extractCardImageWithTier(card);
+    const bestSellersRank = extractCategoryCardBsr(card, options.categoryName);
+    const pastMonthSales = extractCardPastMonthSales(card);
+    const badge = extractCardBadge(card);
+    const { delivery, availability } = extractCardDeliveryAndAvailability(card);
+    const seller = extractCardSeller(card);
+    const isPrime = extractCardIsPrime(card, delivery);
+    const isSponsored = extractCardIsSponsored(card);
+
+    const fieldTiers: Partial<
+      Record<AmazonTrackedField, typeof asinResult.tier>
+    > = {
+      asin: asinResult.tier,
+      title: titleResult.tier,
+      price: pricing.priceTier,
+      rating: ratingResult.tier,
+      reviewCount: reviewResult.tier,
+      imageUrl: imageResult.tier,
+    };
+    telemetry.recordCardExtraction(fieldTiers);
+
+    const url = resolveProductUrl(null, asin, pageUrl);
+
+    const candidate: Partial<ScrapedAmazonProduct> = {
+      asin,
+      url,
+      title: titleResult.value,
+      price: pricing.price,
+      currency: pricing.currency,
+      rating: ratingResult.value,
+      reviewCount: reviewResult.value,
+      imageUrl: imageResult.value,
+      isSponsored,
+      isPrime,
+      brand,
+      availability,
+      seller,
+      description: null,
+      features: [],
+      source: 'category',
+    };
+
+    if (pricing.listPrice !== undefined) {
+      candidate.listPrice = pricing.listPrice;
+    }
+    if (pricing.discountPercentage !== undefined) {
+      candidate.discountPercentage = pricing.discountPercentage;
+    }
+    if (pricing.dealBadge !== undefined) {
+      candidate.dealBadge = pricing.dealBadge;
+    }
+    if (bestSellersRank !== undefined) {
+      candidate.bestSellersRank = bestSellersRank;
+    }
+    if (pastMonthSales !== undefined) {
+      candidate.pastMonthSales = pastMonthSales;
+    }
+    if (pricing.coupon !== undefined) {
+      candidate.coupon = pricing.coupon;
+    }
+    if (badge !== undefined) {
+      candidate.badge = badge;
+    }
+    if (delivery !== undefined) {
+      candidate.delivery = delivery;
+    }
+
+    return validateAndNormalizeScrapedProduct(candidate, pageUrl);
+  } catch (err) {
+    console.warn('[PPHunt] Failed to parse category card:', err);
     return null;
   }
-
-  const titleResult = extractCardTitleWithTier(card, asin);
-  fieldTiers.title = titleResult.tier;
-  const title = titleResult.value;
-  if (!title) {
-    telemetry?.recordCard(fieldTiers, false);
-    return null;
-  }
-
-  const priceResult = extractCardPriceWithTier(card, sourceUrl);
-  fieldTiers.price = priceResult.tier;
-  const { price, currency } = priceResult.value;
-
-  const listPrice = extractCardListPrice(card, price, sourceUrl);
-  const discountPercentage = extractCardDiscountPercentage(
-    card,
-    price,
-    listPrice,
-  );
-
-  const ratingResult = extractCardRatingWithTier(card);
-  fieldTiers.rating = ratingResult.tier;
-
-  const reviewCountResult = extractCardReviewCountWithTier(card);
-  fieldTiers.reviewCount = reviewCountResult.tier;
-
-  const imageResult = extractImageWithTier(card);
-  fieldTiers.imageUrl = imageResult.tier;
-
-  const brand = extractCardBrand(card);
-  const dealBadge = extractCardDealBadge(card);
-  const statusBadge = extractCardStatusBadge(card);
-  const couponText = extractCardCouponText(card);
-  const boughtInPastMonth = extractCardBoughtInPastMonth(card);
-  const bsr = extractCardBsr(card);
-  const isPrime = extractCardIsPrime(card);
-  const isSponsored = extractCardIsSponsored(card);
-  const deliveryInfo = extractCardDeliveryInfo(card);
-  const productUrl = extractCardProductUrl(card, asin, sourceUrl);
-
-  telemetry?.recordCard(fieldTiers, true);
-
-  const scraped: ScrapedAmazonProduct = {
-    asin,
-    title,
-    price,
-    currency,
-    rating: ratingResult.value,
-    reviewCount: reviewCountResult.value,
-    isPrime,
-    isSponsored,
-    imageUrl: imageResult.value,
-    productUrl,
-    sourceUrl,
-    pageType: 'category',
-  };
-
-  if (brand !== undefined) scraped.brand = brand;
-  if (listPrice !== null) scraped.listPrice = listPrice;
-  if (discountPercentage !== null) {
-    scraped.discountPercentage = discountPercentage;
-  }
-  if (dealBadge !== undefined) scraped.dealBadge = dealBadge;
-  if (statusBadge !== undefined) scraped.statusBadge = statusBadge;
-  if (couponText !== undefined) scraped.couponText = couponText;
-  if (boughtInPastMonth !== undefined) {
-    scraped.boughtInPastMonth = boughtInPastMonth;
-  }
-  if (bsr !== undefined) scraped.bsr = bsr;
-  if (deliveryInfo !== undefined) scraped.deliveryInfo = deliveryInfo;
-
-  return scraped;
 }
 
 export const parseCategoryCard = parseAmazonCategoryCard;
 
 /**
- * Extracts all valid product cards from an Amazon Category, Best Sellers, Deals,
- * or New Releases page. Supports `(doc, sourceUrl, cache, telemetry)` and `(doc, cache)`.
+ * Parses all Amazon Category / Best Sellers / Deals cards in a `Document`.
+ * Uses O(N * depth) `dropNestedCards` so outer wrapper nodes never shadow inner cards.
  */
 export function parseAmazonCategoryPage(
-  doc?: Document | null,
-  sourceUrlOrCache?: string | AmazonParseCache,
-  maybeCache?: AmazonParseCache,
-  telemetry?: AmazonDriftTelemetry,
+  doc: Document = document,
+  pageUrl?: string,
+  cacheOrOptions?: AmazonParseCache | CategoryPageParseOptions,
 ): ScrapedAmazonProduct[] {
-  const activeDoc =
-    doc ?? (typeof document !== 'undefined' ? document : null);
-  if (!activeDoc) return [];
+  const activeUrl =
+    pageUrl ??
+    (typeof window !== 'undefined' && window.location ? window.location.href : undefined);
 
-  const cache =
-    sourceUrlOrCache instanceof AmazonParseCache
-      ? sourceUrlOrCache
-      : maybeCache;
-  const explicitUrl =
-    typeof sourceUrlOrCache === 'string' ? sourceUrlOrCache : undefined;
-  const sourceUrl = resolveCategorySourceUrl(activeDoc, explicitUrl);
+  const options: CategoryPageParseOptions =
+    cacheOrOptions instanceof AmazonParseCache
+      ? { cache: cacheOrOptions }
+      : { ...(cacheOrOptions ?? {}) };
 
-  // Collect candidate cards across Best Sellers, Deals, and Category grids
-  const combinedSelector = [
+  const cache = options.cache ?? defaultAmazonParseCache;
+  if (options.categoryName === undefined) {
+    options.categoryName = extractPageCategoryHeading(doc);
+  }
+
+  const candidateSelectors = [
     ...AMAZON_SELECTORS.category.bestSellerCards,
     ...AMAZON_SELECTORS.category.dealCards,
     ...AMAZON_SELECTORS.category.browseCards,
-  ].join(', ');
+  ];
 
-  let candidateCards = filterLeafCandidateCards(
-    safeQuerySelectorAll(activeDoc, combinedSelector),
-  );
+  const seenElements = new Set<Element>();
+  const rawCandidates: Element[] = [];
 
-  if (candidateCards.length === 0) {
-    candidateCards = discoverStructuralProductCards(activeDoc);
-  }
-
-  const results: ScrapedAmazonProduct[] = [];
-  const seenInPass = new Set<string>();
-
-  for (const card of candidateCards) {
-    try {
-      const product = cache
-        ? cache.getOrParse(card, (el) =>
-            parseAmazonCategoryCard(el, sourceUrl, telemetry),
-          )
-        : parseAmazonCategoryCard(card, sourceUrl, telemetry);
-
-      if (product && !seenInPass.has(product.asin)) {
-        seenInPass.add(product.asin);
-        results.push(product);
+  for (const selector of candidateSelectors) {
+    const matches = safeQuerySelectorAll(doc, selector);
+    for (const el of matches) {
+      if (el.closest('.a-carousel-card')) continue;
+      if (!seenElements.has(el)) {
+        seenElements.add(el);
+        rawCandidates.push(el);
       }
-    } catch {
-      // Isolate per-card DOM exceptions
     }
   }
 
-  // If semantic containers matched wrapper elements that lacked titles, try Tier 3 structural fallback
-  if (results.length === 0) {
-    const structuralCards = discoverStructuralProductCards(activeDoc);
-    for (const card of structuralCards) {
-      try {
-        const product = parseAmazonCategoryCard(card, sourceUrl, telemetry);
-        if (product && !seenInPass.has(product.asin)) {
-          seenInPass.add(product.asin);
-          results.push(product);
-        }
-      } catch {
-        // Ignore
+  let leafCards = dropNestedCards(rawCandidates, { dropDuplicates: true });
+
+  if (leafCards.length === 0) {
+    leafCards = discoverStructuralProductCards(doc);
+  }
+
+  const results: ScrapedAmazonProduct[] = [];
+  const seenAsinsInPass = new Set<string>();
+
+  for (const card of leafCards) {
+    try {
+      const parsed = cache.getOrParse(card, (el) =>
+        parseAmazonCategoryCard(el, activeUrl, options),
+      );
+      if (parsed && !seenAsinsInPass.has(parsed.asin)) {
+        seenAsinsInPass.add(parsed.asin);
+        results.push(parsed);
       }
+    } catch (err) {
+      console.warn('[PPHunt] Category card iteration error:', err);
     }
   }
 

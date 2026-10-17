@@ -1,36 +1,29 @@
+import type { z } from 'zod';
 import type { AmazonExtensionMessage } from '../types';
 import { AmazonExtensionMessageSchema } from './messages';
 
 export const AMAZON_MESSAGE_TYPES = new Set<AmazonExtensionMessage['type']>([
-  'COLLECT_PRODUCTS',
+  'START_COLLECTION',
+  'RELOAD_AND_RETRY_COLLECTION',
   'PAUSE_COLLECTION',
   'RESUME_COLLECTION',
   'STOP_COLLECTION',
-  'COLLECT_SINGLE_PAGE',
+  'COLLECT_PRODUCTS',
+  'PAUSE_SCROLLING',
+  'RESUME_SCROLLING',
+  'STOP_COLLECTION_CMD',
   'PRODUCTS_COLLECTED',
   'COLLECTION_PROGRESS',
-  'COLLECTION_COMPLETE',
-  'COLLECTION_ERROR',
-  'START_COLLECTION',
-  'COLLECT_MANUAL',
-  'EXPORT_DATA',
-  'CLEAR_SESSION',
+  'CONTENT_ERROR',
   'UPDATE_PROGRESS',
-  'GET_PAGE_STATUS',
-  'PAGE_STATUS',
-  'GET_ACTIVE_SESSION',
-  'RESUME_INTERRUPTED_SESSION',
-  'DISCARD_INTERRUPTED_SESSION',
+  'TAB_STATUS_CHANGED',
 ]);
 
-export type AmazonMessageValidationResult =
-  | { success: true; data: AmazonExtensionMessage }
-  | { success: false; error: string };
+export type MessageValidationOutcome =
+  | { status: 'valid'; message: AmazonExtensionMessage }
+  | { status: 'invalid'; issues: z.core.$ZodIssue[] }
+  | { status: 'unknown' };
 
-/**
- * Checks whether an incoming runtime message has an Amazon message `type`
- * (and is not a `TEMU_*` message).
- */
 export function isAmazonMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false;
   const candidateType = (raw as { type?: unknown }).type;
@@ -39,31 +32,36 @@ export function isAmazonMessage(raw: unknown): boolean {
 }
 
 /**
- * Validates an incoming runtime message against `AmazonExtensionMessageSchema`.
+ * Validates an incoming extension message:
+ * - `'unknown'` when `raw` is not an object or its `type` is not a recognized Amazon protocol message.
+ * - `'invalid'` when `type` is recognized but the payload fails schema validation.
+ * - `'valid'` when validation succeeds, returning the original `raw` reference so extra payload properties survive.
  */
-export function validateAmazonMessage(raw: unknown): AmazonMessageValidationResult {
+export function validateExtensionMessage(raw: unknown): MessageValidationOutcome {
   if (!raw || typeof raw !== 'object') {
-    return {
-      success: false,
-      error: 'Invalid message: expected a non-null object',
-    };
+    return { status: 'unknown' };
+  }
+  const candidateType = (raw as { type?: unknown }).type;
+  if (
+    typeof candidateType !== 'string' ||
+    !AMAZON_MESSAGE_TYPES.has(candidateType as AmazonExtensionMessage['type'])
+  ) {
+    return { status: 'unknown' };
   }
 
   const parsed = AmazonExtensionMessageSchema.safeParse(raw);
   if (!parsed.success) {
-    const issueSummary = parsed.error.issues
-      .map((issue) => `${issue.path.join('.') || 'root'}: ${issue.message}`)
-      .join('; ');
     return {
-      success: false,
-      error: `Invalid message payload: ${issueSummary}`,
+      status: 'invalid',
+      issues: parsed.error.issues,
     };
   }
 
   return {
-    success: true,
-    data: parsed.data as AmazonExtensionMessage,
+    status: 'valid',
+    message: raw as AmazonExtensionMessage,
   };
 }
 
-export const validateMessage = validateAmazonMessage;
+export const validateAmazonMessage = validateExtensionMessage;
+export const validateMessage = validateExtensionMessage;

@@ -4,7 +4,7 @@ import { AmazonProductSchema } from './product';
 export const AmazonScrapedProductSchema = AmazonProductSchema.omit({
   id: true,
   collectedAt: true,
-  sessionId: true,
+  sessionKey: true,
 });
 
 export const ScrapedProductSchema = AmazonScrapedProductSchema;

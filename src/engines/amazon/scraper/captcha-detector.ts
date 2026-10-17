@@ -1,143 +1,174 @@
-import { safeQuerySelector } from './selectors';
+import { safeQuerySelector, safeQuerySelectorAll } from './selectors';
 
-export type AmazonRestrictionReason =
-  | 'captcha'
-  | 'dog_page'
-  | 'rate_limited'
-  | 'none';
+export type AmazonPageIssueCode = 'CAPTCHA' | 'SIGN_IN' | 'BLOCKED';
 
-export interface AmazonRestrictionStatus {
-  isBlocked: boolean;
-  reason: AmazonRestrictionReason;
-  message?: string;
+export interface AmazonPageIssue {
+  code: AmazonPageIssueCode;
+  message: string;
 }
 
-const CAPTCHA_ELEMENT_SELECTORS: readonly string[] = [
+export interface AmazonRestrictionResult {
+  restricted: boolean;
+  reason: 'captcha' | 'rate_limit' | 'dog_page' | 'sign_in' | 'none';
+  message: string | null;
+}
+
+const CAPTCHA_SELECTORS: readonly string[] = [
   'form[action*="/errors/validateCaptcha"]',
   'input#captchacharacters',
-  '#captchacharacters',
-  '#opfcaptcha',
-  'img[src*="captcha" i]',
   'input[name="amzn-r"]',
+  '#captchacharacters',
+  'img[src*="captcha" i]',
+];
+
+const SIGN_IN_SELECTORS: readonly string[] = [
+  'form[name="signIn"]',
+  'input#ap_email',
+  'input#ap_password',
+  '#authportal-main-section',
 ];
 
 const DOG_PAGE_SELECTORS: readonly string[] = [
   'img[alt*="Dogs of Amazon" i]',
-  'a[href*="/dogsofamazon" i]',
-  'img[src*="images-na.ssl-images-amazon.com/images/G/01/error/"]',
+  'img[src*="dogs_of_amazon" i]',
+  '#g > div > a > img[alt*="Sorry" i]',
 ];
 
-const CAPTCHA_TEXT_PATTERNS: readonly RegExp[] = [
-  /enter the characters you see below/i,
-  /type the characters you see in this image/i,
-  /sorry,\s*we just need to make sure you're not a robot/i,
-  /geben sie die zeichen unten ein/i,
-  /saisissez les caractères que vous voyez ci-dessous/i,
+const LOADING_INDICATOR_SELECTORS: readonly string[] = [
+  '.s-result-list-placeholder',
+  '.a-spinner-wrapper',
+  '.a-spinner',
+  '[data-component-type="s-STATUS-spinner"]',
+  '.zg-loading-indicator',
 ];
 
-const RATE_LIMIT_TEXT_PATTERNS: readonly RegExp[] = [
-  /automated access to amazon data/i,
-  /to discuss automated access to amazon data please contact/i,
-  /api-services-support@amazon\.com/i,
-];
-
-const DOG_PAGE_TEXT_PATTERNS: readonly RegExp[] = [
-  /sorry!\s*something went wrong on our end/i,
-  /sorry!\s*we couldn't find that page/i,
-];
-
-/**
- * Inspects the document for Amazon CAPTCHA challenges, automated-access rate limits,
- * or "Dogs of Amazon" error pages. Never attempts to bypass or solve any challenge.
- */
-export function detectAmazonRestriction(
-  doc?: Document | null,
-): AmazonRestrictionStatus {
-  const activeDoc =
-    doc ?? (typeof document !== 'undefined' ? document : null);
-  if (!activeDoc) {
-    return { isBlocked: false, reason: 'none' };
-  }
-
-  for (const selector of CAPTCHA_ELEMENT_SELECTORS) {
-    if (safeQuerySelector(activeDoc, selector)) {
-      return {
-        isBlocked: true,
-        reason: 'captcha',
-        message:
-          'Amazon CAPTCHA challenge detected. Please solve the challenge in the browser tab and resume.',
-      };
-    }
-  }
-
-  for (const selector of DOG_PAGE_SELECTORS) {
-    if (safeQuerySelector(activeDoc, selector)) {
-      return {
-        isBlocked: true,
-        reason: 'dog_page',
-        message: 'Amazon returned an error ("Dogs of Amazon") page.',
-      };
-    }
-  }
-
-  // Only inspect page-level text when the page has no main product containers
-  const hasProductContent = Boolean(
-    safeQuerySelector(
-      activeDoc,
-      '[data-component-type="s-search-result"][data-asin], #productTitle, #gridItemRoot, [data-p13n-asin-metadata]',
-    ),
-  );
-
-  if (!hasProductContent) {
-    const bodyText =
-      activeDoc.body?.textContent ??
-      activeDoc.documentElement?.textContent ??
-      '';
-    const titleText = activeDoc.title ?? '';
-    const combinedText = `${titleText} ${bodyText}`.slice(0, 8000);
-
-    for (const pattern of CAPTCHA_TEXT_PATTERNS) {
-      if (pattern.test(combinedText)) {
-        return {
-          isBlocked: true,
-          reason: 'captcha',
-          message:
-            'Amazon CAPTCHA verification page detected. Please complete verification in the tab.',
-        };
-      }
-    }
-
-    for (const pattern of RATE_LIMIT_TEXT_PATTERNS) {
-      if (pattern.test(combinedText)) {
-        return {
-          isBlocked: true,
-          reason: 'rate_limited',
-          message:
-            'Amazon temporarily throttled automated requests on this page.',
-        };
-      }
-    }
-
-    for (const pattern of DOG_PAGE_TEXT_PATTERNS) {
-      if (pattern.test(combinedText)) {
-        return {
-          isBlocked: true,
-          reason: 'dog_page',
-          message: 'Amazon returned a temporary error page.',
-        };
-      }
-    }
-  }
-
-  return { isBlocked: false, reason: 'none' };
+function collectBlockAwareText(doc: Document): string {
+  const root = doc.body ?? doc.documentElement;
+  if (!root) return '';
+  return (root.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Returns `true` when the document is an Amazon CAPTCHA or automated-access challenge page.
+ * Non-bypassing page issue detector (`CAPTCHA`, `SIGN_IN`, `BLOCKED`).
+ * Never attempts to solve or bypass any challenge; surfaces clear user guidance.
  */
-export function isAmazonCaptchaPage(doc?: Document | null): boolean {
-  const status = detectAmazonRestriction(doc);
-  return status.reason === 'captcha' || status.reason === 'rate_limited';
+export function detectPageIssues(
+  doc: Document = document,
+): AmazonPageIssue | null {
+  for (const selector of CAPTCHA_SELECTORS) {
+    if (safeQuerySelector(doc, selector)) {
+      return {
+        code: 'CAPTCHA',
+        message:
+          'Amazon CAPTCHA challenge detected. Please solve the challenge in your browser tab and click Resume.',
+      };
+    }
+  }
+
+  for (const selector of SIGN_IN_SELECTORS) {
+    if (safeQuerySelector(doc, selector)) {
+      return {
+        code: 'SIGN_IN',
+        message:
+          'Amazon Sign-In prompt detected. Please sign in or return to the public listing page and click Resume.',
+      };
+    }
+  }
+
+  const titleText = (doc.title ?? '').trim();
+  const bodyText = collectBlockAwareText(doc);
+  const combined = `${titleText} ${bodyText}`;
+
+  if (
+    /Enter the characters you see below/i.test(combined) ||
+    /Type the characters you see in this image/i.test(combined) ||
+    /Sorry,\s*we just need to make sure you(?:'re| are) not a robot/i.test(
+      combined,
+    ) ||
+    /Bot Check/i.test(titleText)
+  ) {
+    return {
+      code: 'CAPTCHA',
+      message:
+        'Amazon robot check detected. Please complete the check in your browser tab and click Resume.',
+    };
+  }
+
+  for (const selector of DOG_PAGE_SELECTORS) {
+    if (safeQuerySelector(doc, selector)) {
+      return {
+        code: 'BLOCKED',
+        message:
+          'Amazon returned an error or rate-limit page (Dogs of Amazon). Please refresh the tab and try again.',
+      };
+    }
+  }
+
+  if (
+    /api-services-support@amazon\./i.test(combined) ||
+    /automated access to Amazon data/i.test(combined) ||
+    /To discuss automated access to Amazon data/i.test(combined)
+  ) {
+    return {
+      code: 'BLOCKED',
+      message:
+        'Amazon temporarily blocked automated requests on this page. Please wait a moment, refresh the page, and resume.',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Checks whether an active loading spinner or result placeholder is currently visible.
+ * Ignores hidden placeholders (`.aok-hidden`, `[hidden]`, `aria-hidden="true"`).
+ */
+export function hasActiveLoadingIndicator(doc: Document = document): boolean {
+  for (const selector of LOADING_INDICATOR_SELECTORS) {
+    const elements = safeQuerySelectorAll(doc, selector);
+    for (const el of elements) {
+      if (
+        el.classList.contains('aok-hidden') ||
+        el.hasAttribute('hidden') ||
+        el.getAttribute('aria-hidden') === 'true'
+      ) {
+        continue;
+      }
+      const htmlEl = el as HTMLElement;
+      if (
+        htmlEl.style &&
+        (htmlEl.style.display === 'none' || htmlEl.style.visibility === 'hidden')
+      ) {
+        continue;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+export function detectAmazonRestriction(
+  doc: Document = document,
+): AmazonRestrictionResult {
+  const issue = detectPageIssues(doc);
+  if (!issue) {
+    return { restricted: false, reason: 'none', message: null };
+  }
+  const reason =
+    issue.code === 'CAPTCHA'
+      ? 'captcha'
+      : issue.code === 'SIGN_IN'
+        ? 'sign_in'
+        : 'rate_limit';
+  return {
+    restricted: true,
+    reason,
+    message: issue.message,
+  };
+}
+
+export function isAmazonCaptchaPage(doc: Document = document): boolean {
+  return detectPageIssues(doc) !== null;
 }
 
 export const isCaptchaPage = isAmazonCaptchaPage;

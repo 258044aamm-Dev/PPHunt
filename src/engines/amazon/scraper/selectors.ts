@@ -11,6 +11,8 @@ export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.0.0';
 
 export const AMAZON_SELECTORS = {
   search: {
+    productCard:
+      '[data-component-type="s-search-result"][data-asin]:not([data-asin=""])',
     mainContainers: [
       '[data-component-type="s-search-results"]',
       '.s-main-slot.s-result-list',
@@ -32,6 +34,8 @@ export const AMAZON_SELECTORS = {
   },
 
   category: {
+    productCard:
+      '#gridItemRoot, .zg-grid-general-faceout, [id^="p13n-asin-index-"], [data-p13n-asin-metadata], [data-testid="product-card"], [data-testid*="deal-card"], .octopus-pc-item',
     bestSellerCards: [
       '#gridItemRoot',
       '.zg-grid-general-faceout',
@@ -134,7 +138,9 @@ export const AMAZON_SELECTORS = {
     ],
     seller: [
       '#sellerProfileTriggerId',
+      '#tabular-buybox .tabular-buybox-text a',
       '#tabular-buybox .tabular-buybox-text[tabular-attribute-name="Sold by"] span',
+      '#tabular-buybox .tabular-buybox-text',
       '#merchant-info a',
       '#merchant-info',
     ],
@@ -149,21 +155,23 @@ export const AMAZON_SELECTORS = {
 
   cardFields: {
     title: [
-      '[data-cy="title-recipe"] h2 span',
-      '[data-cy="title-recipe"] h2 a span',
       '[data-cy="title-recipe"] a h2 span',
+      '[data-cy="title-recipe"] h2 a span',
       'h2 a.a-link-normal span',
+      'h2 a span',
+      '[data-cy="title-recipe"] h2 span',
       'h2.a-size-mini span',
       'h2 span.a-text-normal',
-      'h2 span',
       'h2',
       '[data-testid="product-card-title"]',
+      '[data-testid="deal-title"]',
       '.p13n-sc-truncate-desktop-type2',
       '.p13n-sc-truncated',
       '[class*="_cDEzb_p13n-sc-css-line-clamp"]',
       '.octopus-pc-asin-title',
     ],
     brand: [
+      '[data-cy="title-recipe"] > h2 > span',
       '[data-cy="title-recipe"] .a-row.a-size-base.a-color-secondary span.a-size-base-plus',
       'h5.s-line-clamp-1 span',
       '.s-line-clamp-1 span.a-size-base-plus',
@@ -201,15 +209,15 @@ export const AMAZON_SELECTORS = {
       'span[class*="savingsPercentage"]',
     ],
     dealBadge: [
+      '[data-a-badge-type="deal"] .a-badge-text',
+      '#dealBadge_feature_div .dealBadgeText',
+      '#dealBadge_feature_div .a-badge-text',
       '[data-cy="price-recipe"] .a-badge-text',
       '[data-testid="badge-label"]',
-      '#dealBadge_feature_div .a-badge-text',
       '.dealBadge .a-badge-text',
-      '.s-badge-text',
     ],
     statusBadge: [
       '[data-component-type="s-status-badge-component"] .a-badge-text',
-      '.zg-bdg-text',
       '.a-badge-label-inner',
     ],
     coupon: [
@@ -223,10 +231,14 @@ export const AMAZON_SELECTORS = {
       '[data-cy="reviews-block"] .a-row.a-size-base span.a-color-secondary',
       '#social-proofing-faceout-title-tk_bought span',
       'span.a-size-base.a-color-secondary',
+      'div > span',
     ],
     rating: [
+      '[data-cy="reviews-block"] span.a-icon-alt',
       '[data-cy="reviews-block"] i[class*="a-star"] span.a-icon-alt',
       'i[class*="a-star"] span.a-icon-alt',
+      '.a-icon-row span.a-icon-alt',
+      'span.a-icon-alt',
       '#acrPopover span.a-icon-alt',
       '#acrPopover',
       '[aria-label*="out of 5 stars" i]',
@@ -237,10 +249,12 @@ export const AMAZON_SELECTORS = {
       '[aria-label*="5つ星のうち"]',
     ],
     reviewCount: [
-      '[data-cy="reviews-block"] a[href*="#customerReviews"] span.a-size-base',
+      '[data-cy="reviews-block"] a[href*="#customerReviews"] span.s-underline-text',
+      '[data-cy="reviews-block"] a[href*="#customerReviews"] span',
       '[data-cy="reviews-block"] span.s-underline-text',
       '#acrCustomerReviewText',
       'a[href*="product-reviews"] span',
+      'a[href*="#customerReviews"] span',
       'span[aria-label$="ratings" i]',
       'span[aria-label$="reviews" i]',
     ],
@@ -257,8 +271,10 @@ export const AMAZON_SELECTORS = {
       '.s-label-popover-default',
     ],
     delivery: [
+      '[data-cy="delivery-recipe"] [aria-label]',
       '[data-cy="delivery-recipe"]',
       '[data-csa-c-content-id*="delivery"]',
+      '#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE',
       '#mir-layout-DELIVERY_BLOCK',
     ],
     image: [
@@ -275,9 +291,6 @@ export const AMAZON_SELECTORS = {
 
 export const SELECTORS = AMAZON_SELECTORS;
 
-/**
- * Safely runs `querySelector` without throwing on unsupported pseudo-selectors in jsdom.
- */
 export function safeQuerySelector<T extends Element = Element>(
   root: ParentNode,
   selector: string,
@@ -289,9 +302,6 @@ export function safeQuerySelector<T extends Element = Element>(
   }
 }
 
-/**
- * Safely runs `querySelectorAll` without throwing on unsupported pseudo-selectors in jsdom.
- */
 export function safeQuerySelectorAll<T extends Element = Element>(
   root: ParentNode,
   selector: string,
@@ -303,9 +313,6 @@ export function safeQuerySelectorAll<T extends Element = Element>(
   }
 }
 
-/**
- * Returns the first matching element across an ordered list of selectors.
- */
 export function queryFirstMatching<T extends Element = Element>(
   root: ParentNode,
   selectors: readonly string[],
