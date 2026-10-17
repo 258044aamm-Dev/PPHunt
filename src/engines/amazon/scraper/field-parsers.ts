@@ -473,54 +473,67 @@ export function extractCardPricingAndDiscounts(
   // Struck-through List Price (`data-a-strike="true"` or `.basisPrice`)
   let listPrice: number | undefined;
   for (const selector of AMAZON_SELECTORS.cardFields.listPrice) {
-    const el = safeQuerySelector(card, selector);
-    if (!el?.textContent) continue;
-    const parsed = parsePrice(el.textContent, currency ?? pageCurrency);
-    if (
-      parsed.value !== null &&
-      (price === null || parsed.value > price)
-    ) {
-      listPrice = parsed.value;
-      break;
+    const els = safeQuerySelectorAll(card, selector);
+    for (const el of els) {
+      if (!el?.textContent) continue;
+      const parsed = parsePrice(el.textContent, currency ?? pageCurrency);
+      if (
+        parsed.value !== null &&
+        (price === null || parsed.value > price)
+      ) {
+        listPrice = parsed.value;
+        break;
+      }
     }
+    if (listPrice !== undefined) break;
   }
 
   // Explicit Discount Percentage (`-68%` -> `68% off`, `19% off` -> `19% off`)
   let discountPercentage: string | undefined;
   for (const selector of AMAZON_SELECTORS.cardFields.discount) {
-    const el = safeQuerySelector(card, selector);
-    const normalized = normalizeDiscountBadge(el?.textContent);
-    if (normalized) {
-      discountPercentage = normalized;
-      break;
+    const els = safeQuerySelectorAll(card, selector);
+    for (const el of els) {
+      if (el.children.length > 1) continue;
+      const normalized = normalizeDiscountBadge(el?.textContent);
+      if (normalized) {
+        discountPercentage = normalized;
+        break;
+      }
     }
+    if (discountPercentage !== undefined) break;
   }
 
   // Deal Badge (`Limited-time deal`, etc.)
   let dealBadge: string | undefined;
   for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
-    const el = safeQuerySelector(card, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (
-      text &&
-      /deal|limited time|limited-time|lightning|black friday|prime day|cyber monday|angebot|offre|oferta/i.test(
-        text,
-      )
-    ) {
-      dealBadge = text;
-      break;
+    const els = safeQuerySelectorAll(card, selector);
+    for (const el of els) {
+      const text = normalizeWhitespace(el?.textContent);
+      if (
+        text &&
+        /deal|limited time|limited-time|lightning|black friday|prime day|cyber monday|angebot|offre|oferta/i.test(
+          text,
+        )
+      ) {
+        dealBadge = text;
+        break;
+      }
     }
+    if (dealBadge !== undefined) break;
   }
 
   // Coupon (`Save 15% with coupon`, `Save $20.00 with coupon`)
   let coupon: string | undefined;
   for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
-    const el = safeQuerySelector(card, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (text && /coupon|voucher|rabatt|remise/i.test(text)) {
-      coupon = text.replace(/\s*Terms\s*$/i, '').trim();
-      break;
+    const els = safeQuerySelectorAll(card, selector);
+    for (const el of els) {
+      const text = normalizeWhitespace(el?.textContent);
+      if (text && /coupon|voucher|rabatt|remise/i.test(text)) {
+        coupon = text.replace(/\s*Terms\s*$/i, '').trim();
+        break;
+      }
     }
+    if (coupon !== undefined) break;
   }
 
   const result: CardPricingAndDiscounts = {

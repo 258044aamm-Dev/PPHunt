@@ -206,6 +206,7 @@ export const AMAZON_SELECTORS = {
     discount: [
       '.savingsPercentage',
       '[data-cy="price-recipe"] span.a-letter-space + span',
+      '[data-cy="price-recipe"] span',
       '[data-testid="price-badge"] [class*="Badge"]',
       'span[class*="savingsPercentage"]',
     ],
@@ -222,8 +223,9 @@ export const AMAZON_SELECTORS = {
       '.a-badge-label-inner',
     ],
     coupon: [
-      '[data-component-type="s-coupon-component"]',
       '.s-coupon-unclipped',
+      '[data-component-type="s-coupon-component"] .s-coupon-unclipped',
+      '[data-component-type="s-coupon-component"]',
       '#couponBadgeRegularVpc',
       '#vpcButton',
       'span[class*="coupon" i]',
