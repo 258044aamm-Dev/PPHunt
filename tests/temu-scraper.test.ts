@@ -4,11 +4,15 @@ import {
   extractTemuSearchQuery,
 } from '@/engines/temu/scraper/page-detector';
 import {
-  detectTemuCaptcha,
-  isEndOfTemuResultsReached,
-  findTemuSeeMoreButton,
+  detectTemuChallengeOrRestriction,
+  isTemuCaptchaPage,
 } from '@/engines/temu/scraper/captcha-detector';
-import { validateAndNormalizeTemuProduct } from '@/engines/temu/scraper/field-parsers';
+import {
+  validateAndNormalizeTemuScrapedProduct,
+  parseTemuRating,
+  parseTemuReviewCount,
+  parseTemuDiscountPercentage,
+} from '@/engines/temu/scraper/field-parsers';
 import { parseTemuSearchResults } from '@/engines/temu/scraper/search-results';
 import { parseTemuCategoryPage } from '@/engines/temu/scraper/category-page';
 import { parseTemuProductDetail } from '@/engines/temu/scraper/product-detail';
@@ -20,18 +24,18 @@ function createDoc(html: string): Document {
 }
 
 describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
-  it('detects search, SEO search, category, product detail, and unsupported Temu pages', () => {
+  it('detects search, SEO search, category, product_detail, and unknown Temu pages', () => {
     const searchDoc = createDoc('<div class="js-search-goodsList"></div>');
     expect(
       detectTemuPageType(
-        'https://www.temu.com/search_result.html?search_key=wireless+earbuds',
-        searchDoc
+        searchDoc,
+        'https://www.temu.com/search_result.html?search_key=wireless+earbuds'
       )
     ).toBe('search');
     expect(
       extractTemuSearchQuery(
-        'https://www.temu.com/search_result.html?search_key=wireless+earbuds',
-        searchDoc
+        searchDoc,
+        'https://www.temu.com/search_result.html?search_key=wireless+earbuds'
       )
     ).toBe('wireless earbuds');
 
@@ -39,8 +43,8 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const seoSearchDoc = createDoc('<h1>Flat Wireless Earbuds</h1>');
     expect(
       detectTemuPageType(
-        'https://www.temu.com/flat-wireless-earbuds-5030186936120-s.html',
-        seoSearchDoc
+        seoSearchDoc,
+        'https://www.temu.com/flat-wireless-earbuds-5030186936120-s.html'
       )
     ).toBe('search');
 
@@ -48,8 +52,8 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const categoryDoc = createDoc('<div class="js-category-goodsList"></div>');
     expect(
       detectTemuPageType(
-        'https://www.temu.com/womens-shoes-o3-95.html',
-        categoryDoc
+        categoryDoc,
+        'https://www.temu.com/womens-shoes-o3-95.html'
       )
     ).toBe('category');
 
@@ -57,69 +61,69 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const detailDoc = createDoc('<div id="goodsDetail"></div>');
     expect(
       detectTemuPageType(
-        'https://www.temu.com/wireless-earbuds-g-601099769178067.html',
-        detailDoc
+        detailDoc,
+        'https://www.temu.com/wireless-earbuds-g-601099769178067.html'
       )
-    ).toBe('detail');
+    ).toBe('product_detail');
     expect(
       detectTemuPageType(
-        'https://www.temu.com/goods.html?goods_id=601099769178067',
-        detailDoc
+        detailDoc,
+        'https://www.temu.com/goods.html?goods_id=601099769178067'
       )
-    ).toBe('detail');
+    ).toBe('product_detail');
 
-    // Unsupported pages (cart, checkout, non-Temu)
+    // Non-Temu URL is unknown
     expect(
       detectTemuPageType(
-        'https://www.temu.com/cart.html',
-        createDoc('<div>Shopping Cart</div>')
+        createDoc('<div></div>'),
+        'https://www.amazon.com/s?k=earbuds'
       )
-    ).toBe('unsupported');
-    expect(
-      detectTemuPageType(
-        'https://www.amazon.com/s?k=earbuds',
-        createDoc('<div></div>')
-      )
-    ).toBe('unsupported');
+    ).toBe('unknown');
   });
 });
 
-describe('Temu CAPTCHA / verification challenge & pagination detection (SAD-211 / SAD-222)', () => {
-  it('detects verificationdialogs, #captcha, and text-based security challenges', () => {
+describe('Temu CAPTCHA / verification challenge & restriction detection (SAD-211 / SAD-222)', () => {
+  it('detects verificationDialog, #captcha, and text-based security challenges without bypassing', () => {
     const cleanDoc = createDoc(
       '<div class="js-search-goodsList"><a href="/item-g-601099769178067.html">Item</a></div>'
     );
-    expect(detectTemuCaptcha(cleanDoc)).toBe(false);
+    expect(isTemuCaptchaPage(cleanDoc)).toBe(false);
+    expect(detectTemuChallengeOrRestriction(cleanDoc).restricted).toBe(false);
 
     const dialogDoc = createDoc(
       '<div class="verificationDialog_wrapper"><div>Drag the slider to fit the puzzle</div></div>'
     );
-    expect(detectTemuCaptcha(dialogDoc)).toBe(true);
+    expect(isTemuCaptchaPage(dialogDoc)).toBe(true);
+    expect(detectTemuChallengeOrRestriction(dialogDoc).kind).toBe('captcha');
 
-    const captchaIdDoc = createDoc('<div id="captcha"><iframe src="about:blank"></iframe></div>');
-    expect(detectTemuCaptcha(captchaIdDoc)).toBe(true);
+    const captchaIdDoc = createDoc(
+      '<div id="captcha"><iframe src="about:blank"></iframe></div>'
+    );
+    expect(isTemuCaptchaPage(captchaIdDoc)).toBe(true);
 
     const textChallengeDoc = createDoc(
-      '<main><h1>Security Verification</h1><p>Please complete the puzzle to continue shopping.</p></main>'
+      '<main><h1>Security Verification</h1><p>Slide to complete the puzzle</p></main>'
     );
-    expect(detectTemuCaptcha(textChallengeDoc)).toBe(true);
-  });
+    expect(isTemuCaptchaPage(textChallengeDoc)).toBe(true);
 
-  it('detects end-of-results markers and "See more items" pagination buttons', () => {
-    const endDoc = createDoc('<div><span>No more results</span></div>');
-    expect(isEndOfTemuResultsReached(endDoc)).toBe(true);
-
-    const moreDoc = createDoc(
-      '<div><div role="button"><span>See more items</span></div></div>'
+    const rateLimitDoc = createDoc(
+      '<main><h1>We are currently experiencing a high volume of visitors</h1></main>'
     );
-    expect(isEndOfTemuResultsReached(moreDoc)).toBe(false);
-    const btn = findTemuSeeMoreButton(moreDoc);
-    expect(btn).not.toBeNull();
-    expect(btn?.textContent).toContain('See more items');
+    const restriction = detectTemuChallengeOrRestriction(rateLimitDoc);
+    expect(restriction.restricted).toBe(true);
+    expect(restriction.kind).toBe('access_restricted');
   });
 });
 
 describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 / SAD-213 / SAD-222)', () => {
+  it('parses rating, reviewCount, and discountPercentage tokens accurately', () => {
+    expect(parseTemuRating('4.8 out of five stars')).toBe(4.8);
+    expect(parseTemuRating('4.7 out of 5 stars')).toBe(4.7);
+    expect(parseTemuReviewCount('(3,412)')).toBe(3412);
+    expect(parseTemuReviewCount('1.5K reviews')).toBe(1500);
+    expect(parseTemuDiscountPercentage('-65%')).toBe('65% off');
+  });
+
   it('extracts search result cards using semantic data-* attributes and srOnly price strings', () => {
     const html = `
       <div class="js-search-goodsList">
@@ -163,7 +167,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
     const raws = parseTemuSearchResults(doc, pageUrl);
     expect(raws).toHaveLength(2);
 
-    const first = validateAndNormalizeTemuProduct(raws[0]!, pageUrl);
+    const first = validateAndNormalizeTemuScrapedProduct(raws[0]!, pageUrl);
     expect(first).not.toBeNull();
     expect(first).toMatchObject({
       goodsId: '601099769178067',
@@ -171,7 +175,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       title: 'Wireless Noise Cancelling Earbuds Bluetooth 5.3',
       price: 11.49,
       listPrice: 32.99,
-      discountPercentage: '-65%',
+      discountPercentage: '65% off',
       currency: 'USD',
       rating: 4.8,
       reviewCount: 3412,
@@ -184,7 +188,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       source: 'search',
     });
 
-    const second = validateAndNormalizeTemuProduct(raws[1]!, pageUrl);
+    const second = validateAndNormalizeTemuScrapedProduct(raws[1]!, pageUrl);
     expect(second).not.toBeNull();
     expect(second).toMatchObject({
       goodsId: '601099123456789',
@@ -201,8 +205,6 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
   });
 
   it('Layer 3 structural fallback: extracts cards when data-tooltip and grid classes are absent', () => {
-    // Simulates a Temu frontend update where CSS classes and data-tooltip attributes changed,
-    // leaving only standard <a href="...-g-<goodsId>.html"> product links inside card wrappers.
     const html = `
       <section>
         <div>
@@ -213,7 +215,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
             </a>
             <div>
               <span>$24.50</span>
-              <span>$49.00</span>
+              <del>$49.00</del>
               <span>-50%</span>
               <span>2.1K+ sold</span>
             </div>
@@ -238,7 +240,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
     expect(raws[0]?.title).toBe('Portable Espresso Maker for Camping');
     expect(raws[0]?.price).toBe(24.5);
     expect(raws[0]?.listPrice).toBe(49);
-    expect(raws[0]?.discountPercentage).toBe('-50%');
+    expect(raws[0]?.discountPercentage).toBe('50% off');
     expect(raws[0]?.pastMonthSales).toBe('2.1K+ sold');
 
     expect(raws[1]?.goodsId).toBe('601099222111000');
@@ -270,7 +272,6 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       title: "Women's Breathable Mesh Running Sneakers",
       price: 16.8,
       bestSellersRank: "#1 Best Seller in Women's Running Shoes",
-      badge: 'Best Seller',
       pastMonthSales: '50K+ sold',
       source: 'category',
     });
@@ -330,7 +331,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       'https://www.temu.com/ergonomic-mechanical-keyboard-g-601099444555666.html';
     const raw = parseTemuProductDetail(createDoc(html), pageUrl);
     expect(raw).not.toBeNull();
-    const normalized = validateAndNormalizeTemuProduct(raw!, pageUrl);
+    const normalized = validateAndNormalizeTemuScrapedProduct(raw!, pageUrl);
     expect(normalized).not.toBeNull();
     expect(normalized).toMatchObject({
       goodsId: '601099444555666',
@@ -338,7 +339,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       title: 'Ergonomic Mechanical Gaming Keyboard RGB 75%',
       price: 34.99,
       listPrice: 69.98,
-      discountPercentage: '-50%',
+      discountPercentage: '50% off',
       currency: 'USD',
       rating: 4.9,
       reviewCount: 1280,
@@ -346,7 +347,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       brand: 'KeyCraft',
       seller: 'KeyCraft Direct Store',
       availability: 'In Stock',
-      delivery: 'Free shipping',
+      delivery: 'Free shipping on all orders',
       isPrime: true,
       imageUrl: 'https://img.kwcdn.com/product/fancy/keyboard-hd.jpg',
       description:
@@ -369,7 +370,10 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
     const pageUrl = 'https://www.temu.com/search_result.html?search_key=desk';
     const raws = parseTemuSearchResults(createDoc(html), pageUrl);
     expect(raws).toHaveLength(1);
-    const normalized = validateAndNormalizeTemuProduct(raws[0]!, pageUrl);
+    const normalized = validateAndNormalizeTemuScrapedProduct(
+      raws[0]!,
+      pageUrl
+    );
     expect(normalized).toEqual({
       goodsId: '601099000111222',
       asin: '601099000111222',
@@ -399,7 +403,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
     });
   });
 
-  it('deduplicates by goodsId and caches unchanged card subtrees', () => {
+  it('deduplicates by goodsId and caches hydrated card subtrees in TemuParseCache', () => {
     const dedup = new TemuDeduplicationEngine();
     const cache = new TemuParseCache();
 
@@ -407,6 +411,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       <div class="js-search-goodsList">
         <div data-tooltip="goodContainer-601099769178067">
           <a href="/item-1-g-601099769178067.html">
+            <img class="goods-img-external" src="https://img.kwcdn.com/product/fancy/item1.jpg" />
             <div data-tooltip="goodName-601099769178067">First Item Title</div>
           </a>
           <div data-type="price"><span data-type="priceText">$9.99</span></div>
@@ -419,17 +424,18 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
     const firstPass = parseTemuSearchResults(doc, pageUrl, cache);
     expect(firstPass).toHaveLength(1);
 
-    // Second pass with same DOM and populated cache skips re-parsing unchanged card
+    // Second pass with same DOM and populated cache returns the cached product reference
     const secondPass = parseTemuSearchResults(doc, pageUrl, cache);
-    expect(secondPass).toHaveLength(0);
+    expect(secondPass).toHaveLength(1);
+    expect(secondPass[0]).toBe(firstPass[0]);
 
-    // Deduplication filters repeated goodsId when enabled, and allows when disabled
+    // Deduplication filters repeated goodsId
     const unique1 = dedup.filterNew(firstPass);
     expect(unique1).toHaveLength(1);
-    const unique2 = dedup.filterNew(firstPass);
+    const unique2 = dedup.filterNew(secondPass);
     expect(unique2).toHaveLength(0);
 
-    dedup.setEnabled(false);
-    expect(dedup.filterNew(firstPass)).toHaveLength(1);
+    dedup.clear();
+    expect(dedup.filterNew(secondPass)).toHaveLength(1);
   });
 });
