@@ -17,16 +17,16 @@ function clampTemuTargetCount(count: number): number {
 }
 
 export async function createTemuSession(
-  tabId: number,
+  _tabId: number,
   url: string,
   mode: TemuCollectionMode = 'manual',
   targetCount: number = DEFAULT_TEMU_SETTINGS.defaultTargetCount,
   pageType: TemuPageType = 'search',
   searchQuery: string | null = null,
-  status: TemuCollectionStatus = 'collecting'
+  status: TemuCollectionStatus = 'collecting',
+  sessionId: string = crypto.randomUUID()
 ): Promise<string> {
   const nowIso = new Date().toISOString();
-  const sessionId = `temu_${tabId}_${Date.now()}`;
   await temuDb.sessions.add({
     sessionId,
     url,
