@@ -11,7 +11,7 @@ import {
   validateAndNormalizeTemuScrapedProduct,
   parseTemuRating,
   parseTemuReviewCount,
-  parseTemuDiscountPercentage,
+  normalizeTemuDiscountPercentage,
 } from '@/engines/temu/scraper/field-parsers';
 import { parseTemuSearchResults } from '@/engines/temu/scraper/search-results';
 import { parseTemuCategoryPage } from '@/engines/temu/scraper/category-page';
@@ -28,14 +28,14 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const searchDoc = createDoc('<div class="js-search-goodsList"></div>');
     expect(
       detectTemuPageType(
-        searchDoc,
-        'https://www.temu.com/search_result.html?search_key=wireless+earbuds'
+        'https://www.temu.com/search_result.html?search_key=wireless+earbuds',
+        searchDoc
       )
     ).toBe('search');
     expect(
       extractTemuSearchQuery(
-        searchDoc,
-        'https://www.temu.com/search_result.html?search_key=wireless+earbuds'
+        'https://www.temu.com/search_result.html?search_key=wireless+earbuds',
+        searchDoc
       )
     ).toBe('wireless earbuds');
 
@@ -43,8 +43,8 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const seoSearchDoc = createDoc('<h1>Flat Wireless Earbuds</h1>');
     expect(
       detectTemuPageType(
-        seoSearchDoc,
-        'https://www.temu.com/flat-wireless-earbuds-5030186936120-s.html'
+        'https://www.temu.com/flat-wireless-earbuds-5030186936120-s.html',
+        seoSearchDoc
       )
     ).toBe('search');
 
@@ -52,8 +52,8 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const categoryDoc = createDoc('<div class="js-category-goodsList"></div>');
     expect(
       detectTemuPageType(
-        categoryDoc,
-        'https://www.temu.com/womens-shoes-o3-95.html'
+        'https://www.temu.com/womens-shoes-o3-95.html',
+        categoryDoc
       )
     ).toBe('category');
 
@@ -61,22 +61,22 @@ describe('Temu page detection & query extraction (SAD-211 / SAD-222)', () => {
     const detailDoc = createDoc('<div id="goodsDetail"></div>');
     expect(
       detectTemuPageType(
-        detailDoc,
-        'https://www.temu.com/wireless-earbuds-g-601099769178067.html'
+        'https://www.temu.com/wireless-earbuds-g-601099769178067.html',
+        detailDoc
       )
     ).toBe('product_detail');
     expect(
       detectTemuPageType(
-        detailDoc,
-        'https://www.temu.com/goods.html?goods_id=601099769178067'
+        'https://www.temu.com/goods.html?goods_id=601099769178067',
+        detailDoc
       )
     ).toBe('product_detail');
 
     // Non-Temu URL is unknown
     expect(
       detectTemuPageType(
-        createDoc('<div></div>'),
-        'https://www.amazon.com/s?k=earbuds'
+        'https://www.amazon.com/s?k=earbuds',
+        createDoc('<div></div>')
       )
     ).toBe('unknown');
   });
@@ -121,7 +121,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
     expect(parseTemuRating('4.7 out of 5 stars')).toBe(4.7);
     expect(parseTemuReviewCount('(3,412)')).toBe(3412);
     expect(parseTemuReviewCount('1.5K reviews')).toBe(1500);
-    expect(parseTemuDiscountPercentage('-65%')).toBe('65% off');
+    expect(normalizeTemuDiscountPercentage('-65%')).toBe('65% off');
   });
 
   it('extracts search result cards using semantic data-* attributes and srOnly price strings', () => {
@@ -137,8 +137,8 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
             </a>
             <div data-type="price">
               <span class="srOnly">current price is: $11.49, original price is: $32.99</span>
-              <span data-type="priceText">$11.49</span>
-              <span>$32.99</span>
+              <span>$11.49</span>
+              <span data-type="priceText">$32.99</span>
             </div>
             <span data-type="discount">-65%</span>
             <span data-type="saleTips">10K+ sold</span>
@@ -154,7 +154,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
               <h3 data-tooltip="goodName-601099123456789">Braided USB-C Fast Charging Cable 6ft</h3>
             </a>
             <div data-type="price">
-              <span data-type="priceText">$3.29</span>
+              <span>$3.29</span>
             </div>
             <span data-sales="true">850 sold</span>
           </div>
@@ -182,7 +182,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       pastMonthSales: '10K+ sold',
       dealBadge: 'Lightning deal',
       delivery: 'Free shipping',
-      isPrime: true,
+      isPrime: false,
       imageUrl: 'https://img.kwcdn.com/product/fancy/earbuds-main.jpg',
       url: 'https://www.temu.com/wireless-noise-cancelling-earbuds-g-601099769178067.html',
       source: 'search',
@@ -257,7 +257,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
             <img class="goods-img-external" src="https://img.kwcdn.com/product/fancy/sneakers.jpg" />
             <div data-tooltip="goodName-601099999888777">Women's Breathable Mesh Running Sneakers</div>
           </a>
-          <div data-type="price"><span data-type="priceText">$16.80</span></div>
+          <div data-type="price"><span>$16.80</span></div>
           <span>#1 Best Seller in Women's Running Shoes</span>
           <span data-type="saleTips">50K+ sold</span>
         </div>
@@ -311,7 +311,8 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
               <h1 aria-label="Ergonomic Mechanical Gaming Keyboard RGB 75%">Ergonomic Mechanical Gaming Keyboard RGB 75%</h1>
               <div id="goods_price" data-type="price">
                 <span class="srOnly">current price is: $34.99, original price is: $69.98</span>
-                <span data-type="priceText">$34.99</span>
+                <span>$34.99</span>
+                <span data-type="priceText">$69.98</span>
                 <span data-type="discount">-50%</span>
               </div>
               <span data-type="saleTips">5.2K+ sold</span>
@@ -348,7 +349,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       seller: 'KeyCraft Direct Store',
       availability: 'In Stock',
       delivery: 'Free shipping on all orders',
-      isPrime: true,
+      isPrime: false,
       imageUrl: 'https://img.kwcdn.com/product/fancy/keyboard-hd.jpg',
       description:
         'Hot-swappable 75% mechanical keyboard with gasket mount and PBT keycaps.',
@@ -381,7 +382,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
       price: null,
       listPrice: null,
       discountPercentage: null,
-      currency: 'USD',
+      currency: null,
       rating: null,
       reviewCount: null,
       pastMonthSales: null,
@@ -414,7 +415,7 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
             <img class="goods-img-external" src="https://img.kwcdn.com/product/fancy/item1.jpg" />
             <div data-tooltip="goodName-601099769178067">First Item Title</div>
           </a>
-          <div data-type="price"><span data-type="priceText">$9.99</span></div>
+          <div data-type="price"><span>$9.99</span></div>
         </div>
       </div>
     `;

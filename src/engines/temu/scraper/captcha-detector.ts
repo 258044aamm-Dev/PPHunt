@@ -17,25 +17,26 @@ const CAPTCHA_DOM_SELECTORS = [
   '#captcha',
   'input#captcha',
   '[class*="verificationDialog"]',
-  '[id*="verification" i][role="dialog"]',
-  'iframe[src*="verify" i]',
-  'iframe[src*="captcha" i]',
+  '[id*="verification"][role="dialog"]',
+  '[id*="Verification"][role="dialog"]',
+  'iframe[src*="verify"]',
+  'iframe[src*="captcha"]',
 ] as const;
 
 const CAPTCHA_TEXT_PATTERNS: RegExp[] = [
-  /\bVerify\s+your\s+identity\b/i,
-  /\bSecurity\s+Verification\b/i,
-  /\bSlide\s+to\s+complete\s+the\s+puzzle\b/i,
-  /\bDrag\s+the\s+slider\s+to\s+fit\s+the\s+puzzle\b/i,
-  /\bSelect\s+all\s+images\s+with\b/i,
-  /\bVerification\s+failed\.\s+Please\s+scan\s+the\s+QR\s+code\b/i,
+  /Verify\s+your\s+identity/i,
+  /Security\s+Verification/i,
+  /Slide\s+to\s+complete\s+the\s+puzzle/i,
+  /Drag\s+the\s+slider\s+to\s+fit\s+the\s+puzzle/i,
+  /Select\s+all\s+images\s+with/i,
+  /Verification\s+failed\.\s+Please\s+scan\s+the\s+QR\s+code/i,
 ];
 
 const ACCESS_RESTRICTION_PATTERNS: RegExp[] = [
-  /\bWe\s+are\s+currently\s+experiencing\s+a\s+high\s+volume\s+of\s+visitors\b/i,
-  /\bAccess\s+Denied\b/i,
-  /\b403\s+Forbidden\b/i,
-  /\bToo\s+Many\s+Requests\b/i,
+  /We\s+are\s+currently\s+experiencing\s+a\s+high\s+volume\s+of\s+visitors/i,
+  /Access\s+Denied/i,
+  /403\s+Forbidden/i,
+  /Too\s+Many\s+Requests/i,
 ];
 
 /**
@@ -48,7 +49,12 @@ export function detectTemuChallengeOrRestriction(
   try {
     // 1. Check explicit verification dialog / captcha DOM selectors
     for (const selector of CAPTCHA_DOM_SELECTORS) {
-      const el = document.querySelector(selector);
+      let el: Element | null = null;
+      try {
+        el = document.querySelector(selector);
+      } catch {
+        continue;
+      }
       if (el && isElementVisible(el)) {
         return {
           restricted: true,

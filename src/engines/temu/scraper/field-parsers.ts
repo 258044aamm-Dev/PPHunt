@@ -459,8 +459,20 @@ export function extractTemuPricing(
 
     // Prefer accessible `.srOnly` or `aria-label` inside `[data-type="price"]`
     const srOnly = priceNode.querySelector('[class*="srOnly"], .sr-only');
+    const srOnlyText = cleanTemuText(srOnly?.textContent);
+    if (srOnlyText) {
+      const origMatch = srOnlyText.match(
+        /\b(?:original|regular|was|list)\s+price\s*(?:is)?\s*[:：]?\s*((?:US\$|CA\$|AU\$|[\$€£¥])\s*\d[\d,.]*)/i
+      );
+      if (origMatch?.[1]) {
+        const origParsed = parseTemuPrice(origMatch[1], fallbackCurrency);
+        if (origParsed.value !== null) {
+          listPrice = origParsed.value;
+        }
+      }
+    }
     const candidateText =
-      cleanTemuText(srOnly?.textContent) ??
+      srOnlyText ??
       cleanTemuText(priceNode.getAttribute('aria-label')) ??
       extractTemuElementText(priceNode);
 
@@ -628,8 +640,8 @@ export function extractTemuRatingAndReviews(container: Element): {
     if (r !== null) {
       rating = r;
       // Check sibling or parent region for review count (e.g. `(1,234)` or `1,234 reviews`)
-      const region = el.closest('[role="region"]') ?? el.parentElement;
-      if (region) {
+      const region = el.closest('[role="region"]') ?? (el.parentElement !== container ? el.parentElement : null);
+      if (region && region.children.length <= 5) {
         const regionText =
           cleanTemuText(region.getAttribute('aria-label')) ??
           extractTemuElementText(region);
