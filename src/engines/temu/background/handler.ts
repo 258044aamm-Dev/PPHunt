@@ -343,7 +343,14 @@ export function registerTemuBackgroundHandlers(): {
     let rejectedCount = 0;
 
     for (const raw of rawProducts) {
-      const normalized = validateAndNormalizeTemuScrapedProduct(raw, pageUrl);
+      if (!raw || typeof raw !== 'object') {
+        rejectedCount++;
+        continue;
+      }
+      const normalized = validateAndNormalizeTemuScrapedProduct(
+        raw as Parameters<typeof validateAndNormalizeTemuScrapedProduct>[0],
+        pageUrl
+      );
       if (!normalized) {
         rejectedCount++;
         continue;

@@ -177,10 +177,11 @@ export function countTemuProductCardsOnPage(document: Document): number {
  */
 export function extractTemuSearchQuery(
   url: string,
-  document: Document
+  document?: Document
 ): string | null {
   const fromUrl = extractTemuSearchQueryFromUrl(url);
   if (fromUrl) return fromUrl;
+  if (!document) return null;
 
   const searchInput = document.querySelector<HTMLInputElement>(
     'input[type="search"], input#searchInput, input[placeholder*="Search" i]'
