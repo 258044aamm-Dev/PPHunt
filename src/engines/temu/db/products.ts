@@ -1,5 +1,5 @@
 import { temuDb } from './database';
-import type { TemuProduct } from '../types';
+import type { TemuProduct } from '../types/product';
 
 /**
  * Bulk upserts validated Temu products into `PPHuntTemuDB`, deduplicating by `[sessionId+goodsId]`,
@@ -51,7 +51,7 @@ export async function upsertTemuProducts(
       } else if (prev.id != null) {
         let changed = false;
         const merged: TemuProduct = { ...prev };
-        const nullableFields: (keyof TemuProduct)[] = [
+        const nullableFields: Array<keyof TemuProduct & string> = [
           'title',
           'price',
           'listPrice',
@@ -73,7 +73,7 @@ export async function upsertTemuProducts(
         ];
         for (const field of nullableFields) {
           if (merged[field] == null && item[field] != null) {
-            (merged as Record<string, unknown>)[field] = item[field];
+            (merged as unknown as Record<string, unknown>)[field] = item[field];
             changed = true;
           }
         }
@@ -145,7 +145,9 @@ export async function getExistingTemuGoodsIds(
 }
 
 export async function deleteTemuProducts(ids: number[]): Promise<void> {
-  await temuDb.products.bulkDelete(ids);
+  await (
+    temuDb.products as unknown as { bulkDelete(keys: number[]): Promise<void> }
+  ).bulkDelete(ids);
 }
 
 export async function deleteTemuProductsBySession(

@@ -1,7 +1,8 @@
 import { temuDb } from './database';
 import {
-  DEFAULT_TEMU_TARGET_COUNT,
-  clampTemuTargetCount,
+  DEFAULT_TEMU_SETTINGS,
+  TEMU_TARGET_MAX,
+  TEMU_TARGET_MIN,
 } from '../constants/defaults';
 import type {
   TemuCollectionMode,
@@ -10,24 +11,24 @@ import type {
   TemuPageType,
 } from '../types';
 
-function parseTabIdFromSessionId(sessionId: string): number {
-  const match = /^(?:temu_)?(\d+)_/.exec(sessionId);
-  return match ? parseInt(match[1]!, 10) : 0;
+function clampTemuTargetCount(count: number): number {
+  if (!Number.isFinite(count)) return DEFAULT_TEMU_SETTINGS.defaultTargetCount;
+  return Math.max(TEMU_TARGET_MIN, Math.min(TEMU_TARGET_MAX, Math.round(count)));
 }
 
 export async function createTemuSession(
   tabId: number,
   url: string,
   mode: TemuCollectionMode = 'manual',
-  targetCount: number = DEFAULT_TEMU_TARGET_COUNT,
+  targetCount: number = DEFAULT_TEMU_SETTINGS.defaultTargetCount,
   pageType: TemuPageType = 'search',
   searchQuery: string | null = null,
   status: TemuCollectionStatus = 'collecting'
 ): Promise<string> {
-  const now = Date.now();
-  const sessionId = `temu_${tabId}_${now}`;
-  await temuDb.sessions.put({
-    id: sessionId,
+  const nowIso = new Date().toISOString();
+  const sessionId = `temu_${tabId}_${Date.now()}`;
+  await temuDb.sessions.add({
+    sessionId,
     url,
     searchQuery,
     pageType,
@@ -35,28 +36,29 @@ export async function createTemuSession(
     targetCount: clampTemuTargetCount(targetCount),
     collectedCount: 0,
     status,
-    startedAt: now,
+    startedAt: nowIso,
     completedAt: null,
-    tabId,
   });
   return sessionId;
 }
 
 export async function ensureTemuSession(
   sessionId: string,
-  tabId: number,
   url: string,
   mode: TemuCollectionMode = 'manual',
-  targetCount: number = DEFAULT_TEMU_TARGET_COUNT,
+  targetCount: number = DEFAULT_TEMU_SETTINGS.defaultTargetCount,
   pageType: TemuPageType = 'search',
   searchQuery: string | null = null,
-  startedAt?: number
+  startedAt?: string
 ): Promise<string> {
-  const existing = await temuDb.sessions.get(sessionId);
+  const existing = await temuDb.sessions
+    .where('sessionId')
+    .equals(sessionId)
+    .first();
   if (existing) return sessionId;
-  const now = Date.now();
-  await temuDb.sessions.put({
-    id: sessionId,
+  const nowIso = new Date().toISOString();
+  await temuDb.sessions.add({
+    sessionId,
     url,
     searchQuery,
     pageType,
@@ -64,9 +66,8 @@ export async function ensureTemuSession(
     targetCount: clampTemuTargetCount(targetCount),
     collectedCount: 0,
     status: 'collecting',
-    startedAt: startedAt ?? now,
+    startedAt: startedAt ?? nowIso,
     completedAt: null,
-    tabId,
   });
   return sessionId;
 }
@@ -81,20 +82,22 @@ export async function updateTemuSessionStatus(
     searchQuery?: string | null;
   }
 ): Promise<void> {
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   await temuDb.transaction('rw', temuDb.sessions, async () => {
-    const existing = await temuDb.sessions.get(sessionId);
+    const existing = await temuDb.sessions
+      .where('sessionId')
+      .equals(sessionId)
+      .first();
     const base: TemuCollectionSession = existing ?? {
-      id: sessionId,
-      tabId: parseTabIdFromSessionId(sessionId),
+      sessionId,
       url: metadata?.url ?? '',
       searchQuery: metadata?.searchQuery ?? null,
       pageType: metadata?.pageType ?? 'search',
       status,
       mode: 'manual',
-      targetCount: DEFAULT_TEMU_TARGET_COUNT,
+      targetCount: DEFAULT_TEMU_SETTINGS.defaultTargetCount,
       collectedCount: 0,
-      startedAt: now,
+      startedAt: nowIso,
       completedAt: null,
     };
 
@@ -115,15 +118,15 @@ export async function updateTemuSessionStatus(
       }
     }
 
-    if (
-      status === 'completed' ||
-      status === 'interrupted' ||
-      status === 'error'
-    ) {
-      next.completedAt = now;
+    if (status === 'completed' || status === 'stopped' || status === 'error') {
+      next.completedAt = nowIso;
     }
 
-    await temuDb.sessions.put(next);
+    if (existing?.id != null) {
+      await temuDb.sessions.put({ ...next, id: existing.id });
+    } else {
+      await temuDb.sessions.add(next);
+    }
   });
 }
 
@@ -134,28 +137,30 @@ export async function getActiveTemuSession(): Promise<
     .where('status')
     .anyOf(['collecting', 'paused'])
     .toArray();
-  return rows.sort((a, b) => b.startedAt - a.startedAt)[0];
+  return rows.sort(
+    (a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)
+  )[0];
 }
 
 export async function reconcileInterruptedTemuSessions(): Promise<number> {
-  const now = Date.now();
+  const nowIso = new Date().toISOString();
   return temuDb.sessions
     .where('status')
     .equals('collecting')
     .modify((s) => {
-      s.status = 'interrupted';
-      s.completedAt = now;
+      s.status = 'stopped';
+      s.completedAt = nowIso;
     });
 }
 
 export async function getTemuSession(
   sessionId: string
 ): Promise<TemuCollectionSession | undefined> {
-  return temuDb.sessions.get(sessionId);
+  return temuDb.sessions.where('sessionId').equals(sessionId).first();
 }
 
 export async function deleteTemuSession(sessionId: string): Promise<void> {
-  await temuDb.sessions.delete(sessionId);
+  await temuDb.sessions.where('sessionId').equals(sessionId).delete();
 }
 
 export async function pruneOldTemuSessions(
@@ -169,13 +174,13 @@ export async function pruneOldTemuSessions(
       const stale = await temuDb.sessions
         .filter(
           (s) =>
-            ['completed', 'interrupted', 'error'].includes(s.status) &&
-            (s.completedAt ?? s.startedAt) < cutoff
+            ['completed', 'stopped', 'error'].includes(s.status) &&
+            Date.parse(s.completedAt ?? s.startedAt) < cutoff
         )
         .toArray();
       for (const s of stale) {
-        await temuDb.products.where('sessionId').equals(s.id).delete();
-        await temuDb.sessions.delete(s.id);
+        await temuDb.products.where('sessionId').equals(s.sessionId).delete();
+        await temuDb.sessions.where('sessionId').equals(s.sessionId).delete();
       }
       return stale.length;
     }

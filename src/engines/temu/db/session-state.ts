@@ -1,4 +1,4 @@
-import { TEMU_ACTIVE_SESSION_STORAGE_KEY } from '../constants/defaults';
+import { TEMU_ACTIVE_SESSION_KEY } from '../constants/defaults';
 import type { TemuCollectionMode, TemuPageType } from '../types';
 
 export interface ActiveTemuSessionPointer {
@@ -6,7 +6,7 @@ export interface ActiveTemuSessionPointer {
   sessionId: string | null;
   mode: TemuCollectionMode;
   targetCount: number;
-  startedAt: number | null;
+  startedAt: string | null;
   url: string | null;
   pageType: TemuPageType;
   searchQuery: string | null;
@@ -50,8 +50,8 @@ export async function readActiveTemuSession(): Promise<ActiveTemuSessionPointer 
   const area = sessionArea();
   if (!area) return null;
   try {
-    const stored = await area.get(TEMU_ACTIVE_SESSION_STORAGE_KEY);
-    const value = stored[TEMU_ACTIVE_SESSION_STORAGE_KEY];
+    const stored = await area.get(TEMU_ACTIVE_SESSION_KEY);
+    const value = stored[TEMU_ACTIVE_SESSION_KEY];
     return isTemuPointer(value) ? value : null;
   } catch {
     return null;
@@ -64,7 +64,7 @@ export async function writeActiveTemuSession(
   const area = sessionArea();
   if (!area) return;
   try {
-    await area.set({ [TEMU_ACTIVE_SESSION_STORAGE_KEY]: pointer });
+    await area.set({ [TEMU_ACTIVE_SESSION_KEY]: pointer });
   } catch {
     // Best-effort; IndexedDB fallback covers restart
   }
@@ -74,7 +74,7 @@ export async function clearActiveTemuSession(): Promise<void> {
   const area = sessionArea();
   if (!area) return;
   try {
-    await area.remove(TEMU_ACTIVE_SESSION_STORAGE_KEY);
+    await area.remove(TEMU_ACTIVE_SESSION_KEY);
   } catch {
     // Best-effort
   }

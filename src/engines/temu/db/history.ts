@@ -1,6 +1,6 @@
 import { temuDb, type TemuCollectionHistory } from './database';
 import { deleteTemuSession } from './sessions';
-import { MAX_TEMU_HISTORY_SESSIONS } from '../constants/defaults';
+import { TEMU_MAX_HISTORY_SESSIONS } from '../constants/defaults';
 
 /**
  * Adds or updates a Temu collection history entry keyed by `sessionId`,
@@ -34,13 +34,13 @@ export async function addTemuHistory(
         await temuDb.history.add(entry as TemuCollectionHistory)
       );
 
-      // Enforce 50-session history cap (delete oldest beyond MAX_TEMU_HISTORY_SESSIONS)
+      // Enforce 50-session history cap (delete oldest beyond TEMU_MAX_HISTORY_SESSIONS)
       const allEntries = await temuDb.history
         .orderBy('startedAt')
         .reverse()
         .toArray();
-      if (allEntries.length > MAX_TEMU_HISTORY_SESSIONS) {
-        const overflow = allEntries.slice(MAX_TEMU_HISTORY_SESSIONS);
+      if (allEntries.length > TEMU_MAX_HISTORY_SESSIONS) {
+        const overflow = allEntries.slice(TEMU_MAX_HISTORY_SESSIONS);
         for (const old of overflow) {
           if (old.id != null) {
             await temuDb.history.delete(old.id);

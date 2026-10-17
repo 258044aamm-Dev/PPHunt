@@ -1,60 +1,41 @@
 import { temuDb } from './database';
 import { DEFAULT_TEMU_SETTINGS } from '../constants/defaults';
 import { TemuSettingsSchema } from '../schemas/settings';
-import type { TemuSettings } from '../types';
+import type { TemuUserSettings } from '../types';
 
-export type TemuSettingsUpdate = Omit<
-  Partial<TemuSettings>,
-  'enabledFields' | 'scroll'
-> & {
-  enabledFields?: Partial<TemuSettings['enabledFields']>;
-  scroll?: Partial<TemuSettings['scroll']>;
-};
+export type TemuSettingsUpdate = Partial<Omit<TemuUserSettings, 'id'>>;
 
-export async function getTemuSettings(): Promise<TemuSettings> {
-  const existing = await temuDb.settings.get('default');
+export async function getTemuSettings(): Promise<TemuUserSettings> {
+  const existing = await temuDb.settings.get(1);
   if (existing) {
     return TemuSettingsSchema.parse({
       ...DEFAULT_TEMU_SETTINGS,
       ...existing,
-      scroll: {
-        ...DEFAULT_TEMU_SETTINGS.scroll,
-        ...(existing.scroll ?? {}),
-      },
-      enabledFields: {
-        ...DEFAULT_TEMU_SETTINGS.enabledFields,
-        ...(existing.enabledFields ?? {}),
-      },
+      id: 1,
     });
   }
 
-  await temuDb.settings.put({ id: 'default', ...DEFAULT_TEMU_SETTINGS });
-  return DEFAULT_TEMU_SETTINGS;
+  const initial: TemuUserSettings = { id: 1, ...DEFAULT_TEMU_SETTINGS };
+  await temuDb.settings.put(initial);
+  return initial;
 }
 
 export async function updateTemuSettings(
   partial: TemuSettingsUpdate
-): Promise<TemuSettings> {
+): Promise<TemuUserSettings> {
   const current = await getTemuSettings();
   const merged = TemuSettingsSchema.parse({
+    ...DEFAULT_TEMU_SETTINGS,
     ...current,
     ...partial,
-    scroll: {
-      ...DEFAULT_TEMU_SETTINGS.scroll,
-      ...current.scroll,
-      ...(partial.scroll ?? {}),
-    },
-    enabledFields: {
-      ...DEFAULT_TEMU_SETTINGS.enabledFields,
-      ...current.enabledFields,
-      ...(partial.enabledFields ?? {}),
-    },
+    id: 1,
   });
-  await temuDb.settings.put({ id: 'default', ...merged });
+  await temuDb.settings.put(merged);
   return merged;
 }
 
-export async function resetTemuSettings(): Promise<TemuSettings> {
-  await temuDb.settings.put({ id: 'default', ...DEFAULT_TEMU_SETTINGS });
-  return DEFAULT_TEMU_SETTINGS;
+export async function resetTemuSettings(): Promise<TemuUserSettings> {
+  const reset: TemuUserSettings = { id: 1, ...DEFAULT_TEMU_SETTINGS };
+  await temuDb.settings.put(reset);
+  return reset;
 }

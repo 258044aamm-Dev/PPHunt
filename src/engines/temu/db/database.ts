@@ -1,14 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { TEMU_DB_NAME } from '../constants/defaults';
-import type {
-  TemuCollectionSession,
-  TemuProduct,
-  TemuSettings,
-} from '../types';
-
-export interface TemuSettingsRow extends TemuSettings {
-  id: string;
-}
+import type { TemuCollectionSession, TemuUserSettings } from '../types';
+import type { TemuProduct } from '../types/product';
 
 export interface TemuCollectionHistory {
   id?: number;
@@ -19,15 +12,15 @@ export interface TemuCollectionHistory {
   mode: TemuCollectionSession['mode'];
   targetCount: number;
   collectedCount: number;
-  startedAt: number;
-  completedAt: number;
+  startedAt: string;
+  completedAt: string;
   status: TemuCollectionSession['status'];
 }
 
 export class PPHuntTemuDatabase extends Dexie {
   products!: EntityTable<TemuProduct, 'id'>;
   sessions!: EntityTable<TemuCollectionSession, 'id'>;
-  settings!: EntityTable<TemuSettingsRow, 'id'>;
+  settings!: EntityTable<TemuUserSettings, 'id'>;
   history!: EntityTable<TemuCollectionHistory, 'id'>;
 
   constructor(name: string = TEMU_DB_NAME) {
@@ -36,8 +29,8 @@ export class PPHuntTemuDatabase extends Dexie {
     this.version(1).stores({
       products:
         '++id, goodsId, asin, sessionId, collectedAt, [sessionId+goodsId], [sessionId+asin]',
-      sessions: 'id, tabId, status, startedAt',
-      settings: 'id',
+      sessions: '++id, &sessionId, status, startedAt',
+      settings: '++id',
       history: '++id, sessionId, startedAt',
     });
   }
