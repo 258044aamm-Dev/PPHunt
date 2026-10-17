@@ -1,24 +1,26 @@
 import { useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/database';
+import {
+  openDedicatedPreviewTab,
+  savePreviewStateSnapshot,
+  type PreviewDisplayMode,
+} from '@/lib/preview/previewStateSync';
 import { ProductTable } from '../table/ProductTable';
 import { useUIStore } from '../store/uiStore';
 import { useCollectionStore } from '../store/collectionStore';
+import { PreviewModeSwitcher } from './PreviewModeSwitcher';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { formatNumber } from '@/lib/utils/formatters';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
 
-/**
- * Structured full-width overlay table modal (SAD-135, SAD-136 & SAD-138).
- *
- * Opens when the user selects "Preview Current Extraction" from the completion
- * dialog OR clicks "Preview" on an extraction record in the History tab.
- * Scopes the table and export actions to `selectedSessionKey` when viewing a
- * specific extraction record.
- */
 export function FullWidthPreviewModal() {
   const previewOverlayOpen = useUIStore((s) => s.previewOverlayOpen);
+  const previewMode = useUIStore((s) => s.previewMode);
+  const setPreviewMode = useUIStore((s) => s.setPreviewMode);
+  const previewSorting = useUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useUIStore((s) => s.previewGlobalFilter);
   const selectedSessionKey = useUIStore((s) => s.selectedSessionKey);
   const closePreviewOverlay = useUIStore((s) => s.closePreviewOverlay);
   const openExportModal = useUIStore((s) => s.openExportModal);
@@ -41,19 +43,43 @@ export function FullWidthPreviewModal() {
 
   useEffect(() => {
     if (previewOverlayOpen) {
-      setOverlayFullWidthMode(true);
+      setOverlayFullWidthMode(previewMode === 'overview');
     }
     return () => {
       if (previewOverlayOpen) {
         setOverlayFullWidthMode(false);
       }
     };
-  }, [previewOverlayOpen]);
+  }, [previewOverlayOpen, previewMode]);
 
   const handleClose = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
   }, [closePreviewOverlay]);
+
+  const handleSelectPreviewMode = useCallback(
+    (mode: PreviewDisplayMode) => {
+      if (mode === 'tab') {
+        void openDedicatedPreviewTab({
+          engine: 'amazon',
+          sessionKey: selectedSessionKey,
+          sorting: previewSorting,
+          globalFilter: previewGlobalFilter,
+        });
+        return;
+      }
+      setPreviewMode(mode);
+      setOverlayFullWidthMode(mode === 'overview');
+      void savePreviewStateSnapshot({
+        engine: 'amazon',
+        sessionKey: selectedSessionKey,
+        sorting: previewSorting,
+        globalFilter: previewGlobalFilter,
+        mode,
+      });
+    },
+    [selectedSessionKey, previewSorting, previewGlobalFilter, setPreviewMode],
+  );
 
   const handleTryAnotherExtraction = useCallback(() => {
     setOverlayFullWidthMode(false);
@@ -67,12 +93,8 @@ export function FullWidthPreviewModal() {
     openExportModal(selectedSessionKey);
   }, [openExportModal, selectedSessionKey]);
 
-  // L-6 (SAD-194): trap focus while open and restore it on close. Escape is
-  // handled by the window-level listener below (it must stay window-level: the
-  // export-modal-on-top guard needs the keystroke even when focus is outside).
   const focusTrapRef = useFocusTrap<HTMLDivElement>(previewOverlayOpen);
 
-  // Escape to close preview overlay (unless export modal is open on top)
   useEffect(() => {
     if (!previewOverlayOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -90,11 +112,11 @@ export function FullWidthPreviewModal() {
     <div
       ref={focusTrapRef}
       tabIndex={-1}
+      data-preview-mode={previewMode}
       className="fixed inset-0 z-40 bg-canvas text-ink flex flex-col p-4 overflow-hidden"
       data-testid="fullwidth-preview-overlay"
       {...modalAriaProps('fullwidth-preview-title')}
     >
-      {/* Structured Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-hairline-soft shrink-0">
         <div className="flex items-center gap-2.5">
           <h2
@@ -109,7 +131,11 @@ export function FullWidthPreviewModal() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <PreviewModeSwitcher
+            currentMode={previewMode}
+            onSelectMode={handleSelectPreviewMode}
+          />
           <button
             type="button"
             onClick={handleTryAnotherExtraction}
@@ -151,9 +177,13 @@ export function FullWidthPreviewModal() {
         </div>
       </div>
 
-      {/* Full-Width Structured Table scoped to selectedSessionKey */}
       <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col">
-        <ProductTable fullHeight sessionKey={selectedSessionKey} />
+        <ProductTable
+          fullHeight
+          sessionKey={selectedSessionKey}
+          initialSorting={previewSorting}
+          initialGlobalFilter={previewGlobalFilter}
+        />
       </div>
     </div>
   );

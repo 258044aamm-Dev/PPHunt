@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/database';
+import { openDedicatedPreviewTab } from '@/lib/preview/previewStateSync';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import { useCollectionStore } from '../store/collectionStore';
 import { useUIStore } from '../store/uiStore';
 import { modalAriaProps } from '@/lib/utils/a11y';
@@ -9,18 +11,6 @@ import { formatNumber } from '@/lib/utils/formatters';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
 import { ExportModal } from './ExportModal';
 
-/**
- * Post-extraction completion dialog & record-scoped export host (SAD-135 & SAD-136).
- *
- * Automatically displayed when an extraction finishes (status === 'completed').
- * Never displayed when status === 'error'.
- *
- * Provides three distinct actions:
- * 1. Preview Current Extraction — Opens the structured full-width overlay table
- * 2. Export Current Extraction — Opens CSV / XLSX / Clipboard export modal
- * 3. Try Another Extraction — Preserves current extracted data in IndexedDB & History
- *    and resets collection controls to 'idle' ready for the next extraction.
- */
 export function ExtractionCompleteModal() {
   const status = useCollectionStore((s) => s.status);
   const errorMessage = useCollectionStore((s) => s.errorMessage);
@@ -38,6 +28,8 @@ export function ExtractionCompleteModal() {
   const openExportModal = useUIStore((s) => s.openExportModal);
   const closeExportModal = useUIStore((s) => s.closeExportModal);
   const setActiveTab = useUIStore((s) => s.setActiveTab);
+  const previewSorting = useUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useUIStore((s) => s.previewGlobalFilter);
 
   const storedProducts = useLiveQuery(async () => {
     if (selectedSessionKey) {
@@ -46,19 +38,34 @@ export function ExtractionCompleteModal() {
         .equals(selectedSessionKey)
         .toArray();
       return scoped.sort((a, b) =>
-        (b.collectedAt ?? '').localeCompare(a.collectedAt ?? '')
+        (b.collectedAt ?? '').localeCompare(a.collectedAt ?? ''),
       );
     }
     return db.products.orderBy('collectedAt').reverse().toArray();
   }, [selectedSessionKey]);
 
   const products = useMemo(() => storedProducts ?? [], [storedProducts]);
+  const sortedProducts = useMemo(
+    () => sortProducts(products, previewSorting),
+    [products, previewSorting],
+  );
+  const filteredSortedProducts = useMemo(() => {
+    if (!previewGlobalFilter) return sortedProducts;
+    const lower = previewGlobalFilter.toLowerCase();
+    return sortedProducts.filter(
+      (p) =>
+        (p.title ?? '').toLowerCase().includes(lower) ||
+        p.asin.toLowerCase().includes(lower) ||
+        (p.brand ?? '').toLowerCase().includes(lower) ||
+        (p.seller ?? '').toLowerCase().includes(lower),
+    );
+  }, [sortedProducts, previewGlobalFilter]);
+
   const effectiveCount = selectedSessionKey
     ? products.length || collectedCount
     : Math.max(collectedCount, products.length);
   const hasProducts = effectiveCount > 0;
 
-  // Never show completion dialog if extraction failed
   useEffect(() => {
     if (status === 'error' && completionDialogOpen) {
       closeCompletionDialog();
@@ -66,8 +73,6 @@ export function ExtractionCompleteModal() {
   }, [status, completionDialogOpen, closeCompletionDialog]);
 
   const handleTryAnotherExtraction = useCallback(() => {
-    // Preserve all extracted products in IndexedDB and History;
-    // reset only the active collection status so user can configure a new run safely.
     closeCompletionDialog();
     setError(null);
     setStatus('idle');
@@ -83,14 +88,39 @@ export function ExtractionCompleteModal() {
   const handlePreviewCurrentExtraction = useCallback(() => {
     if (!hasProducts) return;
     setOverlayFullWidthMode(true);
-    openPreviewOverlay(selectedSessionKey);
+    openPreviewOverlay(selectedSessionKey, 'overview');
   }, [hasProducts, openPreviewOverlay, selectedSessionKey]);
+
+  const handlePreviewInSidebar = useCallback(() => {
+    if (!hasProducts) return;
+    setOverlayFullWidthMode(false);
+    openPreviewOverlay(selectedSessionKey, 'sidebar');
+  }, [hasProducts, openPreviewOverlay, selectedSessionKey]);
+
+  const handlePreviewInDedicatedTab = useCallback(() => {
+    if (!hasProducts) return;
+    closeCompletionDialog();
+    void openDedicatedPreviewTab({
+      engine: 'amazon',
+      sessionKey: selectedSessionKey,
+      sorting: previewSorting,
+      globalFilter: previewGlobalFilter,
+    });
+  }, [
+    hasProducts,
+    closeCompletionDialog,
+    selectedSessionKey,
+    previewSorting,
+    previewGlobalFilter,
+  ]);
 
   const showDialog =
     completionDialogOpen && status !== 'error' && !errorMessage;
 
-  // L-6 (SAD-194): focus trap + Escape-to-close + focus restore on close.
-  const focusTrapRef = useFocusTrap<HTMLDivElement>(showDialog, closeCompletionDialog);
+  const focusTrapRef = useFocusTrap<HTMLDivElement>(
+    showDialog,
+    closeCompletionDialog,
+  );
 
   return (
     <>
@@ -104,7 +134,6 @@ export function ExtractionCompleteModal() {
             className="bg-surface border border-hairline-soft rounded-md p-5 max-w-sm w-full shadow-lg"
             {...modalAriaProps('extraction-complete-title')}
           >
-            {/* Status badge & close button */}
             <div className="flex items-center justify-between mb-3">
               <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-sm bg-surface-card border border-hairline-soft">
                 <span
@@ -113,7 +142,9 @@ export function ExtractionCompleteModal() {
                   }`}
                 />
                 <span className="font-sans text-xs font-medium text-ink">
-                  {hasProducts ? 'Extraction Complete' : 'No Products Extracted'}
+                  {hasProducts
+                    ? 'Extraction Complete'
+                    : 'No Products Extracted'}
                 </span>
               </div>
               <button
@@ -136,7 +167,6 @@ export function ExtractionCompleteModal() {
               </button>
             </div>
 
-            {/* Heading */}
             <h3
               id="extraction-complete-title"
               className="font-serif text-base font-semibold text-ink mb-1.5"
@@ -148,7 +178,6 @@ export function ExtractionCompleteModal() {
                 : '0 Products Found on This Page'}
             </h3>
 
-            {/* Description & preservation note */}
             <p className="font-serif text-xs text-ink-muted mb-4 leading-relaxed">
               {hasProducts ? (
                 <>
@@ -157,9 +186,9 @@ export function ExtractionCompleteModal() {
                     {mode}
                   </strong>{' '}
                   mode
-                  {mode === 'automatic' ? ` (target: ${targetCount})` : ''}. Your
-                  current results are safely preserved until you explicitly reset
-                  or clear them.
+                  {mode === 'automatic' ? ` (target: ${targetCount})` : ''}.
+                  Your current results are safely preserved until you explicitly
+                  reset or clear them.
                 </>
               ) : (
                 <>
@@ -169,9 +198,7 @@ export function ExtractionCompleteModal() {
               )}
             </p>
 
-            {/* Three Distinct Action Options */}
             <div className="space-y-2.5">
-              {/* Option 3: Preview Current Extraction */}
               <button
                 type="button"
                 onClick={handlePreviewCurrentExtraction}
@@ -195,13 +222,46 @@ export function ExtractionCompleteModal() {
                       hasProducts ? 'text-clay-ink/90' : 'text-ink-subtle'
                     }`}
                   >
-                    Review extracted data in a structured full-width overlay table
+                    Review extracted data in a structured full-width overlay
+                    table
                   </span>
                 </div>
                 <span className="font-sans text-sm ml-2 shrink-0">→</span>
               </button>
 
-              {/* Option 2: Export Current Extraction */}
+              {hasProducts && (
+                <div
+                  className="grid grid-cols-3 gap-1.5"
+                  role="group"
+                  aria-label="Open preview in mode"
+                >
+                  <button
+                    type="button"
+                    data-testid="completion-preview-sidebar"
+                    onClick={handlePreviewInSidebar}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-ink-muted hover:text-ink hover:bg-surface-soft font-sans text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Sidebar View
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="completion-preview-overview"
+                    onClick={handlePreviewCurrentExtraction}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-ink-muted hover:text-ink hover:bg-surface-soft font-sans text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Overview 95vw
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="completion-preview-tab"
+                    onClick={handlePreviewInDedicatedTab}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-clay hover:bg-surface-soft font-sans text-[11px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Open in Tab ↗
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleExportCurrentExtraction}
@@ -229,7 +289,6 @@ export function ExtractionCompleteModal() {
                 </span>
               </button>
 
-              {/* Option 1: Try Another Extraction */}
               <button
                 type="button"
                 onClick={handleTryAnotherExtraction}
@@ -252,14 +311,13 @@ export function ExtractionCompleteModal() {
         </div>
       )}
 
-      {/* Standalone Export Modal triggered from Completion Dialog, Full-Width Preview, or History Tab */}
       <ExportModal
         isOpen={exportModalOpen}
         onClose={closeExportModal}
-        allProducts={products}
+        allProducts={sortedProducts}
         selectedProducts={[]}
-        filteredProducts={products}
-        hasFilter={false}
+        filteredProducts={filteredSortedProducts}
+        hasFilter={!!previewGlobalFilter}
         hasSelection={false}
       />
     </>

@@ -4,6 +4,8 @@ import { modalAriaProps } from '@/lib/utils/a11y';
 import { useFocusTrap } from '@/entrypoints/sidepanel/hooks/useFocusTrap';
 import { formatNumber } from '@/lib/utils/formatters';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import { openDedicatedPreviewTab } from '@/lib/preview/previewStateSync';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import { temuDb } from '../../db/database';
 import { useTemuCollectionStore } from '../store/collectionStore';
 import { useTemuUIStore } from '../store/uiStore';
@@ -26,6 +28,8 @@ export function TemuExtractionCompleteModal() {
   const openExportModal = useTemuUIStore((s) => s.openExportModal);
   const closeExportModal = useTemuUIStore((s) => s.closeExportModal);
   const setActiveTab = useTemuUIStore((s) => s.setActiveTab);
+  const previewSorting = useTemuUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useTemuUIStore((s) => s.previewGlobalFilter);
 
   const storedProducts = useLiveQuery(async () => {
     if (selectedSessionId) {
@@ -41,6 +45,21 @@ export function TemuExtractionCompleteModal() {
   }, [selectedSessionId]);
 
   const products = useMemo(() => storedProducts ?? [], [storedProducts]);
+  const sortedProducts = useMemo(
+    () => sortProducts(products, previewSorting),
+    [products, previewSorting]
+  );
+  const filteredSortedProducts = useMemo(() => {
+    if (!previewGlobalFilter) return sortedProducts;
+    const lower = previewGlobalFilter.toLowerCase();
+    return sortedProducts.filter(
+      (p) =>
+        (p.title ?? '').toLowerCase().includes(lower) ||
+        p.goodsId.toLowerCase().includes(lower) ||
+        (p.brand ?? '').toLowerCase().includes(lower) ||
+        (p.seller ?? '').toLowerCase().includes(lower)
+    );
+  }, [sortedProducts, previewGlobalFilter]);
   const effectiveCount = selectedSessionId
     ? products.length || collectedCount
     : Math.max(collectedCount, products.length);
@@ -68,8 +87,31 @@ export function TemuExtractionCompleteModal() {
   const handlePreviewCurrentExtraction = useCallback(() => {
     if (!hasProducts) return;
     setOverlayFullWidthMode(true);
-    openPreviewOverlay(selectedSessionId);
+    openPreviewOverlay(selectedSessionId, 'overview');
   }, [hasProducts, openPreviewOverlay, selectedSessionId]);
+
+  const handlePreviewInSidebar = useCallback(() => {
+    if (!hasProducts) return;
+    setOverlayFullWidthMode(false);
+    openPreviewOverlay(selectedSessionId, 'sidebar');
+  }, [hasProducts, openPreviewOverlay, selectedSessionId]);
+
+  const handlePreviewInDedicatedTab = useCallback(() => {
+    if (!hasProducts) return;
+    closeCompletionDialog();
+    void openDedicatedPreviewTab({
+      engine: 'temu',
+      sessionKey: selectedSessionId,
+      sorting: previewSorting,
+      globalFilter: previewGlobalFilter,
+    });
+  }, [
+    hasProducts,
+    closeCompletionDialog,
+    selectedSessionId,
+    previewSorting,
+    previewGlobalFilter,
+  ]);
 
   const showDialog =
     completionDialogOpen && status !== 'error' && !errorMessage;
@@ -184,6 +226,39 @@ export function TemuExtractionCompleteModal() {
                 <span className="font-sans text-sm ml-2 shrink-0">→</span>
               </button>
 
+              {hasProducts && (
+                <div
+                  className="grid grid-cols-3 gap-1.5"
+                  role="group"
+                  aria-label="Open preview in mode"
+                >
+                  <button
+                    type="button"
+                    data-testid="temu-completion-preview-sidebar"
+                    onClick={handlePreviewInSidebar}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-ink-muted hover:text-ink hover:bg-surface-soft font-sans text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Sidebar View
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="temu-completion-preview-overview"
+                    onClick={handlePreviewCurrentExtraction}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-ink-muted hover:text-ink hover:bg-surface-soft font-sans text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Overview 95vw
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="temu-completion-preview-tab"
+                    onClick={handlePreviewInDedicatedTab}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-clay hover:bg-surface-soft font-sans text-[11px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Open in Tab ↗
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleExportCurrentExtraction}
@@ -236,10 +311,10 @@ export function TemuExtractionCompleteModal() {
       <TemuExportModal
         isOpen={exportModalOpen}
         onClose={closeExportModal}
-        allProducts={products}
+        allProducts={sortedProducts}
         selectedProducts={[]}
-        filteredProducts={products}
-        hasFilter={false}
+        filteredProducts={filteredSortedProducts}
+        hasFilter={!!previewGlobalFilter}
         hasSelection={false}
       />
     </>

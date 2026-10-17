@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   useTable,
   flexRender,
@@ -7,65 +7,87 @@ import {
   type ColumnFiltersState,
   type RowSelectionState,
   type ColumnSizingState,
+  type Updater,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/lib/db/database';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import type { Product } from '@/types/product';
 import { getColumnsForSettings } from './columns';
 import { TableToolbar } from '../components/TableToolbar';
 import { TableEmptyState } from './TableEmptyState';
 import { ExportModal } from '../components/ExportModal';
 import { useSettings } from '../hooks/useSettings';
+import { useUIStore } from '../store/uiStore';
 import { deleteProducts } from '@/lib/db/products';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 
 const ROW_HEIGHT = 52;
 const KEYBOARD_SCROLL_STEP = 120;
 
-/**
- * Virtualized product preview table (TanStack Table v9).
- *
- * Features:
- * - Optional `sessionKey` scoping so History records preview/export only their own products
- * - Dedicated '#' row-number column that remains accurate when rows are added, removed, filtered, or reordered (SAD-139)
- * - Reliable product thumbnail rendering with no-referrer policy and error fallback (SAD-139)
- * - Unified scroll container (`ref={parentRef}`) keeping the horizontal scrollbar pinned and
- *   visible at the bottom of the Preview viewport even in narrow sidebars (SAD-138)
- * - Horizontal scrolling via scrollbar drag/click, trackpad swipe, Shift+Wheel, and Left/Right arrow keys
- * - Row virtualization (@tanstack/react-virtual) for 10k+ rows
- * - Column sorting (click header)
- * - Column resizing (drag header edge)
- * - Row selection (checkboxes + select all)
- * - Search/filter by title, ASIN, brand, seller, availability, or currency
- * - Dynamic columns synchronized with Settings enabledFields
- * - Live updates via Dexie useLiveQuery
- */
+export interface ProductTableProps {
+  fullHeight?: boolean;
+  sessionKey?: string | null;
+  initialSorting?: SortingState;
+  initialGlobalFilter?: string;
+}
+
 export function ProductTable({
   fullHeight = false,
   sessionKey = null,
-}: {
-  fullHeight?: boolean;
-  sessionKey?: string | null;
-} = {}) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  initialSorting,
+  initialGlobalFilter,
+}: ProductTableProps = {}) {
+  const setStoreSorting = useUIStore((s) => s.setPreviewSorting);
+  const setStoreGlobalFilter = useUIStore((s) => s.setPreviewGlobalFilter);
+
+  const [sorting, setSorting] = useState<SortingState>(initialSorting ?? []);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
   const [exportOpen, setExportOpen] = useState(false);
-  // L-6 (SAD-194): promise-based confirm replaces window.confirm().
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  useEffect(() => {
+    setStoreSorting?.(sorting);
+  }, [sorting, setStoreSorting]);
+
+  useEffect(() => {
+    setStoreGlobalFilter?.(globalFilter);
+  }, [globalFilter, setStoreGlobalFilter]);
+
+  const handleSortingChange = useCallback(
+    (updaterOrValue: Updater<SortingState>) => {
+      setSorting((prev) =>
+        typeof updaterOrValue === 'function'
+          ? updaterOrValue(prev)
+          : updaterOrValue,
+      );
+    },
+    [],
+  );
+
+  const handleGlobalFilterChange = useCallback(
+    (updaterOrValue: Updater<string>) => {
+      setGlobalFilter((prev) =>
+        typeof updaterOrValue === 'function'
+          ? updaterOrValue(prev)
+          : updaterOrValue,
+      );
+    },
+    [],
+  );
 
   const parentRef = useRef<HTMLDivElement>(null);
   const { settings } = useSettings();
 
   const activeColumns = useMemo(
     () => getColumnsForSettings(settings?.enabledFields),
-    [settings?.enabledFields]
+    [settings?.enabledFields],
   );
 
-  // Live products from IndexedDB, optionally scoped to `sessionKey`
   const products = useLiveQuery(async () => {
     if (sessionKey) {
       const scoped = await db.products
@@ -73,7 +95,7 @@ export function ProductTable({
         .equals(sessionKey)
         .toArray();
       return scoped.sort((a, b) =>
-        (b.collectedAt ?? '').localeCompare(a.collectedAt ?? '')
+        (b.collectedAt ?? '').localeCompare(a.collectedAt ?? ''),
       );
     }
     return db.products.orderBy('collectedAt').reverse().toArray();
@@ -98,37 +120,19 @@ export function ProductTable({
         (p.pastMonthSales ?? '').toLowerCase().includes(lower) ||
         (p.coupon ?? '').toLowerCase().includes(lower) ||
         (p.badge ?? '').toLowerCase().includes(lower) ||
-        (p.delivery ?? '').toLowerCase().includes(lower)
+        (p.delivery ?? '').toLowerCase().includes(lower),
     );
   }, [data, globalFilter]);
 
-  const sortedAndFilteredProducts = useMemo(() => {
-    if (sorting.length === 0) return filteredProducts;
-    const activeSort = sorting[0];
-    if (!activeSort) return filteredProducts;
-    const colId = activeSort.id as keyof (typeof filteredProducts)[number];
-    const dir = activeSort.desc ? -1 : 1;
+  const sortedAllProducts = useMemo(
+    () => sortProducts(data, sorting),
+    [data, sorting],
+  );
 
-    return [...filteredProducts].sort((a, b) => {
-      const va = a[colId];
-      const vb = b[colId];
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return (va - vb) * dir;
-      }
-      if (typeof va === 'boolean' && typeof vb === 'boolean') {
-        return (Number(va) - Number(vb)) * dir;
-      }
-      return (
-        String(va).localeCompare(String(vb), undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        }) * dir
-      );
-    });
-  }, [filteredProducts, sorting]);
+  const sortedAndFilteredProducts = useMemo(
+    () => sortProducts(filteredProducts, sorting),
+    [filteredProducts, sorting],
+  );
 
   const table = useTable({
     data: sortedAndFilteredProducts,
@@ -144,11 +148,15 @@ export function ProductTable({
       columnSizing,
       globalFilter,
     },
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onRowSelectionChange: setRowSelection,
     onColumnSizingChange: setColumnSizing,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: handleGlobalFilterChange,
+    manualSorting: true,
+    enableMultiSort: true,
+    isMultiSortEvent: (e: unknown) =>
+      Boolean((e as { shiftKey?: boolean })?.shiftKey),
     columnResizeMode: 'onChange' as const,
     enableRowSelection: true,
     getRowId: (row: Product) => String(row.id ?? row.asin),
@@ -157,7 +165,6 @@ export function ProductTable({
   const rows = table.getRowModel().rows;
   const totalTableWidth = table.getCenterTotalSize();
 
-  // Virtualizer
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -167,11 +174,8 @@ export function ProductTable({
 
   const totalSize = virtualizer.getTotalSize();
   const virtualItems = virtualizer.getVirtualItems();
-  // noUncheckedIndexedAccess: virtualItems[0] may be undefined when the list is
-  // empty — resolve it once instead of asserting at each use site.
   const firstVirtualItem = virtualItems[0];
 
-  // Horizontal keyboard scrolling support (ArrowLeft / ArrowRight)
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement | null;
@@ -179,6 +183,7 @@ export function ProductTable({
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
           target.isContentEditable)
       ) {
         return;
@@ -193,14 +198,13 @@ export function ProductTable({
         e.preventDefault();
         container.scrollLeft = Math.max(
           0,
-          container.scrollLeft - KEYBOARD_SCROLL_STEP
+          container.scrollLeft - KEYBOARD_SCROLL_STEP,
         );
       }
     },
-    []
+    [],
   );
 
-  // Support Shift + vertical wheel for horizontal scrolling across devices
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const container = parentRef.current;
     if (!container) return;
@@ -209,7 +213,6 @@ export function ProductTable({
     }
   }, []);
 
-  // Selection helpers
   const selectedIds = useMemo(() => {
     return Object.keys(rowSelection)
       .filter((key) => rowSelection[key])
@@ -219,7 +222,6 @@ export function ProductTable({
 
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.length === 0) return;
-    // L-6 (SAD-194): promise-based confirm replaces window.confirm().
     const ok = await askConfirm({
       title: 'Delete selected products?',
       message: `Delete ${selectedIds.length} selected product(s)?`,
@@ -232,27 +234,24 @@ export function ProductTable({
   }, [selectedIds, askConfirm]);
 
   const handleSelectAll = useCallback(() => {
-    // v9 types row selection as Record<string, true> — build that exact shape.
     const allIds: Record<string, true> = {};
-    filteredProducts.forEach((p) => {
+    sortedAndFilteredProducts.forEach((p) => {
       const rowKey = String(p.id ?? p.asin);
       allIds[rowKey] = true;
     });
     setRowSelection(allIds);
-  }, [filteredProducts]);
+  }, [sortedAndFilteredProducts]);
 
   const handleDeselectAll = useCallback(() => {
     setRowSelection({});
   }, []);
 
-  // Products for export
   const selectedProducts = useMemo(() => {
-    return data.filter(
-      (p) => rowSelection[String(p.id ?? p.asin)]
+    return sortedAllProducts.filter(
+      (p) => rowSelection[String(p.id ?? p.asin)],
     );
-  }, [data, rowSelection]);
+  }, [sortedAllProducts, rowSelection]);
 
-  // Loading state
   if (products === undefined) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -261,26 +260,26 @@ export function ProductTable({
     );
   }
 
-  // Empty state
   if (data.length === 0) {
     return <TableEmptyState />;
   }
 
   return (
     <div className="flex flex-col h-full flex-1 min-h-0 min-w-0 w-full">
-      {/* Toolbar */}
       <TableToolbar
         totalCount={data.length}
         selectedCount={selectedIds.length}
         globalFilter={globalFilter}
-        onGlobalFilterChange={setGlobalFilter}
+        onGlobalFilterChange={handleGlobalFilterChange}
         onSelectAll={handleSelectAll}
         onDeselectAll={handleDeselectAll}
         onDeleteSelected={handleDeleteSelected}
         onExportOpen={() => setExportOpen(true)}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        engine="amazon"
       />
 
-      {/* Unified vertical + horizontal scroll container (SAD-138) */}
       <div
         ref={parentRef}
         data-testid="preview-table-scroll-container"
@@ -290,13 +289,8 @@ export function ProductTable({
         onKeyDown={handleKeyDown}
         onWheel={handleWheel}
         className="preview-table-scroll flex-1 min-h-0 min-w-0 w-full overflow-x-auto overflow-y-auto bg-surface border border-hairline-soft rounded-md focus:outline-none focus-visible:ring-1 focus-visible:ring-clay"
-        style={
-          fullHeight
-            ? undefined
-            : { maxHeight: 'calc(100vh - 220px)' }
-        }
+        style={fullHeight ? undefined : { maxHeight: 'calc(100vh - 220px)' }}
       >
-        {/* Header & virtualized body */}
         <table
           className="border-collapse table-fixed"
           style={{
@@ -312,6 +306,7 @@ export function ProductTable({
               >
                 {headerGroup.headers.map((header) => {
                   const isSorted = header.column.getIsSorted();
+                  const sortIndex = header.column.getSortIndex();
                   return (
                     <th
                       key={header.id}
@@ -327,19 +322,28 @@ export function ProductTable({
                               ? 'cursor-pointer hover:text-ink transition-colors flex items-center gap-1'
                               : ''
                           }
+                          title={
+                            header.column.getCanSort()
+                              ? 'Click to sort · Shift+Click to add multi-column sort'
+                              : undefined
+                          }
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(
                             header.column.columnDef.header,
-                            header.getContext()
+                            header.getContext(),
                           )}
                           {{
                             asc: ' ↑',
                             desc: ' ↓',
                           }[isSorted as string] ?? null}
+                          {sorting.length > 1 && sortIndex >= 0 && (
+                            <span className="font-mono text-[10px] text-clay">
+                              {sortIndex + 1}
+                            </span>
+                          )}
                         </div>
                       )}
-                      {/* Resize handle */}
                       {header.column.getCanResize() && (
                         <div
                           onMouseDown={header.getResizeHandler()}
@@ -354,7 +358,6 @@ export function ProductTable({
             ))}
           </thead>
 
-          {/* Virtualized body */}
           <tbody>
             {virtualItems.length === 0 ? (
               <tr>
@@ -367,7 +370,6 @@ export function ProductTable({
               </tr>
             ) : (
               <>
-                {/* Spacer before */}
                 {firstVirtualItem && firstVirtualItem.index > 0 && (
                   <tr>
                     <td
@@ -400,7 +402,7 @@ export function ProductTable({
                         >
                           {flexRender(
                             cell.column.columnDef.cell,
-                            cell.getContext()
+                            cell.getContext(),
                           )}
                         </td>
                       ))}
@@ -408,7 +410,6 @@ export function ProductTable({
                   );
                 })}
 
-                {/* Spacer after */}
                 {virtualItems.length > 0 && (
                   <tr>
                     <td
@@ -427,18 +428,16 @@ export function ProductTable({
         </table>
       </div>
 
-      {/* Export modal */}
       <ExportModal
         isOpen={exportOpen}
         onClose={() => setExportOpen(false)}
-        allProducts={data}
+        allProducts={sortedAllProducts}
         selectedProducts={selectedProducts}
-        filteredProducts={filteredProducts}
+        filteredProducts={sortedAndFilteredProducts}
         hasFilter={!!globalFilter}
         hasSelection={selectedIds.length > 0}
       />
 
-      {/* L-6 (SAD-194) */}
       {confirmDialog}
     </div>
   );
