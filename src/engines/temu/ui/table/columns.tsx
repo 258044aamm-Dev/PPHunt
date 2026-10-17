@@ -610,7 +610,8 @@ const sourceColumn = columnHelper.accessor('source', {
 });
 
 export const temuColumns: Array<
-  ColumnDef<typeof stockFeatures, TemuProduct, unknown>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TanStack v9 heterogeneous ColumnDef list
+  ColumnDef<typeof stockFeatures, TemuProduct, any>
 > = [
   selectColumn,
   rowNumberColumn,
@@ -644,7 +645,8 @@ export function getTemuColumnsForSettings(defaultExportColumns?: string[]) {
   }
 
   const enabled = new Set(defaultExportColumns);
-  const active: Array<ColumnDef<typeof stockFeatures, TemuProduct, unknown>> = [
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TanStack v9 heterogeneous ColumnDef list
+  const active: Array<ColumnDef<typeof stockFeatures, TemuProduct, any>> = [
     selectColumn,
     rowNumberColumn,
   ];
