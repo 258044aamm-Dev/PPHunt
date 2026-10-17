@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   useTable,
   flexRender,
@@ -54,6 +54,11 @@ export function TemuProductTable({
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  useEffect(() => {
+    setStoreSorting?.(initialSorting ?? []);
+    setStoreGlobalFilter?.(initialGlobalFilter ?? '');
+  }, [initialSorting, initialGlobalFilter, setStoreSorting, setStoreGlobalFilter]);
 
   const handleSortingChange = useCallback(
     (updaterOrValue: Updater<SortingState>) => {

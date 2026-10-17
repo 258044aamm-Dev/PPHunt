@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   stockFeatures,
@@ -56,6 +56,11 @@ export function AmazonProductTable({
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  useEffect(() => {
+    setStoreSorting?.(initialSorting ?? []);
+    setStoreGlobalFilter?.(initialGlobalFilter ?? '');
+  }, [initialSorting, initialGlobalFilter, setStoreSorting, setStoreGlobalFilter]);
 
   const handleSortingChange = useCallback(
     (updaterOrValue: Updater<SortingState>) => {

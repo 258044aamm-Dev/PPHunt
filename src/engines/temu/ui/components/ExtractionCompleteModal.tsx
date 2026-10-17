@@ -4,6 +4,7 @@ import { modalAriaProps } from '@/lib/utils/a11y';
 import { useFocusTrap } from '@/entrypoints/sidepanel/hooks/useFocusTrap';
 import { formatNumber } from '@/lib/utils/formatters';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import { temuDb } from '../../db/database';
 import { useTemuCollectionStore } from '../store/collectionStore';
 import { useTemuUIStore } from '../store/uiStore';
@@ -26,6 +27,8 @@ export function TemuExtractionCompleteModal() {
   const openExportModal = useTemuUIStore((s) => s.openExportModal);
   const closeExportModal = useTemuUIStore((s) => s.closeExportModal);
   const setActiveTab = useTemuUIStore((s) => s.setActiveTab);
+  const previewSorting = useTemuUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useTemuUIStore((s) => s.previewGlobalFilter);
 
   const storedProducts = useLiveQuery(async () => {
     if (selectedSessionId) {
@@ -41,6 +44,21 @@ export function TemuExtractionCompleteModal() {
   }, [selectedSessionId]);
 
   const products = useMemo(() => storedProducts ?? [], [storedProducts]);
+  const sortedProducts = useMemo(
+    () => sortProducts(products, previewSorting),
+    [products, previewSorting]
+  );
+  const filteredSortedProducts = useMemo(() => {
+    if (!previewGlobalFilter) return sortedProducts;
+    const lower = previewGlobalFilter.toLowerCase();
+    return sortedProducts.filter(
+      (p) =>
+        (p.title ?? '').toLowerCase().includes(lower) ||
+        p.goodsId.toLowerCase().includes(lower) ||
+        (p.brand ?? '').toLowerCase().includes(lower) ||
+        (p.seller ?? '').toLowerCase().includes(lower)
+    );
+  }, [sortedProducts, previewGlobalFilter]);
   const effectiveCount = selectedSessionId
     ? products.length || collectedCount
     : Math.max(collectedCount, products.length);
@@ -236,10 +254,10 @@ export function TemuExtractionCompleteModal() {
       <TemuExportModal
         isOpen={exportModalOpen}
         onClose={closeExportModal}
-        allProducts={products}
+        allProducts={sortedProducts}
         selectedProducts={[]}
-        filteredProducts={products}
-        hasFilter={false}
+        filteredProducts={filteredSortedProducts}
+        hasFilter={!!previewGlobalFilter}
         hasSelection={false}
       />
     </>

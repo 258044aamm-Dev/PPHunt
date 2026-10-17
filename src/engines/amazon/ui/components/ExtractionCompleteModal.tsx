@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useFocusTrap } from '@/entrypoints/sidepanel/hooks/useFocusTrap';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { db } from '../../db/database';
 import { formatNumber } from '../../utils/formatters';
@@ -28,6 +29,8 @@ export function AmazonExtractionCompleteModal() {
   const openExportModal = useAmazonUIStore((s) => s.openExportModal);
   const closeExportModal = useAmazonUIStore((s) => s.closeExportModal);
   const setActiveTab = useAmazonUIStore((s) => s.setActiveTab);
+  const previewSorting = useAmazonUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useAmazonUIStore((s) => s.previewGlobalFilter);
 
   const storedProducts = useLiveQuery(async () => {
     if (selectedSessionKey) {
@@ -43,6 +46,21 @@ export function AmazonExtractionCompleteModal() {
   }, [selectedSessionKey]);
 
   const products = useMemo(() => storedProducts ?? [], [storedProducts]);
+  const sortedProducts = useMemo(
+    () => sortProducts(products, previewSorting),
+    [products, previewSorting],
+  );
+  const filteredSortedProducts = useMemo(() => {
+    if (!previewGlobalFilter) return sortedProducts;
+    const lower = previewGlobalFilter.toLowerCase();
+    return sortedProducts.filter(
+      (p) =>
+        (p.title ?? '').toLowerCase().includes(lower) ||
+        p.asin.toLowerCase().includes(lower) ||
+        (p.brand ?? '').toLowerCase().includes(lower) ||
+        (p.seller ?? '').toLowerCase().includes(lower),
+    );
+  }, [sortedProducts, previewGlobalFilter]);
   const effectiveCount = selectedSessionKey
     ? products.length || collectedCount
     : Math.max(collectedCount, products.length);
@@ -240,10 +258,10 @@ export function AmazonExtractionCompleteModal() {
       <AmazonExportModal
         isOpen={exportModalOpen}
         onClose={closeExportModal}
-        allProducts={products}
+        allProducts={sortedProducts}
         selectedProducts={[]}
-        filteredProducts={products}
-        hasFilter={false}
+        filteredProducts={filteredSortedProducts}
+        hasFilter={!!previewGlobalFilter}
         hasSelection={false}
       />
     </>
