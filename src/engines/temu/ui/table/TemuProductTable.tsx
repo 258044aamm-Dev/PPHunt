@@ -7,15 +7,18 @@ import {
   type ColumnFiltersState,
   type RowSelectionState,
   type ColumnSizingState,
+  type Updater,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { TableToolbar } from '@/entrypoints/sidepanel/components/TableToolbar';
 import { useConfirmDialog } from '@/entrypoints/sidepanel/components/ConfirmDialog';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import { temuDb } from '../../db/database';
 import { deleteTemuProducts } from '../../db/products';
 import type { TemuProduct } from '../../types/product';
 import { useTemuSettings } from '../hooks/useTemuSettings';
+import { useTemuUIStore } from '../store/uiStore';
 import { TemuExportModal } from '../components/ExportModal';
 import { getTemuColumnsForSettings } from './columns';
 import { TemuTableEmptyState } from './TableEmptyState';
@@ -23,24 +26,62 @@ import { TemuTableEmptyState } from './TableEmptyState';
 const ROW_HEIGHT = 52;
 const KEYBOARD_SCROLL_STEP = 120;
 
+export interface TemuProductTableProps {
+  fullHeight?: boolean;
+  sessionId?: string | null;
+  initialSorting?: SortingState;
+  initialGlobalFilter?: string;
+}
+
 /**
  * Virtualized Temu product preview table (TanStack Table v9).
- * Matches ProductTable 100% in layout, styling, keyboard scrolling, row selection, and virtualization.
+ * Matches AmazonProductTable 100% in layout, styling, multi-column sorting,
+ * sort-preserving export, keyboard scrolling, row selection, and virtualization.
  */
 export function TemuProductTable({
   fullHeight = false,
   sessionId = null,
-}: {
-  fullHeight?: boolean;
-  sessionId?: string | null;
-} = {}) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  initialSorting,
+  initialGlobalFilter,
+}: TemuProductTableProps = {}) {
+  const setStoreSorting = useTemuUIStore((s) => s.setPreviewSorting);
+  const setStoreGlobalFilter = useTemuUIStore((s) => s.setPreviewGlobalFilter);
+
+  const [sorting, setSorting] = useState<SortingState>(initialSorting ?? []);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  const handleSortingChange = useCallback(
+    (updaterOrValue: Updater<SortingState>) => {
+      setSorting((prev) => {
+        const next =
+          typeof updaterOrValue === 'function'
+            ? updaterOrValue(prev)
+            : updaterOrValue;
+        setStoreSorting?.(next);
+        return next;
+      });
+    },
+    [setStoreSorting]
+  );
+
+  const handleGlobalFilterChange = useCallback(
+    (updaterOrValue: Updater<string>) => {
+      setGlobalFilter((prev) => {
+        const next =
+          typeof updaterOrValue === 'function'
+            ? updaterOrValue(prev)
+            : updaterOrValue;
+        setStoreGlobalFilter?.(next);
+        return next;
+      });
+    },
+    [setStoreGlobalFilter]
+  );
 
   const parentRef = useRef<HTMLDivElement>(null);
   const { settings } = useTemuSettings();
@@ -86,33 +127,15 @@ export function TemuProductTable({
     );
   }, [data, globalFilter]);
 
-  const sortedAndFilteredProducts = useMemo(() => {
-    if (sorting.length === 0) return filteredProducts;
-    const activeSort = sorting[0];
-    if (!activeSort) return filteredProducts;
-    const colId = activeSort.id as keyof (typeof filteredProducts)[number];
-    const dir = activeSort.desc ? -1 : 1;
+  const sortedAllProducts = useMemo(
+    () => sortProducts(data, sorting),
+    [data, sorting]
+  );
 
-    return [...filteredProducts].sort((a, b) => {
-      const va = a[colId];
-      const vb = b[colId];
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return (va - vb) * dir;
-      }
-      if (typeof va === 'boolean' && typeof vb === 'boolean') {
-        return (Number(va) - Number(vb)) * dir;
-      }
-      return (
-        String(va).localeCompare(String(vb), undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        }) * dir
-      );
-    });
-  }, [filteredProducts, sorting]);
+  const sortedAndFilteredProducts = useMemo(
+    () => sortProducts(filteredProducts, sorting),
+    [filteredProducts, sorting]
+  );
 
   const table = useTable({
     data: sortedAndFilteredProducts,
@@ -128,11 +151,15 @@ export function TemuProductTable({
       columnSizing,
       globalFilter,
     },
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onRowSelectionChange: setRowSelection,
     onColumnSizingChange: setColumnSizing,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: handleGlobalFilterChange,
+    manualSorting: true,
+    enableMultiSort: true,
+    isMultiSortEvent: (e: unknown) =>
+      Boolean((e as { shiftKey?: boolean })?.shiftKey),
     columnResizeMode: 'onChange' as const,
     enableRowSelection: true,
     getRowId: (row: TemuProduct) => String(row.id ?? row.goodsId),
@@ -159,6 +186,7 @@ export function TemuProductTable({
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
           target.isContentEditable)
       ) {
         return;
@@ -210,20 +238,22 @@ export function TemuProductTable({
 
   const handleSelectAll = useCallback(() => {
     const allIds: Record<string, true> = {};
-    filteredProducts.forEach((p) => {
+    sortedAndFilteredProducts.forEach((p) => {
       const rowKey = String(p.id ?? p.goodsId);
       allIds[rowKey] = true;
     });
     setRowSelection(allIds);
-  }, [filteredProducts]);
+  }, [sortedAndFilteredProducts]);
 
   const handleDeselectAll = useCallback(() => {
     setRowSelection({});
   }, []);
 
   const selectedProducts = useMemo(() => {
-    return data.filter((p) => rowSelection[String(p.id ?? p.goodsId)]);
-  }, [data, rowSelection]);
+    return sortedAllProducts.filter(
+      (p) => rowSelection[String(p.id ?? p.goodsId)]
+    );
+  }, [sortedAllProducts, rowSelection]);
 
   if (products === undefined) {
     return (
@@ -243,11 +273,14 @@ export function TemuProductTable({
         totalCount={data.length}
         selectedCount={selectedIds.length}
         globalFilter={globalFilter}
-        onGlobalFilterChange={setGlobalFilter}
+        onGlobalFilterChange={handleGlobalFilterChange}
         onSelectAll={handleSelectAll}
         onDeselectAll={handleDeselectAll}
         onDeleteSelected={handleDeleteSelected}
         onExportOpen={() => setExportOpen(true)}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        engine="temu"
       />
 
       <div
@@ -276,6 +309,7 @@ export function TemuProductTable({
               >
                 {headerGroup.headers.map((header) => {
                   const isSorted = header.column.getIsSorted();
+                  const sortIndex = header.column.getSortIndex();
                   return (
                     <th
                       key={header.id}
@@ -291,6 +325,11 @@ export function TemuProductTable({
                               ? 'cursor-pointer hover:text-ink transition-colors flex items-center gap-1'
                               : ''
                           }
+                          title={
+                            header.column.getCanSort()
+                              ? 'Click to sort · Shift+Click to add multi-column sort'
+                              : undefined
+                          }
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(
@@ -301,6 +340,11 @@ export function TemuProductTable({
                             asc: ' ↑',
                             desc: ' ↓',
                           }[isSorted as string] ?? null}
+                          {sorting.length > 1 && sortIndex >= 0 && (
+                            <span className="font-mono text-[10px] text-clay">
+                              {sortIndex + 1}
+                            </span>
+                          )}
                         </div>
                       )}
                       {header.column.getCanResize() && (
@@ -390,9 +434,9 @@ export function TemuProductTable({
       <TemuExportModal
         isOpen={exportOpen}
         onClose={() => setExportOpen(false)}
-        allProducts={data}
+        allProducts={sortedAllProducts}
         selectedProducts={selectedProducts}
-        filteredProducts={filteredProducts}
+        filteredProducts={sortedAndFilteredProducts}
         hasFilter={!!globalFilter}
         hasSelection={selectedIds.length > 0}
       />

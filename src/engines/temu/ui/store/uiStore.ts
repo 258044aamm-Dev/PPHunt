@@ -1,11 +1,16 @@
 import { create } from 'zustand';
+import type { SortingState } from '@tanstack/react-table';
 import type { TemuActiveTab } from '../../types';
+import type { PreviewSurfaceMode } from '@/engines/amazon/ui/store/uiStore';
 
 interface TemuUIState {
   activeTab: TemuActiveTab;
   settingsOpen: boolean;
   completionDialogOpen: boolean;
   previewOverlayOpen: boolean;
+  previewMode: PreviewSurfaceMode;
+  previewSorting: SortingState;
+  previewGlobalFilter: string;
   exportModalOpen: boolean;
   selectedSessionId: string | null;
 
@@ -15,8 +20,14 @@ interface TemuUIState {
   closeSettings: () => void;
   openCompletionDialog: (sessionId?: string | null) => void;
   closeCompletionDialog: () => void;
-  openPreviewOverlay: (sessionId?: string | null) => void;
+  openPreviewOverlay: (
+    sessionId?: string | null,
+    mode?: PreviewSurfaceMode,
+  ) => void;
   closePreviewOverlay: () => void;
+  setPreviewMode: (mode: PreviewSurfaceMode) => void;
+  setPreviewSorting: (sorting: SortingState) => void;
+  setPreviewGlobalFilter: (filter: string) => void;
   openExportModal: (sessionId?: string | null) => void;
   closeExportModal: () => void;
   setSelectedSessionId: (sessionId: string | null) => void;
@@ -27,6 +38,9 @@ export const useTemuUIStore = create<TemuUIState>((set) => ({
   settingsOpen: false,
   completionDialogOpen: false,
   previewOverlayOpen: false,
+  previewMode: 'overview',
+  previewSorting: [],
+  previewGlobalFilter: '',
   exportModalOpen: false,
   selectedSessionId: null,
 
@@ -41,14 +55,18 @@ export const useTemuUIStore = create<TemuUIState>((set) => ({
         sessionId !== undefined ? sessionId : s.selectedSessionId,
     })),
   closeCompletionDialog: () => set({ completionDialogOpen: false }),
-  openPreviewOverlay: (sessionId) =>
+  openPreviewOverlay: (sessionId, mode) =>
     set((s) => ({
       previewOverlayOpen: true,
+      previewMode: mode ?? s.previewMode,
       completionDialogOpen: false,
       selectedSessionId:
         sessionId !== undefined ? sessionId : s.selectedSessionId,
     })),
   closePreviewOverlay: () => set({ previewOverlayOpen: false }),
+  setPreviewMode: (previewMode) => set({ previewMode }),
+  setPreviewSorting: (previewSorting) => set({ previewSorting }),
+  setPreviewGlobalFilter: (previewGlobalFilter) => set({ previewGlobalFilter }),
   openExportModal: (sessionId) =>
     set((s) => ({
       exportModalOpen: true,

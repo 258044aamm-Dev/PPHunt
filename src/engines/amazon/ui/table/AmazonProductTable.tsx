@@ -7,39 +7,83 @@ import {
   type ColumnSizingState,
   type RowSelectionState,
   type SortingState,
+  type Updater,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useConfirmDialog } from '@/entrypoints/sidepanel/components/ConfirmDialog';
 import { TableToolbar } from '@/entrypoints/sidepanel/components/TableToolbar';
+import { sortProducts } from '@/lib/sorting/product-sorter';
 import { db } from '../../db/database';
 import { deleteProducts } from '../../db/products';
 import type { AmazonProduct } from '../../types/product';
 import { AmazonExportModal } from '../components/ExportModal';
 import { useAmazonSettings } from '../hooks/useAmazonSettings';
+import { useAmazonUIStore } from '../store/uiStore';
 import { getAmazonColumnsForSettings } from './columns';
 import { AmazonTableEmptyState } from './TableEmptyState';
 
 const ROW_HEIGHT = 52;
 const KEYBOARD_SCROLL_STEP = 120;
 
+export interface AmazonProductTableProps {
+  fullHeight?: boolean;
+  sessionKey?: string | null;
+  initialSorting?: SortingState;
+  initialGlobalFilter?: string;
+}
+
 /**
  * Virtualized Amazon product preview table (TanStack Table v9).
+ * Supports curated sort presets, multi-column sorting (Shift+Click or toolbar),
+ * and preserves the active sorting order across all export scopes.
  */
 export function AmazonProductTable({
   fullHeight = false,
   sessionKey = null,
-}: {
-  fullHeight?: boolean;
-  sessionKey?: string | null;
-} = {}) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  initialSorting,
+  initialGlobalFilter,
+}: AmazonProductTableProps = {}) {
+  const setStoreSorting = useAmazonUIStore((s) => s.setPreviewSorting);
+  const setStoreGlobalFilter = useAmazonUIStore(
+    (s) => s.setPreviewGlobalFilter,
+  );
+
+  const [sorting, setSorting] = useState<SortingState>(initialSorting ?? []);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [globalFilter, setGlobalFilter] = useState('');
+  const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  const handleSortingChange = useCallback(
+    (updaterOrValue: Updater<SortingState>) => {
+      setSorting((prev) => {
+        const next =
+          typeof updaterOrValue === 'function'
+            ? updaterOrValue(prev)
+            : updaterOrValue;
+        setStoreSorting?.(next);
+        return next;
+      });
+    },
+    [setStoreSorting],
+  );
+
+  const handleGlobalFilterChange = useCallback(
+    (updaterOrValue: Updater<string>) => {
+      setGlobalFilter((prev) => {
+        const next =
+          typeof updaterOrValue === 'function'
+            ? updaterOrValue(prev)
+            : updaterOrValue;
+        setStoreGlobalFilter?.(next);
+        return next;
+      });
+    },
+    [setStoreGlobalFilter],
+  );
 
   const parentRef = useRef<HTMLDivElement>(null);
   const { settings } = useAmazonSettings();
@@ -85,33 +129,15 @@ export function AmazonProductTable({
     );
   }, [data, globalFilter]);
 
-  const sortedAndFilteredProducts = useMemo(() => {
-    if (sorting.length === 0) return filteredProducts;
-    const activeSort = sorting[0];
-    if (!activeSort) return filteredProducts;
-    const colId = activeSort.id as keyof (typeof filteredProducts)[number];
-    const dir = activeSort.desc ? -1 : 1;
+  const sortedAllProducts = useMemo(
+    () => sortProducts(data, sorting),
+    [data, sorting],
+  );
 
-    return [...filteredProducts].sort((a, b) => {
-      const va = a[colId];
-      const vb = b[colId];
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return (va - vb) * dir;
-      }
-      if (typeof va === 'boolean' && typeof vb === 'boolean') {
-        return (Number(va) - Number(vb)) * dir;
-      }
-      return (
-        String(va).localeCompare(String(vb), undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        }) * dir
-      );
-    });
-  }, [filteredProducts, sorting]);
+  const sortedAndFilteredProducts = useMemo(
+    () => sortProducts(filteredProducts, sorting),
+    [filteredProducts, sorting],
+  );
 
   const table = useTable({
     data: sortedAndFilteredProducts,
@@ -127,11 +153,15 @@ export function AmazonProductTable({
       columnSizing,
       globalFilter,
     },
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onRowSelectionChange: setRowSelection,
     onColumnSizingChange: setColumnSizing,
-    onGlobalFilterChange: setGlobalFilter,
+    onGlobalFilterChange: handleGlobalFilterChange,
+    manualSorting: true,
+    enableMultiSort: true,
+    isMultiSortEvent: (e: unknown) =>
+      Boolean((e as { shiftKey?: boolean })?.shiftKey),
     columnResizeMode: 'onChange' as const,
     enableRowSelection: true,
     getRowId: (row: AmazonProduct) => String(row.id ?? row.asin),
@@ -158,6 +188,7 @@ export function AmazonProductTable({
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
           target.isContentEditable)
       ) {
         return;
@@ -209,20 +240,22 @@ export function AmazonProductTable({
 
   const handleSelectAll = useCallback(() => {
     const allIds: Record<string, true> = {};
-    filteredProducts.forEach((p) => {
+    sortedAndFilteredProducts.forEach((p) => {
       const rowKey = String(p.id ?? p.asin);
       allIds[rowKey] = true;
     });
     setRowSelection(allIds);
-  }, [filteredProducts]);
+  }, [sortedAndFilteredProducts]);
 
   const handleDeselectAll = useCallback(() => {
     setRowSelection({});
   }, []);
 
   const selectedProducts = useMemo(() => {
-    return data.filter((p) => rowSelection[String(p.id ?? p.asin)]);
-  }, [data, rowSelection]);
+    return sortedAllProducts.filter(
+      (p) => rowSelection[String(p.id ?? p.asin)],
+    );
+  }, [sortedAllProducts, rowSelection]);
 
   if (products === undefined) {
     return (
@@ -242,11 +275,14 @@ export function AmazonProductTable({
         totalCount={data.length}
         selectedCount={selectedIds.length}
         globalFilter={globalFilter}
-        onGlobalFilterChange={setGlobalFilter}
+        onGlobalFilterChange={handleGlobalFilterChange}
         onSelectAll={handleSelectAll}
         onDeselectAll={handleDeselectAll}
         onDeleteSelected={handleDeleteSelected}
         onExportOpen={() => setExportOpen(true)}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        engine="amazon"
       />
 
       <div
@@ -275,6 +311,7 @@ export function AmazonProductTable({
               >
                 {headerGroup.headers.map((header) => {
                   const isSorted = header.column.getIsSorted();
+                  const sortIndex = header.column.getSortIndex();
                   return (
                     <th
                       key={header.id}
@@ -290,6 +327,11 @@ export function AmazonProductTable({
                               ? 'cursor-pointer hover:text-ink transition-colors flex items-center gap-1'
                               : ''
                           }
+                          title={
+                            header.column.getCanSort()
+                              ? 'Click to sort · Shift+Click to add multi-column sort'
+                              : undefined
+                          }
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(
@@ -300,6 +342,11 @@ export function AmazonProductTable({
                             asc: ' ↑',
                             desc: ' ↓',
                           }[isSorted as string] ?? null}
+                          {sorting.length > 1 && sortIndex >= 0 && (
+                            <span className="font-mono text-[10px] text-clay">
+                              {sortIndex + 1}
+                            </span>
+                          )}
                         </div>
                       )}
                       {header.column.getCanResize() && (
@@ -389,9 +436,9 @@ export function AmazonProductTable({
       <AmazonExportModal
         isOpen={exportOpen}
         onClose={() => setExportOpen(false)}
-        allProducts={data}
+        allProducts={sortedAllProducts}
         selectedProducts={selectedProducts}
-        filteredProducts={filteredProducts}
+        filteredProducts={sortedAndFilteredProducts}
         hasFilter={!!globalFilter}
         hasSelection={selectedIds.length > 0}
       />

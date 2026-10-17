@@ -32,12 +32,15 @@ export const TEMU_SORTABLE_FIELDS: readonly SortableFieldOption[] = [
   { id: 'price', label: 'Price', defaultDesc: false },
   { id: 'rating', label: 'Rating', defaultDesc: true },
   { id: 'reviewCount', label: 'Reviews', defaultDesc: true },
-  { id: 'soldCount', label: 'Sold Volume', defaultDesc: true },
+  { id: 'pastMonthSales', label: 'Sold Volume', defaultDesc: true },
+  { id: 'bestSellersRank', label: 'Category Rank', defaultDesc: false },
   { id: 'discountPercentage', label: 'Discount', defaultDesc: true },
-  { id: 'originalPrice', label: 'List Price', defaultDesc: true },
+  { id: 'listPrice', label: 'List Price', defaultDesc: true },
   { id: 'title', label: 'Title', defaultDesc: false },
-  { id: 'mallName', label: 'Seller / Mall', defaultDesc: false },
+  { id: 'brand', label: 'Brand / Store', defaultDesc: false },
+  { id: 'seller', label: 'Seller / Mall', defaultDesc: false },
   { id: 'goodsId', label: 'Goods ID', defaultDesc: false },
+  { id: 'isPrime', label: 'Fast Shipping', defaultDesc: true },
   { id: 'isSponsored', label: 'Sponsored', defaultDesc: true },
 ];
 
@@ -121,7 +124,12 @@ export const TEMU_SORT_PRESETS: readonly SortPresetOption[] = [
   {
     id: 'sales_desc',
     label: 'Sold Volume: High to Low',
-    sorting: [{ id: 'soldCount', desc: true }],
+    sorting: [{ id: 'pastMonthSales', desc: true }],
+  },
+  {
+    id: 'bsr_asc',
+    label: 'Category Rank: Best First',
+    sorting: [{ id: 'bestSellersRank', desc: false }],
   },
   {
     id: 'discount_desc',
