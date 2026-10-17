@@ -117,11 +117,11 @@ export function PreviewPageApp() {
   }, [engine, sessionKey, activeSorting, activeFilter]);
 
   const amazonHistory = useLiveQuery(
-    () => db.history.orderBy('timestamp').reverse().toArray(),
+    () => db.history.orderBy('startedAt').reverse().toArray(),
     [],
   );
   const temuHistory = useLiveQuery(
-    () => temuDb.history.orderBy('timestamp').reverse().toArray(),
+    () => temuDb.history.orderBy('startedAt').reverse().toArray(),
     [],
   );
 

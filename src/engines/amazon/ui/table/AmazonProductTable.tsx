@@ -58,36 +58,33 @@ export function AmazonProductTable({
   const { askConfirm, confirmDialog } = useConfirmDialog();
 
   useEffect(() => {
-    setStoreSorting?.(initialSorting ?? []);
-    setStoreGlobalFilter?.(initialGlobalFilter ?? '');
-  }, [initialSorting, initialGlobalFilter, setStoreSorting, setStoreGlobalFilter]);
+    setStoreSorting?.(sorting);
+  }, [sorting, setStoreSorting]);
+
+  useEffect(() => {
+    setStoreGlobalFilter?.(globalFilter);
+  }, [globalFilter, setStoreGlobalFilter]);
 
   const handleSortingChange = useCallback(
     (updaterOrValue: Updater<SortingState>) => {
-      setSorting((prev) => {
-        const next =
-          typeof updaterOrValue === 'function'
-            ? updaterOrValue(prev)
-            : updaterOrValue;
-        setStoreSorting?.(next);
-        return next;
-      });
+      setSorting((prev) =>
+        typeof updaterOrValue === 'function'
+          ? updaterOrValue(prev)
+          : updaterOrValue,
+      );
     },
-    [setStoreSorting],
+    [],
   );
 
   const handleGlobalFilterChange = useCallback(
     (updaterOrValue: Updater<string>) => {
-      setGlobalFilter((prev) => {
-        const next =
-          typeof updaterOrValue === 'function'
-            ? updaterOrValue(prev)
-            : updaterOrValue;
-        setStoreGlobalFilter?.(next);
-        return next;
-      });
+      setGlobalFilter((prev) =>
+        typeof updaterOrValue === 'function'
+          ? updaterOrValue(prev)
+          : updaterOrValue,
+      );
     },
-    [setStoreGlobalFilter],
+    [],
   );
 
   const parentRef = useRef<HTMLDivElement>(null);
