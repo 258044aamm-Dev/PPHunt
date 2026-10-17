@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useFocusTrap } from '@/entrypoints/sidepanel/hooks/useFocusTrap';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import { openDedicatedPreviewTab } from '@/lib/preview/previewStateSync';
 import { sortProducts } from '@/lib/sorting/product-sorter';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { db } from '../../db/database';
@@ -88,8 +89,31 @@ export function AmazonExtractionCompleteModal() {
   const handlePreviewCurrentExtraction = useCallback(() => {
     if (!hasProducts) return;
     setOverlayFullWidthMode(true);
-    openPreviewOverlay(selectedSessionKey);
+    openPreviewOverlay(selectedSessionKey, 'overview');
   }, [hasProducts, openPreviewOverlay, selectedSessionKey]);
+
+  const handlePreviewInSidebar = useCallback(() => {
+    if (!hasProducts) return;
+    setOverlayFullWidthMode(false);
+    openPreviewOverlay(selectedSessionKey, 'sidebar');
+  }, [hasProducts, openPreviewOverlay, selectedSessionKey]);
+
+  const handlePreviewInDedicatedTab = useCallback(() => {
+    if (!hasProducts) return;
+    closeCompletionDialog();
+    void openDedicatedPreviewTab({
+      engine: 'amazon',
+      sessionKey: selectedSessionKey,
+      sorting: previewSorting,
+      globalFilter: previewGlobalFilter,
+    });
+  }, [
+    hasProducts,
+    closeCompletionDialog,
+    selectedSessionKey,
+    previewSorting,
+    previewGlobalFilter,
+  ]);
 
   const showDialog =
     completionDialogOpen && status !== 'error' && !errorMessage;
@@ -205,6 +229,39 @@ export function AmazonExtractionCompleteModal() {
                 </div>
                 <span className="font-sans text-sm ml-2 shrink-0">→</span>
               </button>
+
+              {hasProducts && (
+                <div
+                  className="grid grid-cols-3 gap-1.5"
+                  role="group"
+                  aria-label="Open preview in mode"
+                >
+                  <button
+                    type="button"
+                    data-testid="completion-preview-sidebar"
+                    onClick={handlePreviewInSidebar}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-ink-muted hover:text-ink hover:bg-surface-soft font-sans text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Sidebar View
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="completion-preview-overview"
+                    onClick={handlePreviewCurrentExtraction}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-ink-muted hover:text-ink hover:bg-surface-soft font-sans text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    Overview 95vw
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="completion-preview-tab"
+                    onClick={handlePreviewInDedicatedTab}
+                    className="px-2 py-1.5 rounded-sm border border-hairline bg-surface text-clay hover:bg-surface-soft font-sans text-[11px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Open in Tab ↗
+                  </button>
+                </div>
+              )}
 
               <button
                 type="button"

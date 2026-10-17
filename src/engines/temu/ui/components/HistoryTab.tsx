@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import { openDedicatedPreviewTab } from '@/lib/preview/previewStateSync';
 import { useConfirmDialog } from '@/entrypoints/sidepanel/components/ConfirmDialog';
 import { temuDb, type TemuCollectionHistory } from '../../db/database';
 import { clearAllTemuHistory, deleteTemuHistory } from '../../db/history';
@@ -101,6 +102,27 @@ function TemuHistoryEntry({
             }`}
           >
             Preview
+          </button>
+
+          <button
+            type="button"
+            data-testid={`temu-history-open-tab-${entry.sessionId}`}
+            onClick={() =>
+              void openDedicatedPreviewTab({
+                engine: 'temu',
+                sessionKey: entry.sessionId,
+              })
+            }
+            disabled={!hasProducts}
+            aria-label={`Open extraction from ${entry.url} in dedicated tab`}
+            title="Open in dedicated full-screen browser tab"
+            className={`px-2 py-1 font-sans text-xs font-medium rounded-sm border transition-colors ${
+              hasProducts
+                ? 'bg-surface text-clay border-hairline hover:bg-surface-soft cursor-pointer'
+                : 'bg-surface-soft/50 text-ink-subtle border-hairline-soft opacity-60 cursor-not-allowed'
+            }`}
+          >
+            Tab ↗
           </button>
 
           <button

@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { openDedicatedPreviewTab } from '@/lib/preview/previewStateSync';
 import { db } from '../../db/database';
 import type { CollectionHistory, CollectionStatus } from '../../types';
 
@@ -97,6 +98,27 @@ export function AmazonHistoryEntry({
             }`}
           >
             Preview
+          </button>
+
+          <button
+            type="button"
+            data-testid={`history-open-tab-${entry.sessionKey}`}
+            onClick={() =>
+              void openDedicatedPreviewTab({
+                engine: 'amazon',
+                sessionKey: entry.sessionKey,
+              })
+            }
+            disabled={!hasProducts}
+            aria-label={`Open extraction from ${entry.url} in dedicated tab`}
+            title="Open in dedicated full-screen browser tab"
+            className={`px-2 py-1 font-sans text-xs font-medium rounded-sm border transition-colors ${
+              hasProducts
+                ? 'bg-surface text-clay border-hairline hover:bg-surface-soft cursor-pointer'
+                : 'bg-surface-soft/50 text-ink-subtle border-hairline-soft opacity-60 cursor-not-allowed'
+            }`}
+          >
+            Tab ↗
           </button>
 
           <button

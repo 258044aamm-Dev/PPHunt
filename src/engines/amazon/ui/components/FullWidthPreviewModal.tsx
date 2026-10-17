@@ -1,7 +1,13 @@
 import { useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { PreviewModeSwitcher } from '@/entrypoints/sidepanel/components/PreviewModeSwitcher';
 import { useFocusTrap } from '@/entrypoints/sidepanel/hooks/useFocusTrap';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import {
+  openDedicatedPreviewTab,
+  savePreviewStateSnapshot,
+  type PreviewDisplayMode,
+} from '@/lib/preview/previewStateSync';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { db } from '../../db/database';
 import { formatNumber } from '../../utils/formatters';
@@ -11,6 +17,10 @@ import { AmazonProductTable } from '../table/AmazonProductTable';
 
 export function AmazonFullWidthPreviewModal() {
   const previewOverlayOpen = useAmazonUIStore((s) => s.previewOverlayOpen);
+  const previewMode = useAmazonUIStore((s) => s.previewMode);
+  const setPreviewMode = useAmazonUIStore((s) => s.setPreviewMode);
+  const previewSorting = useAmazonUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useAmazonUIStore((s) => s.previewGlobalFilter);
   const selectedSessionKey = useAmazonUIStore((s) => s.selectedSessionKey);
   const closePreviewOverlay = useAmazonUIStore((s) => s.closePreviewOverlay);
   const openExportModal = useAmazonUIStore((s) => s.openExportModal);
@@ -33,19 +43,48 @@ export function AmazonFullWidthPreviewModal() {
 
   useEffect(() => {
     if (previewOverlayOpen) {
-      setOverlayFullWidthMode(true);
+      setOverlayFullWidthMode(previewMode === 'overview');
     }
     return () => {
       if (previewOverlayOpen) {
         setOverlayFullWidthMode(false);
       }
     };
-  }, [previewOverlayOpen]);
+  }, [previewOverlayOpen, previewMode]);
 
   const handleClose = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
   }, [closePreviewOverlay]);
+
+  const handleSelectPreviewMode = useCallback(
+    (mode: PreviewDisplayMode) => {
+      if (mode === 'tab') {
+        void openDedicatedPreviewTab({
+          engine: 'amazon',
+          sessionKey: selectedSessionKey,
+          sorting: previewSorting,
+          globalFilter: previewGlobalFilter,
+        });
+        return;
+      }
+      setPreviewMode(mode);
+      setOverlayFullWidthMode(mode === 'overview');
+      void savePreviewStateSnapshot({
+        engine: 'amazon',
+        sessionKey: selectedSessionKey,
+        sorting: previewSorting,
+        globalFilter: previewGlobalFilter,
+        mode,
+      });
+    },
+    [
+      selectedSessionKey,
+      previewSorting,
+      previewGlobalFilter,
+      setPreviewMode,
+    ],
+  );
 
   const handleTryAnotherExtraction = useCallback(() => {
     setOverlayFullWidthMode(false);
@@ -78,6 +117,7 @@ export function AmazonFullWidthPreviewModal() {
     <div
       ref={focusTrapRef}
       tabIndex={-1}
+      data-preview-mode={previewMode}
       className="fixed inset-0 z-40 bg-canvas text-ink flex flex-col p-4 overflow-hidden"
       data-testid="fullwidth-preview-overlay"
       {...modalAriaProps('fullwidth-preview-title')}
@@ -96,7 +136,11 @@ export function AmazonFullWidthPreviewModal() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <PreviewModeSwitcher
+            currentMode={previewMode}
+            onSelectMode={handleSelectPreviewMode}
+          />
           <button
             type="button"
             onClick={handleTryAnotherExtraction}
@@ -139,7 +183,12 @@ export function AmazonFullWidthPreviewModal() {
       </div>
 
       <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col">
-        <AmazonProductTable fullHeight sessionKey={selectedSessionKey} />
+        <AmazonProductTable
+          fullHeight
+          sessionKey={selectedSessionKey}
+          initialSorting={previewSorting}
+          initialGlobalFilter={previewGlobalFilter}
+        />
       </div>
     </div>
   );

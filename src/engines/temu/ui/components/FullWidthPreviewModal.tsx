@@ -1,9 +1,15 @@
 import { useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { PreviewModeSwitcher } from '@/entrypoints/sidepanel/components/PreviewModeSwitcher';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { useFocusTrap } from '@/entrypoints/sidepanel/hooks/useFocusTrap';
 import { formatNumber } from '@/lib/utils/formatters';
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import {
+  openDedicatedPreviewTab,
+  savePreviewStateSnapshot,
+  type PreviewDisplayMode,
+} from '@/lib/preview/previewStateSync';
 import { temuDb } from '../../db/database';
 import { useTemuCollectionStore } from '../store/collectionStore';
 import { useTemuUIStore } from '../store/uiStore';
@@ -11,6 +17,10 @@ import { TemuProductTable } from '../table/TemuProductTable';
 
 export function TemuFullWidthPreviewModal() {
   const previewOverlayOpen = useTemuUIStore((s) => s.previewOverlayOpen);
+  const previewMode = useTemuUIStore((s) => s.previewMode);
+  const setPreviewMode = useTemuUIStore((s) => s.setPreviewMode);
+  const previewSorting = useTemuUIStore((s) => s.previewSorting);
+  const previewGlobalFilter = useTemuUIStore((s) => s.previewGlobalFilter);
   const selectedSessionId = useTemuUIStore((s) => s.selectedSessionId);
   const closePreviewOverlay = useTemuUIStore((s) => s.closePreviewOverlay);
   const openExportModal = useTemuUIStore((s) => s.openExportModal);
@@ -33,19 +43,43 @@ export function TemuFullWidthPreviewModal() {
 
   useEffect(() => {
     if (previewOverlayOpen) {
-      setOverlayFullWidthMode(true);
+      setOverlayFullWidthMode(previewMode === 'overview');
     }
     return () => {
       if (previewOverlayOpen) {
         setOverlayFullWidthMode(false);
       }
     };
-  }, [previewOverlayOpen]);
+  }, [previewOverlayOpen, previewMode]);
 
   const handleClose = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
   }, [closePreviewOverlay]);
+
+  const handleSelectPreviewMode = useCallback(
+    (mode: PreviewDisplayMode) => {
+      if (mode === 'tab') {
+        void openDedicatedPreviewTab({
+          engine: 'temu',
+          sessionKey: selectedSessionId,
+          sorting: previewSorting,
+          globalFilter: previewGlobalFilter,
+        });
+        return;
+      }
+      setPreviewMode(mode);
+      setOverlayFullWidthMode(mode === 'overview');
+      void savePreviewStateSnapshot({
+        engine: 'temu',
+        sessionKey: selectedSessionId,
+        sorting: previewSorting,
+        globalFilter: previewGlobalFilter,
+        mode,
+      });
+    },
+    [selectedSessionId, previewSorting, previewGlobalFilter, setPreviewMode],
+  );
 
   const handleTryAnotherExtraction = useCallback(() => {
     setOverlayFullWidthMode(false);
@@ -78,6 +112,7 @@ export function TemuFullWidthPreviewModal() {
     <div
       ref={focusTrapRef}
       tabIndex={-1}
+      data-preview-mode={previewMode}
       className="fixed inset-0 z-40 bg-canvas text-ink flex flex-col p-4 overflow-hidden"
       data-testid="temu-fullwidth-preview-overlay"
       {...modalAriaProps('temu-fullwidth-preview-title')}
@@ -96,7 +131,11 @@ export function TemuFullWidthPreviewModal() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <PreviewModeSwitcher
+            currentMode={previewMode}
+            onSelectMode={handleSelectPreviewMode}
+          />
           <button
             type="button"
             onClick={handleTryAnotherExtraction}
@@ -139,7 +178,12 @@ export function TemuFullWidthPreviewModal() {
       </div>
 
       <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col">
-        <TemuProductTable fullHeight sessionId={selectedSessionId} />
+        <TemuProductTable
+          fullHeight
+          sessionId={selectedSessionId}
+          initialSorting={previewSorting}
+          initialGlobalFilter={previewGlobalFilter}
+        />
       </div>
     </div>
   );
