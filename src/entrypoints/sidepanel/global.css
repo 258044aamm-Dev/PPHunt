@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* PPHunt Editorial Light Palette (Warm Parchment — WCAG 2.2 AA verified) */
+    --color-canvas: 240 238 230;         /* #f0eee6 */
+    --color-surface: 250 249 245;        /* #faf9f5 */
+    --color-surface-card: 239 233 222;   /* #efe9de */
+    --color-surface-soft: 230 225 214;   /* #e6e1d6 */
+    --color-ink: 20 20 19;               /* #141413 (16.1:1 on canvas) */
+    --color-ink-muted: 87 85 79;         /* #57554f (6.32:1 on canvas, 6.09:1 on card) */
+    --color-ink-subtle: 107 104 96;      /* #6b6860 (4.79:1 on canvas, 5.30:1 on surface) */
+    --color-hairline: 138 135 125;       /* #8a877d (3.08:1 UI border contrast) */
+    --color-hairline-soft: 210 205 193;  /* #d2cdc1 */
+    --color-clay: 176 78 48;             /* #b04e30 (4.68:1 on canvas, 5.18:1 with clay-ink) */
+    --color-clay-active: 148 62 36;      /* #943e24 */
+    --color-clay-ink: 250 249 245;       /* #faf9f5 */
+    --color-sky: 49 98 145;              /* #316291 (5.4:1 on canvas) */
+    --color-moss: 69 94 45;              /* #455e2d (6.2:1 on canvas) */
+    --color-sage: 98 112 82;             /* #627052 (4.6:1 on canvas) */
+    --color-golden: 133 98 20;           /* #856214 (5.0:1 on canvas) */
+    --color-crimson: 163 48 45;          /* #a3302d (5.6:1 on canvas) */
+    --color-crimson-light: 192 80 77;    /* #c0504d */
+  }
+
+  :root.dark {
+    color-scheme: dark;
+    /* PPHunt Editorial Dark Palette (Warm Obsidian — WCAG 2.2 AA verified) */
+    --color-canvas: 20 20 19;            /* #141413 */
+    --color-surface: 29 28 26;           /* #1d1c1a */
+    --color-surface-card: 37 36 33;      /* #252421 */
+    --color-surface-soft: 48 46 42;      /* #302e2a */
+    --color-ink: 245 242 235;            /* #f5f2eb (16.5:1 on canvas) */
+    --color-ink-muted: 184 180 170;      /* #b8b4aa (9.0:1 on canvas, 7.5:1 on card) */
+    --color-ink-subtle: 148 144 134;     /* #949086 (5.8:1 on canvas, 4.8:1 on card) */
+    --color-hairline: 102 99 91;         /* #66635b (3.1:1 UI border contrast) */
+    --color-hairline-soft: 62 60 55;     /* #3e3c37 */
+    --color-clay: 217 119 87;            /* #d97757 (5.95:1 with clay-ink & on canvas) */
+    --color-clay-active: 230 143 115;    /* #e68f73 */
+    --color-clay-ink: 20 20 19;          /* #141413 */
+    --color-sky: 130 179 224;            /* #82b3e0 (7.8:1 on canvas) */
+    --color-moss: 145 179 112;           /* #91b370 (7.6:1 on canvas) */
+    --color-sage: 156 168 139;           /* #9ca88b (7.1:1 on canvas) */
+    --color-golden: 224 186 92;          /* #e0ba5c (9.2:1 on canvas) */
+    --color-crimson: 232 118 114;        /* #e87672 (6.1:1 on canvas) */
+    --color-crimson-light: 240 146 143;  /* #f0928f */
+  }
+
+  html {
+    font-size: 16px;
+  }
+
+  body {
+    font-family: 'Lora', Georgia, 'Source Serif Pro', Charter, serif;
+    color: rgb(var(--color-ink));
+    background-color: rgb(var(--color-canvas));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+    padding: 0;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  a {
+    color: rgb(var(--color-sky));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    color: rgb(var(--color-ink));
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgb(var(--color-canvas));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-hairline));
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-ink-muted));
+  }
+
+  /* High-visibility pinned horizontal & vertical scrollbar for Preview table (SAD-138) */
+  .preview-table-scroll {
+    scrollbar-gutter: stable;
+  }
+
+  .preview-table-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 10px;
+  }
+
+  .preview-table-scroll::-webkit-scrollbar-track {
+    background: rgb(var(--color-surface-card));
+    border-top: 1px solid rgb(var(--color-hairline-soft));
+  }
+
+  .preview-table-scroll::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-hairline));
+    border-radius: 5px;
+    border: 2px solid rgb(var(--color-surface-card));
+  }
+
+  .preview-table-scroll::-webkit-scrollbar-thumb:hover,
+  .preview-table-scroll::-webkit-scrollbar-thumb:active {
+    background: rgb(var(--color-clay));
+  }
+
+  .preview-table-scroll::-webkit-scrollbar-corner {
+    background: rgb(var(--color-surface-card));
+  }
+}
+
+@layer utilities {
+  @keyframes slide-in {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 200ms ease-out forwards;
+  }
+}

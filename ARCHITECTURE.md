@@ -1,0 +1,309 @@
+# PPHunt Architecture
+
+Deep technical documentation for developers who want to understand, extend, or contribute to PPHunt.
+
+---
+
+## System Overview
+
+PPHunt is a Chrome Extension (Manifest V3) with five entrypoints:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        Browser                                │
+│                                                               │
+│  ┌──────────────┐    ┌──────────────────┐    ┌────────────┐  │
+│  │   Popup      │    │  Background SW   │    │  IndexedDB │  │
+│  │   Chooser    │───▶│  (message router)│───▶│  (Dexie)   │  │
+│  └──────────────┘    └───────┬──────────┘    └─────┬──────┘  │
+│                              │                      │         │
+│         ┌────────────────────┼──────────────────────┤         │
+│         │                    │                      │         │
+│  ┌──────▼──────┐    ┌───────▼──────────┐    ┌─────▼──────┐  │
+│  │  Content    │    │  Side Panel      │    │  Overlay   │  │
+│  │  Script     │◀──▶│  (React App)     │    │  (iframe   │  │
+│  │  (scraper)  │    │                  │    │ in closed  │  │
+│  │             │    │                  │    │ shadow rt) │  │
+│  └─────────────┘    └──────────────────┘    └────────────┘  │
+│                                                               │
+│                      Amazon Page DOM                          │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Entrypoints
+
+| Entrypoint | File | Lifecycle | Purpose |
+|-----------|------|-----------|---------|
+| Background | `background.ts` | Service worker (sleeps/wakes) | Message routing, tab tracking, mode preference |
+| Content Script | `amazon.content.ts` | Injected on Amazon pages | DOM scraping, auto-scroll, dedup |
+| Side Panel | `sidepanel/index.html` | Persistent across tab switches | Main React UI |
+| Popup | `popup/index.html` | Opens when no mode preference is saved | Mode chooser |
+| Overlay | `overlay/index.html` | Extension-origin iframe mounted in a host page | Shared React UI |
+
+---
+
+## Data Flow
+
+### Collection Pipeline
+
+```
+1. User clicks "Start" in Side Panel / Overlay
+       │
+2. Side Panel sends START_COLLECTION → Background
+       │
+3. Background forwards COLLECT_PRODUCTS → Content Script
+       │
+4. Content Script:
+   a. Detects page type (search / detail / category)
+   b. Parses DOM using centralized selectors
+   c. Deduplicates against existing ASINs
+   d. Sends PRODUCTS_COLLECTED → Background
+       │
+5. Background:
+   a. Inserts/enriches products in IndexedDB (bulkAdd / bulkPut, with per-row fallback)
+   b. Sends UPDATE_PROGRESS → Side Panel
+       │
+6. Side Panel:
+   a. useLiveQuery detects new rows in IndexedDB
+   b. Table re-renders with new products
+   c. Counter and progress bar update
+```
+
+### Automatic Mode (Additional Steps)
+
+```
+4a. Content Script starts ScrollController
+    - Scrolls page by scrollAmount (±20% jitter)
+    - Waits waitAfterScroll for new content
+    - MutationObserver detects new DOM nodes
+    - Re-parses and deduplicates
+    - Stops when target reached or end-of-page
+```
+
+---
+
+## Message Protocol
+
+The background and content-script routers call `validateExtensionMessage`
+before dispatch. A malformed message with a **known** type receives
+`{ ok: false, error: 'INVALID_MESSAGE' }`; an unknown or missing type is ignored.
+The validator checks the schema but returns the original object, so it does
+not strip extra fields. This is not an authentication boundary or a claim that
+every UI listener validates incoming messages. The union has 14 message types.
+
+### Side Panel → Background
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `START_COLLECTION` | `{ mode, targetCount, tabId, sessionKey? }` | Begin collecting |
+| `RELOAD_AND_RETRY_COLLECTION` | `{ mode, targetCount, tabId, sessionKey? }` | Reload the tab and retry after CAPTCHA/recovery |
+| `PAUSE_COLLECTION` | `{ tabId }` | Pause collection |
+| `RESUME_COLLECTION` | `{ tabId }` | Resume collection |
+| `STOP_COLLECTION` | `{ tabId }` | Stop collection |
+
+### Background → Content Script
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `COLLECT_PRODUCTS` | `{ mode, targetCount, scroll?, existingAsins? }` | Start/continue scraping |
+| `PAUSE_SCROLLING` / `RESUME_SCROLLING` | No payload | Auto-scroll control |
+| `STOP_COLLECTION_CMD` | No payload | Abort the in-page loop |
+
+### Content Script → Background
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `PRODUCTS_COLLECTED` | `{ products[], totalCount, isNewBatch }` | New products found |
+| `COLLECTION_PROGRESS` | `{ collected, target, status }` | Progress tick |
+| `CONTENT_ERROR` | `{ code, message, diagnostic? }` | CAPTCHA / sign-in / blocked |
+
+### Background → Side Panel
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `UPDATE_PROGRESS` | `{ collected, target, status, error: nullable string, sessionKey?: nullable string, diagnostic? }` | Forwarded progress |
+| `TAB_STATUS_CHANGED` | `{ tabId, url, isAmazon, pageType }` | Active-tab context changed |
+
+> The overlay is opened directly by the background via
+> `lib/overlay/openOverlay.ts` (`openOverlayForTab`) — there is no
+> TOGGLE_OVERLAY message; the earlier docs described a message that never
+> existed.
+
+---
+
+## Database Schema
+
+PPHunt uses [Dexie.js](https://dexie.org) (IndexedDB wrapper) with 4 tables.
+
+The following files are authoritative; avoid copying partial interfaces into
+this document as if they were complete schemas:
+
+| Store | Indexes (database v2) | Data contract |
+|---|---|---|
+| products | `++id, asin, url, sessionKey, collectedAt` | [`Product`](src/types/product.ts), [`ProductSchema`](src/lib/schemas/product.ts) |
+| sessions | `id, tabId, status, startedAt` | [`SessionState`](src/types/session.ts) |
+| settings | `id` | [`SettingsSchema`](src/lib/schemas/settings.ts) |
+| history | `++id, sessionKey, startedAt` | [`CollectionHistory`](src/types/session.ts) |
+
+[`database.ts`](src/lib/db/database.ts) keeps v1 for existing-install upgrades;
+v2 removes the unused compound product index. Product fields include optional
+metadata such as list price, discounts, delivery and page URL. Session status
+includes `interrupted`. Settings use 23 boolean field toggles, target bounds
+1–1000, in-panel toast notifications, and `exportImages: auto / always / never`.
+The legacy export-format value `xlsx` normalizes to `excel`.
+
+---
+
+## Scraping Pipeline
+
+### 1. Page Detection
+
+`page-detector.ts` classifies the current URL and DOM:
+
+| Pattern | Type |
+|---------|------|
+| `/dp/<ASIN>` or `/gp/product/<ASIN>` | `product-detail` |
+| `/s?k=` or `/s?i=` or `[data-component-type="s-search-result"]` | `search` |
+| `/Best-Sellers/` or `bestsellers` in path | `bestsellers` |
+| `/b/` or `#departments` in DOM | `category` |
+| `#productTitle` in DOM | `product-detail` (fallback) |
+| None match | `unknown` |
+
+### 2. CSS Selectors
+
+The shared selector tables live in `selectors.ts`, organized by page type:
+
+See [`selectors.ts`](src/lib/scraper/selectors.ts) for the current selector
+arrays. Parsers also use metadata extraction and structural fallbacks; a markup
+change may require parser changes, not just edits to the shared tables.
+Live selector validity was not verified in this remediation.
+
+### 3. Parsing
+
+Each page type has a dedicated parser:
+
+- `parseSearchResults(document, pageUrl?, cache?)` → `ScrapedProduct[]`
+- `parseProductDetail(document, url?)` → `ScrapedProduct | null`
+- `parseCategoryPage(document, pageUrl?, source = 'category', cache?)` → `ScrapedProduct[]`
+
+### 4. Deduplication
+
+`DeduplicationEngine` maintains two Sets (ASINs and URLs):
+
+```typescript
+const dedup = new DeduplicationEngine(existingProducts);
+const unique = dedup.filterNew(scrapedProducts); // O(1) per check
+```
+
+### 5. Price Parsing
+
+`price-parser.ts` handles common Amazon price formats; representative outputs without a currency fallback:
+
+| Input | Output |
+|-------|--------|
+| `$49.99` | `{ value: 49.99, currency: 'USD' }` |
+| `€39,99` | `{ value: 39.99, currency: 'EUR' }` |
+| `£1,299.99` | `{ value: 1299.99, currency: 'GBP' }` |
+| `¥3,980` | `{ value: 3980, currency: 'JPY' }` |
+| `See price at checkout` | `{ value: null, currency: null }` |
+
+---
+
+## Dual-Mode Architecture
+
+Both Side Panel and Overlay render the **same React component tree**. The difference is the mounting context.
+
+| Aspect | Side Panel | Overlay |
+|--------|-----------|---------|
+| Mount | `document.getElementById('root')` in HTML page | **Iframe at the extension origin inside a closed shadow root** (`lib/overlay/overlayHost.ts`) — the closed root isolates the iframe + resize handle from page CSS; the extension origin lets the overlay share IndexedDB with the side panel |
+| CSS | Global Tailwind import | Own document inside the iframe (full Tailwind build) |
+| Fonts | Google Fonts `<link>` in HTML | Google Fonts `<link>` in the iframe HTML |
+| Width | User-resizable (Chrome native) | Drag handle, normally 300–800 px with viewport-dependent clamps; see `overlayHost.ts` |
+| Lifecycle | Persists across tab switches | Lives on an allowed HTTP(S) host tab; collection is Amazon-specific |
+| Z-index | Chrome-managed | `2147483647` (maximum) |
+
+> **External dependency (M-8, SAD-184):** all three pages (side panel, popup,
+> overlay) load their typefaces from Google Fonts via `<link>` tags in their
+> HTML. Amazon page/image requests also occur. Blocking
+> `fonts.googleapis.com` / `fonts.gstatic.com` degrades gracefully to the
+> Georgia / system-ui / ui-monospace fallback stacks declared in
+> `tailwind.config.js`. See the README's Local-first note for the full
+> disclosure.
+
+### Mode Switching
+
+The background disables automatic side-panel-on-click behavior. With no saved
+mode, it sets the action popup to `popup.html`. With a saved mode, it clears the
+popup and handles `action.onClicked`: `sidePanel.open({ tabId })` for the side
+panel or `openOverlayForTab(tab.id, tab.url)` for the overlay. Unsupported overlay
+URLs fall back to the side panel. Storage changes update the action configuration.
+The chooser remembers the selected mode only when its checkbox is enabled.
+There is no implemented Shift-click shortcut to force the chooser.
+
+Sources: [`background.ts`](src/entrypoints/background.ts),
+[`popup/main.ts`](src/entrypoints/popup/main.ts),
+[`openingMode.ts`](src/lib/ui/openingMode.ts).
+
+---
+
+## Extension Lifecycle (MV3)
+
+### Service Worker Sleep/Wake
+
+The background service worker can be terminated by Chrome at any time. PPHunt handles this (Phase 4, H-8):
+
+- **Active-session pointer** — the in-memory pointer is mirrored to `chrome.storage.session` on every mutation and rehydrated before use; `storage.session` survives worker termination within a browser session and is wiped on browser close
+- **IndexedDB fallback** — where `storage.session` is unavailable (Firefox / older Chrome), the worker falls back to the most recent active session row in IndexedDB
+- **Startup reconciliation** — when the pointer is absent but `storage.session` exists (the signature of a browser restart), every leftover `'collecting'` session row is flipped to `'interrupted'`: at that moment nothing can legitimately be collecting (Phase 9, L-5)
+- **Message handling** — messages wake the worker; the router hydrates the pointer before touching session state
+
+### Content Script Injection
+
+- WXT injects content scripts on page load (`runAt: 'document_idle'`)
+- After tab reload, the content script is re-injected automatically
+- Session recovery re-establishes the message channel
+- If injection fails (CSP, about:blank), the background catches the error and notifies the side panel
+
+---
+
+## Key Design Decisions
+
+| Decision | Why |
+|----------|-----|
+| **Dexie over chrome.storage** | IndexedDB handles large datasets (10k+ products) efficiently. chrome.storage.local has a default quota; storage APIs are asynchronous. |
+| **Zustand over React Context** | Zustand manages UI state within each document; IndexedDB shares persisted data across side panel and overlay. No provider wrapping needed. |
+| **Zod for messages** | Runtime validation catches malformed messages between contexts. 14 schema-defined message types; additional object fields are preserved by the validator. |
+| **Centralized selectors** | Shared selector tables reduce duplication; parsers also contain structural and metadata fallbacks. |
+| **Set-based dedup** | O(1) per lookup vs O(n) for array.includes(). Critical when collecting 1000+ products. |
+| **±20% jitter on scroll** | Varies the scrolling cadence; this does not guarantee avoidance of anti-scraping detection. |
+| **storage.session pointer (H-8)** | Module-scope state dies with the MV3 worker; `storage.session` survives for the browser session (survives worker bounces, cleared on browser close). |
+| **Parse cache (Phase 5)** | A WeakMap keys cached results by card element; incomplete products are re-parsed so late hydration can enrich them. |
+| **Bounded XLSX image embedding (Phase 8)** | Auto mode allows embedding only for at most 200 products, with 25 MiB fetched-image and 20-second image-fetch budgets. Always mode bypasses these auto budgets. They do not bound total workbook generation time or final file size. |
+| **No shadows** | PPHunt design rule: depth via surface tones and 1px borders, never box-shadow. |
+| **8px bottom-only radius** | PPHunt signature: buttons have flat tops, rounded bottoms only. |
+
+---
+
+## File Index
+
+No line counts on purpose: they are wrong the moment anyone edits a file
+(Phase 10, L-7). Path + responsibility only.
+
+| Path | Purpose |
+|------|---------|
+| `wxt.config.ts` | WXT configuration, manifest permissions |
+| `tailwind.config.js` | PPHunt design tokens |
+| `src/entrypoints/background.ts` | Message router, tab tracking, mode preference, session-pointer hydration |
+| `src/entrypoints/amazon.content.ts` | Content script: parsers, dedup, scroll, messaging |
+| `src/entrypoints/popup/` | Mode chooser popup |
+| `src/entrypoints/sidepanel/` | Main React UI (app shell, components, virtualized table, hooks, Zustand stores) |
+| `src/lib/db/` | Dexie database + CRUD modules + storage.session pointer (`session-state.ts`) |
+| `src/lib/schemas/` | Zod schemas (product, settings, messages, validation entry point) |
+| `src/lib/scraper/` | Page detection, centralized selectors, per-page-type parsers, field parsers, dedup engine, parse cache, scroll controller, CAPTCHA detector, mutation debounce |
+| `src/lib/export/` | CSV, Excel (SheetJS 0.20.3 patched, CFB image injection with budgets), clipboard engines, column mapping |
+| `src/lib/overlay/` | Overlay host (iframe in closed shadow root) + open/allow logic |
+| `src/lib/ui/` | Theme + opening-mode preferences |
+| `src/lib/diagnostics/` | Error diagnosis (categories, recovery actions, clipboard report) |
+| `src/lib/utils/` | Price parser, currency, formatters, a11y helpers |
+| `src/types/` | TypeScript interfaces |
+| `src/constants/` | Default values and target/scroll bounds; image budgets live in `src/lib/export/excel.ts` |

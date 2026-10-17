@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PPHunt</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Lora:wght@400;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <h2>Open PPHunt</h2>
+    <button class="btn" id="sidepanel" type="button" disabled>
+      <span class="btn-label">Open in Sidebar</span>
+      <span class="btn-desc">Docked, persistent across tabs</span>
+    </button>
+    <button class="btn" id="overlay" type="button" disabled>
+      <span class="btn-label">Open in Overlay</span>
+      <span class="btn-desc">Floats over the current webpage</span>
+    </button>
+    <label class="remember">
+      <input type="checkbox" id="remember" />
+      Remember my choice
+    </label>
+    <p class="hint">To choose again later, select “Ask every time” in Settings.</p>
+    <p class="error" id="error" role="alert" hidden></p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

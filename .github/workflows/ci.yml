@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # wxt@0.21.x declares engines.node >= 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Dead-export guard (L-3)
+        run: npm run check:dead-exports
+
+      - name: Test
+        run: npx vitest run
+
+      - name: Build
+        run: npx wxt build
+
+      - name: Audit (production deps)
+        run: npm audit --omit=dev
+
+      # Dev-only advisories must not block a release, but they must stay
+      # visible (SAD-193): vitest/@vitest/mocker and tailwindcss->braces
+      # currently report here.
+      - name: Audit (all deps, informational)
+        run: npm audit
+        continue-on-error: true
+
+      - name: Manifest sanity
+        run: >
+          node -e "const m=require('./dist/chrome-mv3/manifest.json');
+          if(!m.name||m.name==='manifest.json description')process.exit(1)"

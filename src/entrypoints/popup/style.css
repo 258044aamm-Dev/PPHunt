@@ -1,0 +1,131 @@
+:root {
+  color-scheme: light;
+  --color-canvas: 240 238 230;
+  --color-surface: 250 249 245;
+  --color-surface-soft: 230 225 214;
+  --color-ink: 20 20 19;
+  --color-ink-muted: 87 85 79;
+  --color-hairline: 138 135 125;
+  --color-clay: 176 78 48;
+  --color-crimson: 163 48 45;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --color-canvas: 20 20 19;
+  --color-surface: 29 28 26;
+  --color-surface-soft: 48 46 42;
+  --color-ink: 245 242 235;
+  --color-ink-muted: 184 180 170;
+  --color-hairline: 102 99 91;
+  --color-clay: 217 119 87;
+  --color-crimson: 232 118 114;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Poppins', Inter, system-ui, sans-serif;
+  background: rgb(var(--color-canvas));
+  color: rgb(var(--color-ink));
+  width: 280px;
+  padding: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h2 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: rgb(var(--color-ink));
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: 'Poppins', Inter, system-ui, sans-serif;
+  font-weight: 500;
+  border: 1px solid rgb(var(--color-hairline));
+  border-radius: 8px;
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-ink));
+  cursor: pointer;
+  margin-bottom: 8px;
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgb(var(--color-surface-soft));
+  border-color: rgb(var(--color-ink));
+}
+
+.btn:focus-visible {
+  outline: 2px solid rgb(var(--color-clay));
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--color-ink));
+}
+
+.btn-desc {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: rgb(var(--color-ink-muted));
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgb(var(--color-ink-muted));
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.remember input {
+  accent-color: rgb(var(--color-clay));
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.hint {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 12px;
+  color: rgb(var(--color-ink-muted));
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
+.error {
+  font-size: 12px;
+  color: rgb(var(--color-crimson));
+  margin-top: 10px;
+  line-height: 1.45;
+}
+
+.error[hidden] {
+  display: none;
+}
