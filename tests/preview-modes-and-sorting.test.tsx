@@ -7,11 +7,11 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { FullWidthPreviewModal as AmazonFullWidthPreviewModal } from '@/entrypoints/sidepanel/components/FullWidthPreviewModal';
-import { ExtractionCompleteModal as AmazonExtractionCompleteModal } from '@/entrypoints/sidepanel/components/ExtractionCompleteModal';
-import { useCollectionStore as useAmazonCollectionStore } from '@/entrypoints/sidepanel/store/collectionStore';
-import { useUIStore as useAmazonUIStore } from '@/entrypoints/sidepanel/store/uiStore';
-import { ProductTable as AmazonProductTable } from '@/entrypoints/sidepanel/table/ProductTable';
+import { AmazonFullWidthPreviewModal } from '@/engines/amazon/ui/components/FullWidthPreviewModal';
+import { AmazonExtractionCompleteModal } from '@/engines/amazon/ui/components/ExtractionCompleteModal';
+import { useAmazonCollectionStore } from '@/engines/amazon/ui/store/collectionStore';
+import { useAmazonUIStore } from '@/engines/amazon/ui/store/uiStore';
+import { AmazonProductTable } from '@/engines/amazon/ui/table/AmazonProductTable';
 import { TemuFullWidthPreviewModal } from '@/engines/temu/ui/components/FullWidthPreviewModal';
 import { TemuExtractionCompleteModal } from '@/engines/temu/ui/components/ExtractionCompleteModal';
 import { useTemuCollectionStore } from '@/engines/temu/ui/store/collectionStore';
@@ -279,12 +279,14 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       { id: 4, price: 20, rating: 4.1, title: 'B' },
     ];
 
+    // Multi-sort: Price Low->High, then Rating High->Low (null price always last)
     const sorted = sortProducts(rows, [
       { id: 'price', desc: false },
       { id: 'rating', desc: true },
     ]);
     expect(sorted.map((r) => r.id)).toEqual([4, 3, 1, 2]);
 
+    // Toggle multi-column sort helper
     const s1 = toggleMultiColumnSort([], 'price', false, false);
     expect(s1).toEqual([{ id: 'price', desc: false }]);
     expect(matchSortPresetId(s1, 'amazon')).toBe('price_asc');
@@ -364,6 +366,7 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
 
     render(<AmazonProductTable fullHeight sessionKey={SESSION_AMZ} />);
 
+    // Wait for all 3 products to render in default collectedAt descending order
     await waitFor(() => {
       const bodyRows = Array.from(
         document.querySelectorAll('tbody tr[data-index]'),
@@ -372,6 +375,7 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       expect(bodyRows[0]?.textContent).toContain('Beta Bookshelf Speaker');
     });
 
+    // 1. Select preset "Best Sellers Rank: Best First"
     const presetSelect = screen.getByTestId('table-sort-preset-select');
     fireEvent.change(presetSelect, { target: { value: 'bsr_asc' } });
 
@@ -379,27 +383,32 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       const bodyRows = Array.from(
         document.querySelectorAll('tbody tr[data-index]'),
       );
+      // #5 Alpha, #18 Beta, #120 Zeta
       expect(bodyRows[0]?.textContent).toContain('Alpha Portable Speaker');
       expect(bodyRows[1]?.textContent).toContain('Beta Bookshelf Speaker');
       expect(bodyRows[2]?.textContent).toContain('Zeta Studio Monitor');
     });
 
+    // 2. Select preset "Price: Low to High", then add secondary sort "Rating (High->Low)"
     fireEvent.change(presetSelect, { target: { value: 'price_asc' } });
     const addSortSelect = screen.getByTestId('table-add-sort-select');
     fireEvent.change(addSortSelect, { target: { value: 'rating' } });
 
     await waitFor(() => {
+      // Active sort pills show both rules: 1. Price ↑ Asc and 2. Rating ↓ Desc
       expect(screen.getByTestId('sort-pill-price')).toBeTruthy();
       expect(screen.getByTestId('sort-pill-rating')).toBeTruthy();
 
       const bodyRows = Array.from(
         document.querySelectorAll('tbody tr[data-index]'),
       );
+      // Both Alpha and Beta are $50, but Beta has 4.9 rating vs Alpha's 4.8!
       expect(bodyRows[0]?.textContent).toContain('Beta Bookshelf Speaker');
       expect(bodyRows[1]?.textContent).toContain('Alpha Portable Speaker');
       expect(bodyRows[2]?.textContent).toContain('Zeta Studio Monitor');
     });
 
+    // 3. Export via TableToolbar -> verify exported products preserve the exact multi-sort order!
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
     const exportBtn = await screen.findByRole('button', {
       name: 'Export 3 products',
@@ -411,11 +420,12 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
     });
     const exportedProducts = csvSpy.mock.calls[0]?.[0] ?? [];
     expect(exportedProducts.map((p) => p.asin)).toEqual([
-      'B0SORT0003',
-      'B0SORT0002',
-      'B0SORT0001',
+      'B0SORT0003', // Beta ($50, 4.9★)
+      'B0SORT0002', // Alpha ($50, 4.8★)
+      'B0SORT0001', // Zeta ($150, 4.5★)
     ]);
 
+    // 4. Also verify Clipboard export preserves sort order (ExportModal remains open)
     const clipboardBtn = await screen.findByRole('button', {
       name: 'Copy',
     });
@@ -453,6 +463,7 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
     const overlay = await screen.findByTestId('fullwidth-preview-overlay');
     expect(overlay.getAttribute('data-preview-mode')).toBe('overview');
 
+    // Sort by Monthly Sales: High to Low in Overview mode
     const presetSelect = await within(overlay).findByTestId(
       'table-sort-preset-select',
     );
@@ -462,17 +473,20 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       const bodyRows = Array.from(
         overlay.querySelectorAll('tbody tr[data-index]'),
       );
+      // 10K+ Alpha, 2.5K+ Beta, 500+ Zeta
       expect(bodyRows[0]?.textContent).toContain('Alpha Portable Speaker');
       expect(bodyRows[1]?.textContent).toContain('Beta Bookshelf Speaker');
       expect(bodyRows[2]?.textContent).toContain('Zeta Studio Monitor');
     });
 
+    // Switch to Sidebar mode -> layout attribute updates to 'sidebar' and sort order stays intact!
     fireEvent.click(within(overlay).getByTestId('preview-mode-sidebar'));
     expect(overlay.getAttribute('data-preview-mode')).toBe('sidebar');
     expect(useAmazonUIStore.getState().previewSorting).toEqual([
       { id: 'pastMonthSales', desc: true },
     ]);
 
+    // Click header "Export Current Extraction" -> preserves Monthly Sales sort order!
     fireEvent.click(
       within(overlay).getByRole('button', {
         name: 'Export Current Extraction',
@@ -487,11 +501,12 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       expect(csvSpy).toHaveBeenCalledTimes(1);
     });
     expect(csvSpy.mock.calls[0]?.[0]?.map((p) => p.asin)).toEqual([
-      'B0SORT0002',
-      'B0SORT0003',
-      'B0SORT0001',
+      'B0SORT0002', // 10K+
+      'B0SORT0003', // 2.5K+
+      'B0SORT0001', // 500+
     ]);
 
+    // Switch to Dedicated Tab mode -> opens /preview.html with sort=pastMonthSales:desc
     fireEvent.click(within(overlay).getByTestId('preview-mode-tab'));
     await waitFor(() => {
       expect(createTabSpy).toHaveBeenCalledTimes(1);
@@ -502,6 +517,7 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
 
     cleanup();
 
+    // Verify Temu FullWidthPreviewModal and Dedicated PreviewPageApp
     useTemuUIStore.getState().openPreviewOverlay(SESSION_TEMU, 'overview');
     render(
       <>
@@ -522,16 +538,19 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       const bodyRows = Array.from(
         temuOverlay.querySelectorAll('tbody tr[data-index]'),
       );
+      // -60% Delta first, -15% Omega second
       expect(bodyRows[0]?.textContent).toContain('Delta Mini Soundbar');
       expect(bodyRows[1]?.textContent).toContain('Omega Wireless Earbuds');
     });
 
     cleanup();
 
+    // Render standalone Dedicated Preview Tab (/preview.html)
     render(<PreviewPageApp />);
     const dedicatedPage = await screen.findByTestId('dedicated-preview-page');
     expect(dedicatedPage).toBeTruthy();
 
+    // Switch engine to Temu in Dedicated Preview Tab
     fireEvent.click(screen.getByTestId('preview-page-engine-temu'));
     await waitFor(() => {
       expect(
@@ -541,6 +560,7 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       ).toBe('true');
     });
 
+    // Also render standalone TemuProductTable to verify direct table sorting
     cleanup();
     render(<TemuProductTable fullHeight sessionId={SESSION_TEMU} />);
     await waitFor(() => {

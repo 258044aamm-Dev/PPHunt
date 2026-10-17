@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { SortingState } from '@tanstack/react-table';
 import type { TemuActiveTab } from '../../types';
-import type { PreviewSurfaceMode } from '@/entrypoints/sidepanel/store/uiStore';
+import type { PreviewSurfaceMode } from '@/engines/amazon/ui/store/uiStore';
 
 interface TemuUIState {
   activeTab: TemuActiveTab;

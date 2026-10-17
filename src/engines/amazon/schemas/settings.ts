@@ -1,0 +1,134 @@
+import { z } from 'zod';
+import {
+  DEFAULT_ENABLED_FIELDS,
+  DEFAULT_TARGET_COUNT,
+  SCROLL_INTERVAL_MAX,
+  SCROLL_INTERVAL_MIN,
+  SCROLL_SPEED_MAX,
+  SCROLL_SPEED_MIN,
+  TARGET_MAX,
+  TARGET_MIN,
+  WAIT_AFTER_SCROLL_MAX,
+  WAIT_AFTER_SCROLL_MIN,
+} from '../constants/defaults';
+
+export { DEFAULT_ENABLED_FIELDS };
+
+export const EnabledFieldsSchema = z.object({
+  title: z.boolean().default(true),
+  asin: z.boolean().default(true),
+  url: z.boolean().default(true),
+  price: z.boolean().default(true),
+  listPrice: z.boolean().default(true),
+  discountPercentage: z.boolean().default(true),
+  dealBadge: z.boolean().default(true),
+  currency: z.boolean().default(true),
+  rating: z.boolean().default(true),
+  reviewCount: z.boolean().default(true),
+  bestSellersRank: z.boolean().default(true),
+  pastMonthSales: z.boolean().default(true),
+  coupon: z.boolean().default(true),
+  badge: z.boolean().default(true),
+  delivery: z.boolean().default(true),
+  imageUrl: z.boolean().default(true),
+  isSponsored: z.boolean().default(true),
+  isPrime: z.boolean().default(true),
+  brand: z.boolean().default(true),
+  availability: z.boolean().default(true),
+  seller: z.boolean().default(true),
+  description: z.boolean().default(false),
+  features: z.boolean().default(false),
+});
+
+const ExportFormatSchema = z.preprocess(
+  (val) => (val === 'xlsx' ? 'excel' : val),
+  z.enum(['csv', 'excel', 'clipboard']).default('csv'),
+);
+
+export const AmazonSettingsSchema = z.object({
+  id: z.string().default('default'),
+  defaultMode: z.enum(['manual', 'automatic']).default('manual'),
+  defaultTargetCount: z
+    .number()
+    .int()
+    .min(TARGET_MIN)
+    .max(TARGET_MAX)
+    .default(DEFAULT_TARGET_COUNT),
+  scrollSpeed: z
+    .number()
+    .int()
+    .min(SCROLL_SPEED_MIN)
+    .max(SCROLL_SPEED_MAX)
+    .default(800),
+  scrollInterval: z
+    .number()
+    .int()
+    .min(SCROLL_INTERVAL_MIN)
+    .max(SCROLL_INTERVAL_MAX)
+    .default(500),
+  waitAfterScroll: z
+    .number()
+    .int()
+    .min(WAIT_AFTER_SCROLL_MIN)
+    .max(WAIT_AFTER_SCROLL_MAX)
+    .default(1500),
+  duplicateDetection: z.boolean().default(true),
+  exportFormat: ExportFormatSchema,
+  exportFilename: z.string().default(''),
+  exportImages: z.enum(['auto', 'always', 'never']).default('auto'),
+  includeBOM: z.boolean().default(true),
+  notifications: z.boolean().default(true),
+  enabledFields: EnabledFieldsSchema.default(() => ({
+    ...DEFAULT_ENABLED_FIELDS,
+  })),
+});
+
+export const PartialAmazonSettingsSchema = z.object({
+  id: z.string().optional(),
+  defaultMode: z.enum(['manual', 'automatic']).optional(),
+  defaultTargetCount: z
+    .number()
+    .int()
+    .min(TARGET_MIN)
+    .max(TARGET_MAX)
+    .optional(),
+  scrollSpeed: z
+    .number()
+    .int()
+    .min(SCROLL_SPEED_MIN)
+    .max(SCROLL_SPEED_MAX)
+    .optional(),
+  scrollInterval: z
+    .number()
+    .int()
+    .min(SCROLL_INTERVAL_MIN)
+    .max(SCROLL_INTERVAL_MAX)
+    .optional(),
+  waitAfterScroll: z
+    .number()
+    .int()
+    .min(WAIT_AFTER_SCROLL_MIN)
+    .max(WAIT_AFTER_SCROLL_MAX)
+    .optional(),
+  duplicateDetection: z.boolean().optional(),
+  exportFormat: z
+    .preprocess(
+      (val) => (val === 'xlsx' ? 'excel' : val),
+      z.enum(['csv', 'excel', 'clipboard']),
+    )
+    .optional(),
+  exportFilename: z.string().optional(),
+  exportImages: z.enum(['auto', 'always', 'never']).optional(),
+  includeBOM: z.boolean().optional(),
+  notifications: z.boolean().optional(),
+  enabledFields: EnabledFieldsSchema.partial().optional(),
+});
+
+export const SettingsSchema = AmazonSettingsSchema;
+export const PartialSettingsSchema = PartialAmazonSettingsSchema;
+
+export type ValidatedAmazonSettings = z.infer<typeof AmazonSettingsSchema>;
+export type ValidatedSettings = ValidatedAmazonSettings;
+export type ValidatedPartialAmazonSettings = z.infer<
+  typeof PartialAmazonSettingsSchema
+>;

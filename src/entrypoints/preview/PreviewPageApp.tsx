@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SortingState } from '@tanstack/react-table';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ErrorBoundary } from '@/entrypoints/sidepanel/components/ErrorBoundary';
-import { ExportModal } from '@/entrypoints/sidepanel/components/ExportModal';
 import { PreviewModeSwitcher } from '@/entrypoints/sidepanel/components/PreviewModeSwitcher';
 import { ToastContainer } from '@/entrypoints/sidepanel/components/ToastContainer';
-import { useUIStore } from '@/entrypoints/sidepanel/store/uiStore';
-import { ProductTable } from '@/entrypoints/sidepanel/table/ProductTable';
-import { db } from '@/lib/db/database';
-import { formatNumber } from '@/lib/utils/formatters';
+import { db } from '@/engines/amazon/db/database';
+import { AmazonExportModal } from '@/engines/amazon/ui/components/ExportModal';
+import { useAmazonUIStore } from '@/engines/amazon/ui/store/uiStore';
+import { AmazonProductTable } from '@/engines/amazon/ui/table/AmazonProductTable';
+import { formatNumber } from '@/engines/amazon/utils/formatters';
 import { temuDb } from '@/engines/temu/db/database';
 import { TemuExportModal } from '@/engines/temu/ui/components/ExportModal';
 import { useTemuUIStore } from '@/engines/temu/ui/store/uiStore';
@@ -61,14 +61,15 @@ export function PreviewPageApp() {
     });
   }, []);
 
-  const amazonSorting = useUIStore((s) => s.previewSorting);
-  const amazonFilter = useUIStore((s) => s.previewGlobalFilter);
+  const amazonSorting = useAmazonUIStore((s) => s.previewSorting);
+  const amazonFilter = useAmazonUIStore((s) => s.previewGlobalFilter);
   const temuSorting = useTemuUIStore((s) => s.previewSorting);
   const temuFilter = useTemuUIStore((s) => s.previewGlobalFilter);
 
   const activeSorting = engine === 'temu' ? temuSorting : amazonSorting;
   const activeFilter = engine === 'temu' ? temuFilter : amazonFilter;
 
+  // Hydrate from stored snapshot if URL had no explicit query parameters
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.search.length > 1) {
       return;
@@ -86,6 +87,7 @@ export function PreviewPageApp() {
     };
   }, []);
 
+  // Keep URL query bar and storage snapshot in sync with active state
   useEffect(() => {
     const nextSnapshot = {
       engine,
@@ -221,6 +223,7 @@ export function PreviewPageApp() {
       data-testid="dedicated-preview-page"
       className="flex flex-col h-screen w-screen bg-surface text-ink overflow-hidden"
     >
+      {/* Top workspace header */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-3.5 border-b border-hairline-soft bg-surface-card shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full bg-clay shrink-0" />
@@ -241,6 +244,7 @@ export function PreviewPageApp() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Engine Toggle */}
           <div
             role="group"
             aria-label="Active marketplace engine"
@@ -274,6 +278,7 @@ export function PreviewPageApp() {
             </button>
           </div>
 
+          {/* Session Selector */}
           <select
             aria-label="Select extraction session"
             data-testid="preview-page-session-select"
@@ -302,11 +307,13 @@ export function PreviewPageApp() {
                 ))}
           </select>
 
+          {/* 3-Mode Switcher (Sidebar | Overview | Tab) */}
           <PreviewModeSwitcher
             currentMode="tab"
             onSelectMode={handleModeSwitch}
           />
 
+          {/* Theme Toggle */}
           <button
             type="button"
             onClick={handleToggleTheme}
@@ -316,6 +323,7 @@ export function PreviewPageApp() {
             {resolvedTheme === 'dark' ? '☀ Light' : '☾ Dark'}
           </button>
 
+          {/* Export CTA */}
           <button
             type="button"
             data-testid="preview-page-export-button"
@@ -328,6 +336,7 @@ export function PreviewPageApp() {
         </div>
       </header>
 
+      {/* Main full-screen table area */}
       <main className="flex-1 min-h-0 min-w-0 p-5 flex flex-col overflow-hidden">
         <ErrorBoundary>
           {engine === 'temu' ? (
@@ -339,7 +348,7 @@ export function PreviewPageApp() {
               initialGlobalFilter={initialGlobalFilter}
             />
           ) : (
-            <ProductTable
+            <AmazonProductTable
               key={`amazon-${sessionKey ?? 'all'}`}
               fullHeight
               sessionKey={sessionKey}
@@ -361,7 +370,7 @@ export function PreviewPageApp() {
           hasSelection={false}
         />
       ) : (
-        <ExportModal
+        <AmazonExportModal
           isOpen={exportModalOpen}
           onClose={() => setExportModalOpen(false)}
           allProducts={sortedAmazonProducts}
