@@ -39,6 +39,9 @@ export default defineConfig({
       '*://*.amazon.it/*',
       '*://*.media-amazon.com/*',
       '*://*.ssl-images-amazon.com/*',
+      '*://*.temu.com/*',
+      '*://temu.com/*',
+      '*://*.kwcdn.com/*',
     ],
     // M-3 (SAD-182): only the overlay page and its own bundles are embeddable
     // on ordinary sites. The old wildcards ('chunks/*', 'assets/*' for

@@ -17,10 +17,14 @@ import { validateExtensionMessage } from '@/lib/schemas';
 import { validateAndNormalizeScrapedProduct } from '@/lib/scraper/field-parsers';
 import { OPENING_MODE_KEY, readOpeningMode, type OpeningMode } from '@/lib/ui/openingMode';
 import { isOverlayAllowed, openOverlayForTab } from '@/lib/overlay/openOverlay';
+import { registerTemuBackgroundHandlers } from '@/engines/temu/background/handler';
+import { isTemuMessage } from '@/engines/temu/schemas/validate-message';
 import type { Product } from '@/types/product';
 
 export default defineBackground(() => {
   console.log('[PPHunt] Background service worker started');
+
+  const temuHandlers = registerTemuBackgroundHandlers();
 
   // L-5 (SAD-197): browser startup is the one moment where nothing can
   // legitimately be collecting — belt-and-braces alongside the doHydrate
@@ -28,6 +32,7 @@ export default defineBackground(() => {
   // Optional call: test stubs of `browser` may not implement onStartup.
   browser.runtime.onStartup?.addListener(() => {
     void reconcileInterruptedSessions().catch(() => {});
+    temuHandlers.onTemuStartup();
   });
 
   // ─── Active-session state (H-8, SAD-173) ───
@@ -608,6 +613,10 @@ export default defineBackground(() => {
       sender,
       sendResponse?: (response?: unknown) => void
     ) => {
+      if (isTemuMessage(message)) {
+        return temuHandlers.handleTemuMessage(message, sender, sendResponse);
+      }
+
       // H-3 (SAD-164): validate every message at the router boundary.
       // Unknown types are ignored silently (unchanged behaviour); known types
       // with malformed payloads are discarded with an explicit
@@ -913,6 +922,7 @@ export default defineBackground(() => {
   });
 
   browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    temuHandlers.onTemuTabUpdated(tabId, changeInfo);
     if (changeInfo.url) {
       console.log('[BG] Tab URL changed:', tabId, changeInfo.url);
       void ensureHydrated().then(() => {
@@ -926,6 +936,7 @@ export default defineBackground(() => {
 
   // Detect when the collection tab is closed
   browser.tabs.onRemoved.addListener((tabId) => {
+    temuHandlers.onTemuTabRemoved(tabId);
     void ensureHydrated().then(() => {
     if (tabId === state.tabId) {
       console.log('[BG] Collection tab closed:', tabId);
