@@ -2,8 +2,17 @@ import type { AmazonSettings, EnabledFieldsConfig } from '../types';
 
 export const TARGET_MIN = 1;
 export const TARGET_MAX = 1000;
+export const DEFAULT_TARGET_COUNT = 50;
 export const TARGET_QUICK_SELECT = [50, 100, 200, 300] as const;
 export const MAX_SEEDED_ASINS = 2000;
+
+export function clampTargetCount(value: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_TARGET_COUNT;
+  }
+  const rounded = Math.round(value);
+  return Math.min(TARGET_MAX, Math.max(TARGET_MIN, rounded));
+}
 
 export const DEFAULT_ENABLED_FIELDS: EnabledFieldsConfig = {
   title: true,

@@ -32,6 +32,7 @@ export type AmazonCollectionStatus =
   | 'error'
   | 'interrupted';
 export type CollectionStatus = AmazonCollectionStatus;
+export type SessionStatus = AmazonCollectionStatus;
 
 export type AmazonErrorCode =
   | 'BLOCKED'
@@ -77,6 +78,7 @@ export interface SessionState {
   collectedCount: number;
   startedAt: string;
   updatedAt?: string;
+  completedAt?: string;
   errorMessage?: string;
 }
 export type AmazonCollectionSession = SessionState;
@@ -130,6 +132,7 @@ export interface AmazonSettings {
   enabledFields: EnabledFieldsConfig;
 }
 export type Settings = AmazonSettings;
+export type AppSettings = AmazonSettings;
 
 export interface AmazonHistoryEntry {
   id?: number;
