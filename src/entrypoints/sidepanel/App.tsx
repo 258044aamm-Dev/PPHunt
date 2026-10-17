@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { pruneOldSessions } from '@/lib/db/sessions';
-import { Header } from './components/Header';
+import { detectOverlayEngine } from '@/lib/overlay/openOverlay';
+import { Header, type MarketplaceEngineId } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { CollectTab } from './components/CollectTab';
 import { HistoryTab } from './components/HistoryTab';
@@ -9,29 +10,32 @@ import { ExtractionCompleteModal } from './components/ExtractionCompleteModal';
 import { FullWidthPreviewModal } from './components/FullWidthPreviewModal';
 import { SettingsOverlay } from './components/SettingsOverlay';
 import { SessionNotice } from './components/SessionNotice';
-import { ToastContainer } from './components/ToastContainer';
+import { ToastContainer, showToast } from './components/ToastContainer';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useSessionRecovery } from './hooks/useSessionRecovery';
 import { useActiveBrowserTab } from './hooks/useActiveBrowserTab';
 import { useSettings } from './hooks/useSettings';
 import { useUIStore } from './store/uiStore';
 import { useCollectionStore } from './store/collectionStore';
-import { showToast } from './components/ToastContainer';
+import { useTemuUIStore } from '@/engines/temu/ui/store/uiStore';
+import { TemuEngineApp } from '@/engines/temu/ui/TemuEngineApp';
 import { shouldWarnAboutRejections } from '@/lib/validation-warnings';
 
 /**
- * Main application shell.
- * - Header with theme toggle & settings gear
- * - Navigation tabs (Collect | History)
- * - Tab content
- * - Post-extraction completion dialog & full-width preview overlay
- * - Error modal overlay with comprehensive diagnostics
- * - Settings overlay
+ * Main application shell supporting two isolated marketplace engines:
+ * - Amazon (`PPHuntDB`, standard messages, existing UI)
+ * - Temu (`PPHuntTemuDB`, `TEMU_*` messages, `TemuEngineApp`)
  *
- * Keeps the viewed tab in sync as the user navigates or switches tabs.
+ * Auto-selects Amazon on `amazon.*` tabs and Temu on `temu.com` tabs, while
+ * allowing manual switching via the `Amazon | Temu` pill toggle in the Header.
  */
 export default function App({ onClose }: { onClose?: () => void } = {}) {
+  const [activeEngine, setActiveEngine] = useState<MarketplaceEngineId>('amazon');
+  const lastAutoDetectedUrlRef = useRef<string | null>(null);
+
   const activeTab = useUIStore((s) => s.activeTab);
+  const openAmazonSettings = useUIStore((s) => s.openSettings);
+  const openTemuSettings = useTemuUIStore((s) => s.openSettings);
   const setStatus = useCollectionStore((s) => s.setStatus);
   const setError = useCollectionStore((s) => s.setError);
   const setCollectedCount = useCollectionStore((s) => s.setCollectedCount);
@@ -42,6 +46,65 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   const { settings } = useSettings();
 
   useActiveBrowserTab();
+
+  // Auto-detect marketplace engine from active browser tab URL on mount and tab changes
+  useEffect(() => {
+    let mounted = true;
+
+    const syncEngineFromUrl = (url: string | undefined) => {
+      if (!mounted || !url) return;
+      if (lastAutoDetectedUrlRef.current === url) return;
+      const detected = detectOverlayEngine(url);
+      if (detected) {
+        lastAutoDetectedUrlRef.current = url;
+        setActiveEngine(detected);
+      }
+    };
+
+    const checkCurrentTab = async () => {
+      try {
+        const tabs = await browser?.tabs?.query?.({
+          active: true,
+          currentWindow: true,
+        });
+        syncEngineFromUrl(tabs?.[0]?.url);
+      } catch {
+        // Ignore in test environments without full tabs API
+      }
+    };
+
+    void checkCurrentTab();
+
+    const handleActivated = (activeInfo: { tabId: number }) => {
+      browser?.tabs
+        ?.get?.(activeInfo.tabId)
+        .then((tab) => {
+          lastAutoDetectedUrlRef.current = null;
+          syncEngineFromUrl(tab?.url);
+        })
+        .catch(() => {});
+    };
+
+    const handleUpdated = (
+      _tabId: number,
+      changeInfo: { url?: string; status?: string },
+      tab: { active?: boolean; url?: string }
+    ) => {
+      if (!tab?.active) return;
+      if (changeInfo.url || changeInfo.status === 'complete') {
+        syncEngineFromUrl(changeInfo.url ?? tab.url);
+      }
+    };
+
+    browser?.tabs?.onActivated?.addListener?.(handleActivated);
+    browser?.tabs?.onUpdated?.addListener?.(handleUpdated);
+
+    return () => {
+      mounted = false;
+      browser?.tabs?.onActivated?.removeListener?.(handleActivated);
+      browser?.tabs?.onUpdated?.removeListener?.(handleUpdated);
+    };
+  }, []);
 
   // H-1 (SAD-167): persisted defaultMode/defaultTargetCount take effect on
   // startup. Applied once, and the store action itself refuses to touch a
@@ -144,6 +207,18 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     return () => browser.runtime.onMessage.removeListener(handler);
   }, [setCollectedCount, setStatus, setError, setCurrentSessionKey]);
 
+  const handleEngineChange = useCallback((engine: MarketplaceEngineId) => {
+    setActiveEngine(engine);
+  }, []);
+
+  const handleOpenSettings = useCallback(() => {
+    if (activeEngine === 'temu') {
+      openTemuSettings();
+    } else {
+      openAmazonSettings();
+    }
+  }, [activeEngine, openTemuSettings, openAmazonSettings]);
+
   // Render tab content
   // Exhaustive switch over ActiveTab ('collect' | 'history') with no default:
   // if a third tab is ever added, tsc reports the non-exhaustive path instead
@@ -159,31 +234,42 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
 
   return (
     <div className="min-h-screen bg-canvas text-ink p-4 flex flex-col">
-      <Header onClose={onClose} />
+      <Header
+        onClose={onClose}
+        activeEngine={activeEngine}
+        onEngineChange={handleEngineChange}
+        onOpenSettings={handleOpenSettings}
+      />
       <div className="border-b border-hairline-soft mb-3" />
-      <Navigation />
-      <div
-        className="flex-1 min-h-0 overflow-y-auto"
-        role="tabpanel"
-        id={`panel-${activeTab}`}
-        aria-labelledby={`tab-${activeTab}`}
-      >
-        {activeTab === 'collect' && (
-          <SessionNotice
-            notice={notice}
-            onDismiss={dismissNotice}
-            onStartFresh={startFresh}
-            onKeepProducts={keepAndResume}
-          />
-        )}
-        {/* M-10 (SAD-169): a tab crash shows the fallback below; header,
-            navigation and overlays stay mounted. */}
-        <ErrorBoundary>{renderTabContent()}</ErrorBoundary>
-      </div>
-      <FullWidthPreviewModal />
-      <ExtractionCompleteModal />
-      <ErrorModal />
-      <SettingsOverlay />
+      {activeEngine === 'temu' ? (
+        <TemuEngineApp />
+      ) : (
+        <>
+          <Navigation />
+          <div
+            className="flex-1 min-h-0 overflow-y-auto"
+            role="tabpanel"
+            id={`panel-${activeTab}`}
+            aria-labelledby={`tab-${activeTab}`}
+          >
+            {activeTab === 'collect' && (
+              <SessionNotice
+                notice={notice}
+                onDismiss={dismissNotice}
+                onStartFresh={startFresh}
+                onKeepProducts={keepAndResume}
+              />
+            )}
+            {/* M-10 (SAD-169): a tab crash shows the fallback below; header,
+                navigation and overlays stay mounted. */}
+            <ErrorBoundary>{renderTabContent()}</ErrorBoundary>
+          </div>
+          <FullWidthPreviewModal />
+          <ExtractionCompleteModal />
+          <ErrorModal />
+          <SettingsOverlay />
+        </>
+      )}
       <ToastContainer />
     </div>
   );

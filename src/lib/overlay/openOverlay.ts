@@ -1,4 +1,17 @@
 import { mountOverlayHost } from './overlayHost';
+import { isAmazonUrl } from '@/lib/utils/amazon-url';
+import { isTemuUrl } from '@/engines/temu/utils/temu-url';
+
+/**
+ * Resolves the target marketplace engine ('amazon' | 'temu') from a tab URL,
+ * or returns null for non-marketplace pages.
+ */
+export function detectOverlayEngine(url: string | undefined): 'amazon' | 'temu' | null {
+  if (!url) return null;
+  if (isTemuUrl(url)) return 'temu';
+  if (isAmazonUrl(url)) return 'amazon';
+  return null;
+}
 
 /** Only ordinary HTTP(S) pages can accept an injected page overlay. */
 export function isOverlayAllowed(url: string | undefined): boolean {

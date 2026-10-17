@@ -6,12 +6,30 @@ import {
   type ResolvedTheme,
 } from '@/lib/ui/theme';
 
+export type MarketplaceEngineId = 'amazon' | 'temu';
+
+export interface HeaderProps {
+  onClose?: () => void;
+  activeEngine?: MarketplaceEngineId;
+  onEngineChange?: (engine: MarketplaceEngineId) => void;
+  onOpenSettings?: () => void;
+}
+
 /**
- * PPHunt header with brand wordmark, theme toggle, and settings gear icon.
+ * PPHunt header with brand wordmark, Amazon | Temu engine switcher pill,
+ * theme toggle, and settings gear icon.
  * Uses Lora serif for the brand name per PPHunt design spec.
  */
-export function Header({ onClose }: { onClose?: () => void } = {}) {
-  const openSettings = useUIStore((s) => s.openSettings);
+export function Header({
+  onClose,
+  activeEngine,
+  onEngineChange,
+  onOpenSettings,
+}: HeaderProps = {}) {
+  const openAmazonSettings = useUIStore((s) => s.openSettings);
+  const [internalEngine, setInternalEngine] = useState<MarketplaceEngineId>('amazon');
+  const currentEngine = activeEngine ?? internalEngine;
+
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
     typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
       ? 'dark'
@@ -30,13 +48,66 @@ export function Header({ onClose }: { onClose?: () => void } = {}) {
     void setThemePreference(next);
   }, [resolvedTheme]);
 
+  const handleSelectEngine = useCallback(
+    (engine: MarketplaceEngineId) => {
+      setInternalEngine(engine);
+      onEngineChange?.(engine);
+    },
+    [onEngineChange]
+  );
+
+  const handleOpenSettings = useCallback(() => {
+    if (onOpenSettings) {
+      onOpenSettings();
+    } else {
+      openAmazonSettings();
+    }
+  }, [onOpenSettings, openAmazonSettings]);
+
   const isDark = resolvedTheme === 'dark';
 
   return (
     <header className="flex items-center justify-between mb-3">
-      <h1 className="font-serif text-xl font-semibold text-ink tracking-tight">
-        PPHunt
-      </h1>
+      <div className="flex items-center gap-2.5">
+        <h1 className="font-serif text-xl font-semibold text-ink tracking-tight">
+          PPHunt
+        </h1>
+        <div
+          role="group"
+          aria-label="Marketplace engine"
+          data-testid="engine-switcher"
+          className="inline-flex items-center rounded-sm border border-hairline bg-surface-soft p-0.5 text-[11px] font-medium"
+        >
+          <button
+            type="button"
+            data-testid="engine-toggle-amazon"
+            aria-pressed={currentEngine === 'amazon'}
+            onClick={() => handleSelectEngine('amazon')}
+            className={`px-2 py-0.5 rounded-sm transition-colors ${
+              currentEngine === 'amazon'
+                ? 'bg-surface-card text-ink font-semibold shadow-card'
+                : 'text-ink-muted hover:text-ink'
+            }`}
+            title="Switch to Amazon engine"
+          >
+            Amazon
+          </button>
+          <button
+            type="button"
+            data-testid="engine-toggle-temu"
+            aria-pressed={currentEngine === 'temu'}
+            onClick={() => handleSelectEngine('temu')}
+            className={`px-2 py-0.5 rounded-sm transition-colors ${
+              currentEngine === 'temu'
+                ? 'bg-surface-card text-ink font-semibold shadow-card'
+                : 'text-ink-muted hover:text-ink'
+            }`}
+            title="Switch to Temu engine"
+          >
+            Temu
+          </button>
+        </div>
+      </div>
       <div className="flex items-center gap-1">
         {onClose && (
           <button
@@ -91,7 +162,7 @@ export function Header({ onClose }: { onClose?: () => void } = {}) {
         </button>
         <button
           type="button"
-          onClick={openSettings}
+          onClick={handleOpenSettings}
           className="w-8 h-8 flex items-center justify-center rounded-sm text-ink-muted hover:text-ink hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay transition-colors"
           aria-label="Settings"
           title="Settings"
@@ -108,7 +179,7 @@ export function Header({ onClose }: { onClose?: () => void } = {}) {
             strokeLinejoin="round"
           >
             <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0-4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </button>
       </div>

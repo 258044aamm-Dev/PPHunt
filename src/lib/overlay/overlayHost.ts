@@ -1,6 +1,8 @@
 /**
  * This function is serialized by chrome.scripting.executeScript. Keep it
  * self-contained: imported variables are not available in the page context.
+ * Supports mounting the isolated PPHunt overlay drawer on both Amazon and Temu
+ * (and any standard HTTP/HTTPS host page).
  */
 export function mountOverlayHost(overlayUrl: string, preferredWidth: number): boolean {
   const hostId = 'pphunt-extension-overlay-host';
@@ -19,6 +21,7 @@ export function mountOverlayHost(overlayUrl: string, preferredWidth: number): bo
   host.style.setProperty('z-index', '2147483647', 'important');
   host.style.setProperty('background', '#f0eee6', 'important');
   host.style.setProperty('pointer-events', 'auto', 'important');
+  host.style.setProperty('isolation', 'isolate', 'important');
 
   const maxWidth = Math.max(220, Math.min(800, Math.floor(window.innerWidth * 0.8)));
   const minWidth = Math.min(300, maxWidth);
