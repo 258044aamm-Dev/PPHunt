@@ -74,10 +74,14 @@ export class AmazonScrollController {
       }
 
       if (typeof window !== 'undefined' && typeof window.scrollBy === 'function') {
-        window.scrollBy({
-          top: this.config.scrollAmount,
-          behavior: 'smooth',
-        });
+        try {
+          window.scrollBy({
+            top: this.config.scrollAmount,
+            behavior: 'smooth',
+          });
+        } catch {
+          // Ignore unimplemented window.scrollBy in headless test environments
+        }
       }
 
       this.waitTimer = setTimeout(() => {
@@ -152,6 +156,29 @@ export class AmazonScrollController {
       ) {
         try {
           control.click();
+          return true;
+        } catch {
+          // Ignore click errors
+        }
+      }
+    }
+
+    const buttons = Array.from(activeDoc.querySelectorAll<HTMLElement>('button'));
+    for (const btn of buttons) {
+      if (
+        btn.hasAttribute('disabled') ||
+        btn.getAttribute('aria-disabled') === 'true'
+      ) {
+        continue;
+      }
+      const label = (
+        btn.getAttribute('aria-label') ||
+        btn.textContent ||
+        ''
+      ).trim();
+      if (/^(?:see|load|view|show)\s+more\b/i.test(label)) {
+        try {
+          btn.click();
           return true;
         } catch {
           // Ignore click errors

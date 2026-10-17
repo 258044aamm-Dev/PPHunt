@@ -122,6 +122,24 @@ function extractProductJsonLd(doc: Document): JsonLdProductMetadata {
             result.currency = offers.priceCurrency.toUpperCase();
           }
         }
+
+        const aggRating = rec.aggregateRating as
+          | Record<string, unknown>
+          | undefined;
+        if (aggRating && typeof aggRating === 'object') {
+          const parsedRating = parseRating(
+            String(aggRating.ratingValue ?? ''),
+          );
+          if (parsedRating !== null && result.rating === undefined) {
+            result.rating = parsedRating;
+          }
+          const parsedReviews = parseReviewCount(
+            String(aggRating.reviewCount ?? aggRating.ratingCount ?? ''),
+          );
+          if (parsedReviews !== null && result.reviewCount === undefined) {
+            result.reviewCount = parsedReviews;
+          }
+        }
       }
     } catch {
       // Ignore malformed JSON-LD

@@ -49,28 +49,36 @@ export function AmazonSettingsOverlay() {
   useEffect(() => {
     let mounted = true;
     const changedKeys = new Set<string>();
-    void browser.storage.local
-      .get([OPENING_MODE_KEY, 'pphuntOverlayWidth', THEME_MODE_KEY])
-      .then((stored) => {
-        if (!mounted) return;
-        if (!changedKeys.has(OPENING_MODE_KEY)) {
-          setUiMode(readOpeningMode(stored?.[OPENING_MODE_KEY]));
-        }
-        if (!changedKeys.has(THEME_MODE_KEY)) {
-          const loadedTheme = readThemeMode(stored?.[THEME_MODE_KEY]);
-          setThemeMode(loadedTheme);
-          applyTheme(loadedTheme);
-        }
-        if (
-          !changedKeys.has('pphuntOverlayWidth') &&
-          typeof stored?.pphuntOverlayWidth === 'number' &&
-          Number.isFinite(stored.pphuntOverlayWidth)
-        ) {
-          setOverlayWidth(
-            Math.max(300, Math.min(800, stored.pphuntOverlayWidth)),
-          );
-        }
-      });
+    const storageLocal =
+      typeof browser !== 'undefined' ? browser?.storage?.local : undefined;
+    const storageOnChanged =
+      typeof browser !== 'undefined' ? browser?.storage?.onChanged : undefined;
+
+    if (storageLocal?.get) {
+      void storageLocal
+        .get([OPENING_MODE_KEY, 'pphuntOverlayWidth', THEME_MODE_KEY])
+        .then((stored) => {
+          if (!mounted) return;
+          if (!changedKeys.has(OPENING_MODE_KEY)) {
+            setUiMode(readOpeningMode(stored?.[OPENING_MODE_KEY]));
+          }
+          if (!changedKeys.has(THEME_MODE_KEY)) {
+            const loadedTheme = readThemeMode(stored?.[THEME_MODE_KEY]);
+            setThemeMode(loadedTheme);
+            applyTheme(loadedTheme);
+          }
+          if (
+            !changedKeys.has('pphuntOverlayWidth') &&
+            typeof stored?.pphuntOverlayWidth === 'number' &&
+            Number.isFinite(stored.pphuntOverlayWidth)
+          ) {
+            setOverlayWidth(
+              Math.max(300, Math.min(800, stored.pphuntOverlayWidth)),
+            );
+          }
+        })
+        .catch(() => {});
+    }
     const onChange = (
       changes: Record<string, { newValue?: unknown }>,
       area: string,
@@ -92,10 +100,10 @@ export function AmazonSettingsOverlay() {
         setOverlayWidth(Math.max(300, Math.min(800, width)));
       }
     };
-    browser.storage.onChanged.addListener(onChange);
+    storageOnChanged?.addListener?.(onChange);
     return () => {
       mounted = false;
-      browser.storage.onChanged.removeListener(onChange);
+      storageOnChanged?.removeListener?.(onChange);
     };
   }, []);
 

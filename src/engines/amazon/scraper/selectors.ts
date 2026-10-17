@@ -167,6 +167,7 @@ export const AMAZON_SELECTORS = {
       '[data-testid="deal-title"]',
       '.p13n-sc-truncate-desktop-type2',
       '.p13n-sc-truncated',
+      '.p13n-sc-truncate',
       '[class*="_cDEzb_p13n-sc-css-line-clamp"]',
       '.octopus-pc-asin-title',
     ],
