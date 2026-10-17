@@ -1,14 +1,14 @@
-import { ErrorBoundary } from '@/entrypoints/sidepanel/components/ErrorBoundary';
-import { AmazonCollectTab } from './components/CollectTab';
-import { AmazonErrorModal } from './components/ErrorModal';
-import { AmazonExtractionCompleteModal } from './components/ExtractionCompleteModal';
-import { AmazonFullWidthPreviewModal } from './components/FullWidthPreviewModal';
-import { AmazonHistoryTab } from './components/HistoryTab';
-import { AmazonNavigation } from './components/Navigation';
-import { AmazonSessionNotice } from './components/SessionNotice';
-import { AmazonSettingsOverlay } from './components/SettingsOverlay';
-import type { RecoveryNotice } from './hooks/useAmazonSessionRecovery';
 import { useAmazonUIStore } from './store/uiStore';
+import { Navigation } from './components/Navigation';
+import { CollectTab } from './components/CollectTab';
+import { HistoryTab } from './components/HistoryTab';
+import { ErrorModal } from './components/ErrorModal';
+import { ExtractionCompleteModal } from './components/ExtractionCompleteModal';
+import { FullWidthPreviewModal } from './components/FullWidthPreviewModal';
+import { SettingsOverlay } from './components/SettingsOverlay';
+import { SessionNotice } from './components/SessionNotice';
+import { ErrorBoundary } from '@/entrypoints/sidepanel/components/ErrorBoundary';
+import type { RecoveryNotice } from './hooks/useAmazonSessionRecovery';
 
 export interface AmazonEngineAppProps {
   notice?: RecoveryNotice | null;
@@ -18,29 +18,31 @@ export interface AmazonEngineAppProps {
 }
 
 /**
- * Self-contained Amazon engine UI surface rendered inside `App.tsx`
- * when the active marketplace engine is `'amazon'`.
+ * Isolated Amazon marketplace engine UI shell.
+ * Renders the 2-tab layout (Collect | History), session recovery notice,
+ * error boundary, and 4 modal overlays with 100% visual parity.
  */
 export function AmazonEngineApp({
   notice = null,
   onDismissNotice = () => {},
-  onStartFresh,
-  onKeepProducts,
+  onStartFresh = () => {},
+  onKeepProducts = () => {},
 }: AmazonEngineAppProps = {}) {
   const activeTab = useAmazonUIStore((s) => s.activeTab);
 
+  // Exhaustive switch over ActiveTab ('collect' | 'history') with no default
   const renderTabContent = () => {
     switch (activeTab) {
       case 'collect':
-        return <AmazonCollectTab />;
+        return <CollectTab />;
       case 'history':
-        return <AmazonHistoryTab />;
+        return <HistoryTab />;
     }
   };
 
   return (
     <>
-      <AmazonNavigation />
+      <Navigation />
       <div
         className="flex-1 min-h-0 overflow-y-auto"
         role="tabpanel"
@@ -48,7 +50,7 @@ export function AmazonEngineApp({
         aria-labelledby={`tab-${activeTab}`}
       >
         {activeTab === 'collect' && (
-          <AmazonSessionNotice
+          <SessionNotice
             notice={notice}
             onDismiss={onDismissNotice}
             onStartFresh={onStartFresh}
@@ -57,10 +59,10 @@ export function AmazonEngineApp({
         )}
         <ErrorBoundary>{renderTabContent()}</ErrorBoundary>
       </div>
-      <AmazonFullWidthPreviewModal />
-      <AmazonExtractionCompleteModal />
-      <AmazonErrorModal />
-      <AmazonSettingsOverlay />
+      <FullWidthPreviewModal />
+      <ExtractionCompleteModal />
+      <ErrorModal />
+      <SettingsOverlay />
     </>
   );
 }
