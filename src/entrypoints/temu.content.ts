@@ -26,14 +26,17 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
-    const win = window as Window & {
-      __PPHUNT_TEMU_CONTENT_SCRIPT_ACTIVE__?: boolean;
-      __PPHUNT_TEMU_DISPATCH_COMMAND__?: (msg: unknown) => void;
+    const win = window as unknown as {
+      __PPHUNT_TEMU_CONTENT_CLEANUP__?: () => void;
+      __PPHUNT_TEMU_DISPATCH_COMMAND__?: (msg: unknown) => { ok: boolean };
     };
-    if (win.__PPHUNT_TEMU_CONTENT_SCRIPT_ACTIVE__) {
-      return;
+    if (typeof win.__PPHUNT_TEMU_CONTENT_CLEANUP__ === 'function') {
+      try {
+        win.__PPHUNT_TEMU_CONTENT_CLEANUP__();
+      } catch {
+        // Ignore cleanup errors from prior content-script instance
+      }
     }
-    win.__PPHUNT_TEMU_CONTENT_SCRIPT_ACTIVE__ = true;
 
     const currentUrl = window.location.href;
     const pageType: TemuPageType = detectTemuPageType(currentUrl, document);
@@ -50,6 +53,17 @@ export default defineContentScript({
     let collectedSoFar: TemuScrapedProduct[] = [];
     let seededCount = 0;
     let duplicateDetectionEnabled = true;
+
+    function sendRuntimeMessage(message: unknown): void {
+      try {
+        const maybePromise = browser.runtime.sendMessage(message);
+        if (maybePromise && typeof maybePromise.catch === 'function') {
+          maybePromise.catch(() => {});
+        }
+      } catch {
+        // Ignore runtime context invalidated errors
+      }
+    }
 
     function parseCurrentPage(): TemuScrapedProduct[] {
       const url = window.location.href;
@@ -104,17 +118,15 @@ export default defineContentScript({
       );
 
       if (updatedExisting && newProducts.length === 0) {
-        chrome.runtime
-          .sendMessage({
-            type: 'TEMU_PRODUCTS_COLLECTED',
-            payload: {
-              products: collectedSoFar,
-              pageType: detectedType,
-              pageUrl: url,
-              totalOnPage: countTemuProductCardsOnPage(document),
-            },
-          })
-          .catch(() => {});
+        sendRuntimeMessage({
+          type: 'TEMU_PRODUCTS_COLLECTED',
+          payload: {
+            products: collectedSoFar,
+            pageType: detectedType,
+            pageUrl: url,
+            totalOnPage: countTemuProductCardsOnPage(document),
+          },
+        });
       }
 
       return newProducts;
@@ -123,10 +135,10 @@ export default defineContentScript({
     function sendProductsToBackground(newProducts: TemuScrapedProduct[]): void {
       if (newProducts.length === 0) return;
 
-      const remainingAllowance = Math.max(
-        0,
-        targetCount - (seededCount + collectedSoFar.length)
-      );
+      const remainingAllowance =
+        targetCount > 0
+          ? Math.max(0, targetCount - (seededCount + collectedSoFar.length))
+          : newProducts.length;
       const boundedProducts =
         remainingAllowance > 0
           ? newProducts.slice(0, remainingAllowance)
@@ -137,36 +149,27 @@ export default defineContentScript({
       collectedSoFar.push(...boundedProducts);
       const totalCollected = seededCount + collectedSoFar.length;
 
-      chrome.runtime
-        .sendMessage({
-          type: 'TEMU_PRODUCTS_COLLECTED',
-          payload: {
-            products: boundedProducts,
-            pageType: detectTemuPageType(window.location.href, document),
-            pageUrl: window.location.href,
-            totalOnPage: countTemuProductCardsOnPage(document),
-          },
-        })
-        .catch((err) => {
-          console.warn(
-            '[PPHunt:Temu] Failed to send products to background:',
-            err
-          );
-        });
+      sendRuntimeMessage({
+        type: 'TEMU_PRODUCTS_COLLECTED',
+        payload: {
+          products: boundedProducts,
+          pageType: detectTemuPageType(window.location.href, document),
+          pageUrl: window.location.href,
+          totalOnPage: countTemuProductCardsOnPage(document),
+        },
+      });
 
-      chrome.runtime
-        .sendMessage({
-          type: 'TEMU_COLLECTION_PROGRESS',
-          payload: {
-            collectedCount: totalCollected,
-            targetCount,
-            status: 'collecting',
-            scrollCount: scrollController?.currentScrollCount ?? 0,
-          },
-        })
-        .catch(() => {});
+      sendRuntimeMessage({
+        type: 'TEMU_COLLECTION_PROGRESS',
+        payload: {
+          collectedCount: totalCollected,
+          targetCount,
+          status: 'collecting',
+          scrollCount: scrollController?.currentScrollCount ?? 0,
+        },
+      });
 
-      if (totalCollected >= targetCount) {
+      if (targetCount > 0 && totalCollected >= targetCount) {
         stopCollection('target_reached');
       }
     }
@@ -187,30 +190,28 @@ export default defineContentScript({
       // Check for active verification/CAPTCHA challenge before starting
       const restriction = detectTemuChallengeOrRestriction(document);
       if (restriction.restricted) {
-        chrome.runtime
-          .sendMessage({
-            type: 'TEMU_COLLECTION_ERROR',
-            payload: {
-              code:
-                restriction.kind === 'captcha'
-                  ? 'TEMU_CAPTCHA_DETECTED'
-                  : 'TEMU_ACCESS_RESTRICTED',
-              category:
-                restriction.kind === 'captcha'
-                  ? 'captcha'
-                  : 'page_compatibility',
-              title:
-                restriction.kind === 'captcha'
-                  ? 'Verification Required'
-                  : 'Access Temporarily Restricted',
-              message:
-                restriction.reason ??
-                'Temu requires verification before products can be collected.',
-              remedy:
-                'Complete the verification challenge directly in the Temu tab, then click Resume or Start Collection.',
-            },
-          })
-          .catch(() => {});
+        sendRuntimeMessage({
+          type: 'TEMU_COLLECTION_ERROR',
+          payload: {
+            code:
+              restriction.kind === 'captcha'
+                ? 'TEMU_CAPTCHA_DETECTED'
+                : 'TEMU_ACCESS_RESTRICTED',
+            category:
+              restriction.kind === 'captcha'
+                ? 'captcha'
+                : 'page_compatibility',
+            title:
+              restriction.kind === 'captcha'
+                ? 'Verification Required'
+                : 'Access Temporarily Restricted',
+            message:
+              restriction.reason ??
+              'Temu requires verification before products can be collected.',
+            remedy:
+              'Complete the verification challenge directly in the Temu tab, then click Resume or Start Collection.',
+          },
+        });
         return;
       }
 
@@ -229,7 +230,7 @@ export default defineContentScript({
       const initialProducts = parseCurrentPage();
       sendProductsToBackground(initialProducts);
 
-      if (seededCount + collectedSoFar.length >= targetCount) {
+      if (targetCount > 0 && seededCount + collectedSoFar.length >= targetCount) {
         return;
       }
 
@@ -257,34 +258,30 @@ export default defineContentScript({
             }
           },
           onCaptchaDetected: (reason) => {
-            chrome.runtime
-              .sendMessage({
-                type: 'TEMU_COLLECTION_ERROR',
-                payload: {
-                  code: 'TEMU_CAPTCHA_DETECTED',
-                  category: 'captcha',
-                  title: 'Verification Required',
-                  message: reason,
-                  remedy:
-                    'Complete the verification prompt in the Temu tab, then click Resume in PPHunt.',
-                },
-              })
-              .catch(() => {});
+            sendRuntimeMessage({
+              type: 'TEMU_COLLECTION_ERROR',
+              payload: {
+                code: 'TEMU_CAPTCHA_DETECTED',
+                category: 'captcha',
+                title: 'Verification Required',
+                message: reason,
+                remedy:
+                  'Complete the verification prompt in the Temu tab, then click Resume in PPHunt.',
+              },
+            });
           },
           onError: (errMsg) => {
-            chrome.runtime
-              .sendMessage({
-                type: 'TEMU_COLLECTION_ERROR',
-                payload: {
-                  code: 'TEMU_SCROLL_ERROR',
-                  category: 'unknown',
-                  title: 'Scroll Error',
-                  message: `An error occurred while scrolling Temu: ${errMsg}`,
-                  remedy:
-                    'Try switching to Manual mode or refreshing the Temu tab.',
-                },
-              })
-              .catch(() => {});
+            sendRuntimeMessage({
+              type: 'TEMU_COLLECTION_ERROR',
+              payload: {
+                code: 'TEMU_SCROLL_ERROR',
+                category: 'unknown',
+                title: 'Scroll Error',
+                message: `An error occurred while scrolling Temu: ${errMsg}`,
+                remedy:
+                  'Try switching to Manual mode or refreshing the Temu tab.',
+              },
+            });
           },
         });
         scrollController.start();
@@ -303,15 +300,13 @@ export default defineContentScript({
       scrollController = null;
       teardownMutationObserver();
 
-      chrome.runtime
-        .sendMessage({
-          type: 'TEMU_COLLECTION_COMPLETE',
-          payload: {
-            totalCollected: seededCount + collectedSoFar.length,
-            reason,
-          },
-        })
-        .catch(() => {});
+      sendRuntimeMessage({
+        type: 'TEMU_COLLECTION_COMPLETE',
+        payload: {
+          totalCollected: seededCount + collectedSoFar.length,
+          reason,
+        },
+      });
     }
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -439,29 +434,46 @@ export default defineContentScript({
       }
     }
 
-    win.__PPHUNT_TEMU_DISPATCH_COMMAND__ = (msg: unknown) => {
-      handleCommand(msg);
+    const onRuntimeMessage = (
+      rawMessage: unknown,
+      _sender: unknown,
+      sendResponse: (response?: unknown) => void
+    ) => {
+      if (!isTemuMessage(rawMessage)) return false;
+      const response = handleCommand(rawMessage);
+      if (response !== null) {
+        sendResponse(response);
+      }
+      return false;
     };
-    window.addEventListener('pphunt:temu:command', (event: Event) => {
+
+    const onDomCommand = (event: Event) => {
       const customEvent = event as CustomEvent;
       if (customEvent.detail) {
         handleCommand(customEvent.detail);
       }
-    });
+    };
 
-    chrome.runtime.onMessage.addListener(
-      (
-        rawMessage: unknown,
-        _sender: chrome.runtime.MessageSender,
-        sendResponse: (response?: unknown) => void
-      ) => {
-        if (!isTemuMessage(rawMessage)) return false;
-        const response = handleCommand(rawMessage);
-        if (response !== null) {
-          sendResponse(response);
-        }
-        return false;
-      }
+    browser.runtime.onMessage.addListener(
+      onRuntimeMessage as Parameters<
+        typeof browser.runtime.onMessage.addListener
+      >[0]
     );
+    document.addEventListener('__PPHUNT_TEMU_COMMAND__', onDomCommand);
+    win.__PPHUNT_TEMU_DISPATCH_COMMAND__ = (cmd: unknown) => {
+      handleCommand(cmd);
+      return { ok: true };
+    };
+
+    win.__PPHUNT_TEMU_CONTENT_CLEANUP__ = () => {
+      scrollController?.stop();
+      teardownMutationObserver();
+      browser.runtime.onMessage.removeListener?.(
+        onRuntimeMessage as Parameters<
+          typeof browser.runtime.onMessage.removeListener
+        >[0]
+      );
+      document.removeEventListener('__PPHUNT_TEMU_COMMAND__', onDomCommand);
+    };
   },
 });
