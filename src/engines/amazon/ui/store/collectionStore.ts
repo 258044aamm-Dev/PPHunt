@@ -46,6 +46,7 @@ export interface AmazonCollectionState {
     defaultMode: CollectionMode;
     defaultTargetCount: number;
   }) => void;
+  prepareForNewExtraction: () => void;
   reset: () => void;
 }
 
@@ -105,6 +106,16 @@ export const useAmazonCollectionStore = create<AmazonCollectionState>(
             }
           : state,
       ),
+    prepareForNewExtraction: () =>
+      set({
+        status: 'idle',
+        collectedCount: 0,
+        errorMessage: null,
+        errorDiagnostic: null,
+        collectionTabId: null,
+        collectionTabUrl: null,
+        currentSessionKey: null,
+      }),
     reset: () => set(initialState),
   }),
 );

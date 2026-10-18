@@ -1,10 +1,12 @@
 import { setOverlayFullWidthMode } from '@/lib/overlay/openOverlay';
+import { TARGET_MAX } from '../../constants/defaults';
 import { addHistory } from '../../db/history';
 import {
   createSession,
   getSession,
   updateSessionStatus,
 } from '../../db/sessions';
+import { refreshAmazonActiveTab } from '../hooks/useAmazonActiveTab';
 import { useAmazonCollectionStore } from '../store/collectionStore';
 import { useAmazonUIStore } from '../store/uiStore';
 
@@ -27,9 +29,11 @@ const CONTROLS: ControlButton[] = [
     label: 'Start',
     icon: '▶',
     isPrimary: true,
-    isVisible: (s) => s === 'idle' || s === 'completed' || s === 'error',
+    isVisible: (s) =>
+      s === 'idle' || s === 'completed' || s === 'stopped' || s === 'error',
     isEnabled: (s, isAmazon) =>
-      isAmazon && (s === 'idle' || s === 'completed' || s === 'error'),
+      isAmazon &&
+      (s === 'idle' || s === 'completed' || s === 'stopped' || s === 'error'),
   },
   {
     action: 'pause',
@@ -62,8 +66,88 @@ export function AmazonCollectionControls() {
   const isAmazonPage = useAmazonCollectionStore((s) => s.isAmazonPage);
   const mode = useAmazonCollectionStore((s) => s.mode);
   const targetCount = useAmazonCollectionStore((s) => s.targetCount);
+  const collectedCount = useAmazonCollectionStore((s) => s.collectedCount);
+  const storeSessionKey = useAmazonCollectionStore((s) => s.currentSessionKey);
   const activeTabId = useAmazonCollectionStore((s) => s.activeTabId);
   const collectionTabId = useAmazonCollectionStore((s) => s.collectionTabId);
+
+  const handleRefreshState = async () => {
+    const store = useAmazonCollectionStore.getState();
+    const uiStore = useAmazonUIStore.getState();
+    uiStore.closeCompletionDialog();
+    uiStore.closePreviewOverlay();
+    setOverlayFullWidthMode(false);
+    currentSessionKey = null;
+    store.prepareForNewExtraction();
+    await refreshAmazonActiveTab();
+  };
+
+  const handleContinueSession = async () => {
+    await refreshAmazonActiveTab();
+    const store = useAmazonCollectionStore.getState();
+    const uiStore = useAmazonUIStore.getState();
+    if (
+      !store.isAmazonPage ||
+      store.activeTabId === null ||
+      !store.activeTabUrl
+    ) {
+      return;
+    }
+
+    const tabId = store.activeTabId;
+    const url = store.activeTabUrl;
+    const existingSessionKey =
+      store.currentSessionKey ?? currentSessionKey ?? null;
+
+    uiStore.closeCompletionDialog();
+    uiStore.closePreviewOverlay();
+    setOverlayFullWidthMode(false);
+
+    const stepIncrement = store.mode === 'manual' ? 10 : 50;
+    const effectiveTarget =
+      store.collectedCount >= store.targetCount
+        ? Math.min(
+            TARGET_MAX,
+            Math.max(store.targetCount, store.collectedCount + stepIncrement),
+          )
+        : store.targetCount;
+
+    if (effectiveTarget !== store.targetCount) {
+      store.setTarget(effectiveTarget);
+    }
+
+    const resolvedSessionKey =
+      existingSessionKey ??
+      (await createSession(tabId, url, store.mode, effectiveTarget));
+    currentSessionKey = resolvedSessionKey;
+
+    store.setCollectionTab(tabId, url);
+    store.setCurrentSessionKey(resolvedSessionKey);
+    store.setError(null);
+    store.setStatus('collecting');
+
+    await updateSessionStatus(resolvedSessionKey, 'collecting', {
+      collected: store.collectedCount,
+      target: effectiveTarget,
+    }).catch(() => {});
+
+    browser.runtime.sendMessage({
+      type: 'START_COLLECTION',
+      payload: {
+        mode: store.mode,
+        targetCount: effectiveTarget,
+        tabId,
+        sessionKey: resolvedSessionKey,
+      },
+    });
+  };
+
+  const handleOpenPreview = () => {
+    const uiStore = useAmazonUIStore.getState();
+    const resolvedKey =
+      storeSessionKey ?? currentSessionKey ?? uiStore.selectedSessionKey;
+    uiStore.openPreviewOverlay(resolvedKey);
+  };
 
   const handleAction = async (action: ControlAction) => {
     const store = useAmazonCollectionStore.getState();
@@ -164,8 +248,12 @@ export function AmazonCollectionControls() {
     }
   };
 
+  const isActiveRun = status === 'collecting' || status === 'paused';
+  const canContinueSession = !isActiveRun && collectedCount > 0;
+  const continueEnabled = isAmazonPage && activeTabId !== null;
+
   return (
-    <div className="flex gap-2.5 flex-wrap pt-1">
+    <div className="flex gap-2.5 flex-wrap items-center pt-1">
       {CONTROLS.filter((c) => c.isVisible(status)).map((ctrl) => {
         const enabled =
           ctrl.isEnabled(status, isAmazonPage) &&
@@ -193,6 +281,47 @@ export function AmazonCollectionControls() {
           </button>
         );
       })}
+
+      {canContinueSession && (
+        <>
+          <button
+            type="button"
+            onClick={() => void handleContinueSession()}
+            disabled={!continueEnabled}
+            aria-label="Collect More"
+            title="Continue collecting products into the current session without losing previously extracted data"
+            className={`
+              px-3.5 py-2.5 font-sans text-sm rounded-sm border transition-colors
+              focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay
+              bg-surface text-ink border-hairline hover:bg-surface-soft
+              ${!continueEnabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+            `}
+          >
+            + Collect More
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenPreview}
+            aria-label="Preview collected products"
+            title="Reopen preview for current extraction"
+            className="px-3.5 py-2.5 font-sans text-sm rounded-sm bg-surface text-ink border border-hairline hover:bg-surface-soft transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay"
+          >
+            👁 Preview ({collectedCount})
+          </button>
+        </>
+      )}
+
+      {!isActiveRun && (
+        <button
+          type="button"
+          onClick={() => void handleRefreshState()}
+          aria-label="Refresh extraction state"
+          title="Refresh active tab & reset extraction progress (saved products remain in History)"
+          className="px-3 py-2.5 font-sans text-sm rounded-sm bg-surface text-ink-muted hover:text-ink border border-hairline hover:bg-surface-soft transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay"
+        >
+          ↻ Refresh
+        </button>
+      )}
     </div>
   );
 }

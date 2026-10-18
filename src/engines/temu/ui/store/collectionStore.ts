@@ -47,6 +47,7 @@ interface TemuCollectionState {
     defaultMode: TemuCollectionMode;
     defaultTargetCount: number;
   }) => void;
+  prepareForNewExtraction: () => void;
   reset: () => void;
 }
 
@@ -106,6 +107,16 @@ export const useTemuCollectionStore = create<TemuCollectionState>(
             }
           : state
       ),
+    prepareForNewExtraction: () =>
+      set({
+        status: 'idle',
+        collectedCount: 0,
+        errorMessage: null,
+        errorDiagnostic: null,
+        collectionTabId: null,
+        collectionTabUrl: null,
+        currentSessionId: null,
+      }),
     reset: () => set(initialState),
   })
 );

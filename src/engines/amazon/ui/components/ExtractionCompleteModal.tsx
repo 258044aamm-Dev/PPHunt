@@ -7,6 +7,7 @@ import { sortProducts } from '@/lib/sorting/product-sorter';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { db } from '../../db/database';
 import { formatNumber } from '../../utils/formatters';
+import { refreshAmazonActiveTab } from '../hooks/useAmazonActiveTab';
 import { useAmazonCollectionStore } from '../store/collectionStore';
 import { useAmazonUIStore } from '../store/uiStore';
 import { AmazonExportModal } from './ExportModal';
@@ -17,8 +18,9 @@ export function AmazonExtractionCompleteModal() {
   const collectedCount = useAmazonCollectionStore((s) => s.collectedCount);
   const mode = useAmazonCollectionStore((s) => s.mode);
   const targetCount = useAmazonCollectionStore((s) => s.targetCount);
-  const setStatus = useAmazonCollectionStore((s) => s.setStatus);
-  const setError = useAmazonCollectionStore((s) => s.setError);
+  const prepareForNewExtraction = useAmazonCollectionStore(
+    (s) => s.prepareForNewExtraction,
+  );
 
   const completionDialogOpen = useAmazonUIStore((s) => s.completionDialogOpen);
   const selectedSessionKey = useAmazonUIStore((s) => s.selectedSessionKey);
@@ -75,10 +77,10 @@ export function AmazonExtractionCompleteModal() {
 
   const handleTryAnotherExtraction = useCallback(() => {
     closeCompletionDialog();
-    setError(null);
-    setStatus('idle');
+    prepareForNewExtraction();
     setActiveTab('collect');
-  }, [closeCompletionDialog, setError, setStatus, setActiveTab]);
+    void refreshAmazonActiveTab();
+  }, [closeCompletionDialog, prepareForNewExtraction, setActiveTab]);
 
   const handleExportCurrentExtraction = useCallback(() => {
     if (!hasProducts) return;

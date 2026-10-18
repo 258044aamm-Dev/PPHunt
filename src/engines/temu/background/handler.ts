@@ -496,6 +496,13 @@ export function registerTemuBackgroundHandlers(): {
             const { scroll, duplicateDetection } =
               await buildTemuScrollConfig();
             const existingGoodsIds = await buildExistingGoodsIds();
+            if (existingGoodsIds && existingGoodsIds.length > 0) {
+              state.lastCollectedCount = Math.max(
+                state.lastCollectedCount,
+                existingGoodsIds.length,
+              );
+              persistState();
+            }
             await sendToTemuContentScriptWithRecovery(tabId, {
               type: 'TEMU_COLLECT_PRODUCTS',
               payload: {

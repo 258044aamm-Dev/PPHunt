@@ -13,6 +13,7 @@ import {
   updateTemuSessionStatus,
 } from '../../db/sessions';
 import type { TemuCollectionMode, TemuCollectionStatus } from '../../types';
+import { refreshTemuActiveTab } from '../hooks/useTemuActiveTab';
 import { useTemuCollectionStore } from '../store/collectionStore';
 import { useTemuUIStore } from '../store/uiStore';
 
@@ -85,11 +86,88 @@ export function TemuCollectTab() {
   const targetCount = useTemuCollectionStore((s) => s.targetCount);
   const setTarget = useTemuCollectionStore((s) => s.setTarget);
   const collected = useTemuCollectionStore((s) => s.collectedCount);
+  const currentSessionId = useTemuCollectionStore((s) => s.currentSessionId);
   const activeTabId = useTemuCollectionStore((s) => s.activeTabId);
   const collectionTabId = useTemuCollectionStore((s) => s.collectionTabId);
 
   const [customValue, setCustomValue] = useState('');
   const isDisabled = status === 'collecting' || status === 'paused';
+
+  const handleRefreshState = async () => {
+    const store = useTemuCollectionStore.getState();
+    const uiStore = useTemuUIStore.getState();
+    uiStore.closeCompletionDialog();
+    uiStore.closePreviewOverlay();
+    setOverlayFullWidthMode(false);
+    store.prepareForNewExtraction();
+    await refreshTemuActiveTab();
+  };
+
+  const handleContinueSession = async () => {
+    await refreshTemuActiveTab();
+    const store = useTemuCollectionStore.getState();
+    const uiStore = useTemuUIStore.getState();
+    if (
+      !store.isTemuPage ||
+      store.activeTabId === null ||
+      !store.activeTabUrl
+    ) {
+      return;
+    }
+
+    const tabId = store.activeTabId;
+    const url = store.activeTabUrl;
+
+    uiStore.closeCompletionDialog();
+    uiStore.closePreviewOverlay();
+    setOverlayFullWidthMode(false);
+
+    const stepIncrement = store.mode === 'manual' ? 10 : 50;
+    const effectiveTarget =
+      store.collectedCount >= store.targetCount
+        ? Math.min(
+            TEMU_TARGET_MAX,
+            Math.max(store.targetCount, store.collectedCount + stepIncrement),
+          )
+        : store.targetCount;
+
+    if (effectiveTarget !== store.targetCount) {
+      store.setTarget(effectiveTarget);
+    }
+
+    const resolvedSessionId =
+      store.currentSessionId ??
+      (await createTemuSession(tabId, url, store.mode, effectiveTarget));
+
+    store.setCollectionTab(tabId, url);
+    store.setCurrentSessionId(resolvedSessionId);
+    store.setError(null);
+    store.setStatus('collecting');
+
+    await updateTemuSessionStatus(resolvedSessionId, 'collecting', {
+      collected: store.collectedCount,
+      target: effectiveTarget,
+    }).catch(() => {});
+
+    browser.runtime
+      .sendMessage({
+        type: 'TEMU_START_COLLECTION',
+        payload: {
+          mode: store.mode,
+          targetCount: effectiveTarget,
+          tabId,
+          sessionId: resolvedSessionId,
+        },
+      })
+      .catch(() => {});
+  };
+
+  const handleOpenPreview = () => {
+    const uiStore = useTemuUIStore.getState();
+    uiStore.openPreviewOverlay(
+      currentSessionId ?? uiStore.selectedSessionId ?? null,
+    );
+  };
 
   const handleChipClick = useCallback(
     (count: number) => {
@@ -411,7 +489,7 @@ export function TemuCollectTab() {
       </div>
 
       {/* Controls */}
-      <div className="flex gap-2.5 flex-wrap pt-1">
+      <div className="flex gap-2.5 flex-wrap items-center pt-1">
         {CONTROLS.filter((c) => c.isVisible(status)).map((ctrl) => {
           const enabled =
             ctrl.isEnabled(status, isTemuPage) &&
@@ -439,6 +517,47 @@ export function TemuCollectTab() {
             </button>
           );
         })}
+
+        {!isDisabled && collected > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={() => void handleContinueSession()}
+              disabled={!isTemuPage || activeTabId === null}
+              aria-label="Collect More"
+              title="Continue collecting products into the current session without losing previously extracted data"
+              className={`
+                px-3.5 py-2.5 font-sans text-sm rounded-sm border transition-colors
+                focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay
+                bg-surface text-ink border-hairline hover:bg-surface-soft
+                ${!isTemuPage || activeTabId === null ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              `}
+            >
+              + Collect More
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenPreview}
+              aria-label="Preview collected products"
+              title="Reopen preview for current extraction"
+              className="px-3.5 py-2.5 font-sans text-sm rounded-sm bg-surface text-ink border border-hairline hover:bg-surface-soft transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay"
+            >
+              👁 Preview ({collected})
+            </button>
+          </>
+        )}
+
+        {!isDisabled && (
+          <button
+            type="button"
+            onClick={() => void handleRefreshState()}
+            aria-label="Refresh extraction state"
+            title="Refresh active tab & reset extraction progress (saved products remain in History)"
+            className="px-3 py-2.5 font-sans text-sm rounded-sm bg-surface text-ink-muted hover:text-ink border border-hairline hover:bg-surface-soft transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-clay"
+          >
+            ↻ Refresh
+          </button>
+        )}
       </div>
     </div>
   );

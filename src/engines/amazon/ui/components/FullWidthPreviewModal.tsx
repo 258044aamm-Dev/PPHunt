@@ -11,6 +11,7 @@ import {
 import { modalAriaProps } from '@/lib/utils/a11y';
 import { db } from '../../db/database';
 import { formatNumber } from '../../utils/formatters';
+import { refreshAmazonActiveTab } from '../hooks/useAmazonActiveTab';
 import { useAmazonCollectionStore } from '../store/collectionStore';
 import { useAmazonUIStore } from '../store/uiStore';
 import { AmazonProductTable } from '../table/AmazonProductTable';
@@ -26,8 +27,9 @@ export function AmazonFullWidthPreviewModal() {
   const openExportModal = useAmazonUIStore((s) => s.openExportModal);
   const setActiveTab = useAmazonUIStore((s) => s.setActiveTab);
 
-  const setStatus = useAmazonCollectionStore((s) => s.setStatus);
-  const setError = useAmazonCollectionStore((s) => s.setError);
+  const prepareForNewExtraction = useAmazonCollectionStore(
+    (s) => s.prepareForNewExtraction,
+  );
   const collectedCount = useAmazonCollectionStore((s) => s.collectedCount);
 
   const storedCount = useLiveQuery(async () => {
@@ -55,6 +57,7 @@ export function AmazonFullWidthPreviewModal() {
   const handleClose = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
+    void refreshAmazonActiveTab();
   }, [closePreviewOverlay]);
 
   const handleSelectPreviewMode = useCallback(
@@ -89,10 +92,10 @@ export function AmazonFullWidthPreviewModal() {
   const handleTryAnotherExtraction = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
-    setError(null);
-    setStatus('idle');
+    prepareForNewExtraction();
     setActiveTab('collect');
-  }, [closePreviewOverlay, setError, setStatus, setActiveTab]);
+    void refreshAmazonActiveTab();
+  }, [closePreviewOverlay, prepareForNewExtraction, setActiveTab]);
 
   const handleExportCurrentExtraction = useCallback(() => {
     openExportModal(selectedSessionKey);

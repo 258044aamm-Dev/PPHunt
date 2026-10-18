@@ -11,6 +11,7 @@ import {
   type PreviewDisplayMode,
 } from '@/lib/preview/previewStateSync';
 import { temuDb } from '../../db/database';
+import { refreshTemuActiveTab } from '../hooks/useTemuActiveTab';
 import { useTemuCollectionStore } from '../store/collectionStore';
 import { useTemuUIStore } from '../store/uiStore';
 import { TemuProductTable } from '../table/TemuProductTable';
@@ -26,8 +27,9 @@ export function TemuFullWidthPreviewModal() {
   const openExportModal = useTemuUIStore((s) => s.openExportModal);
   const setActiveTab = useTemuUIStore((s) => s.setActiveTab);
 
-  const setStatus = useTemuCollectionStore((s) => s.setStatus);
-  const setError = useTemuCollectionStore((s) => s.setError);
+  const prepareForNewExtraction = useTemuCollectionStore(
+    (s) => s.prepareForNewExtraction
+  );
   const collectedCount = useTemuCollectionStore((s) => s.collectedCount);
 
   const storedCount = useLiveQuery(async () => {
@@ -55,6 +57,7 @@ export function TemuFullWidthPreviewModal() {
   const handleClose = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
+    void refreshTemuActiveTab();
   }, [closePreviewOverlay]);
 
   const handleSelectPreviewMode = useCallback(
@@ -84,10 +87,10 @@ export function TemuFullWidthPreviewModal() {
   const handleTryAnotherExtraction = useCallback(() => {
     setOverlayFullWidthMode(false);
     closePreviewOverlay();
-    setError(null);
-    setStatus('idle');
+    prepareForNewExtraction();
     setActiveTab('collect');
-  }, [closePreviewOverlay, setError, setStatus, setActiveTab]);
+    void refreshTemuActiveTab();
+  }, [closePreviewOverlay, prepareForNewExtraction, setActiveTab]);
 
   const handleExportCurrentExtraction = useCallback(() => {
     openExportModal(selectedSessionId);

@@ -2,6 +2,40 @@ import { useEffect } from 'react';
 import { isAmazonUrl } from '../../utils/amazon-url';
 import { useAmazonCollectionStore } from '../store/collectionStore';
 
+function isExtensionPreviewUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return (
+    /^(chrome|moz)-extension:\/\//i.test(url) && url.includes('/preview.html')
+  );
+}
+
+/**
+ * Re-queries the active browser tab on demand and updates the Amazon collection store.
+ * Preserves an already-detected Amazon tab if the active tab is the extension's own `/preview.html` workspace.
+ */
+export async function refreshAmazonActiveTab(): Promise<void> {
+  try {
+    if (typeof browser === 'undefined' || !browser?.tabs?.query) return;
+    const [tab] = await browser.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (!tab) return;
+    const url = tab.url ?? '';
+    if (
+      isExtensionPreviewUrl(url) &&
+      useAmazonCollectionStore.getState().isAmazonPage
+    ) {
+      return;
+    }
+    useAmazonCollectionStore
+      .getState()
+      .setActiveTab(tab.id ?? null, tab.url ?? null, isAmazonUrl(url));
+  } catch {
+    // Ignore in environments without full tabs API
+  }
+}
+
 /**
  * Keeps the active browser tab state in sync for the Amazon engine while the side panel or overlay is open.
  */
@@ -21,6 +55,12 @@ export function useAmazonActiveTab(): void {
         if (disposed || currentRequest !== requestId) return;
 
         if (tab?.windowId != null) windowId = tab.windowId;
+        if (
+          isExtensionPreviewUrl(tab?.url) &&
+          useAmazonCollectionStore.getState().isAmazonPage
+        ) {
+          return;
+        }
         useAmazonCollectionStore
           .getState()
           .setActiveTab(
