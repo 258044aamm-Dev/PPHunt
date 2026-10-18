@@ -784,6 +784,18 @@ export function extractCardTitleAndBrandWithTier(
     }
   }
 
+  // Tier 1: `data-asinadattributesprops` JSON title if present
+  const adProps = parseAsinAdAttributesProps(card);
+  if (adProps?.title && adProps.title.length >= 2) {
+    return {
+      title: {
+        value: stripSponsoredTitlePrefix(adProps.title),
+        tier: 'tier1_json',
+      },
+      brand,
+    };
+  }
+
   // Tier 2: Semantic link heading inside `[data-cy="title-recipe"]`, `h2 a`, or `a[data-type="productTitle"]`
   const semanticSelectors = [
     '[data-cy="title-recipe"] a h2 span',
@@ -806,18 +818,6 @@ export function extractCardTitleAndBrandWithTier(
         brand,
       };
     }
-  }
-
-  // Tier 1: `data-asinadattributesprops` JSON title if present
-  const adProps = parseAsinAdAttributesProps(card);
-  if (adProps?.title && adProps.title.length >= 2) {
-    return {
-      title: {
-        value: stripSponsoredTitlePrefix(adProps.title),
-        tier: 'tier1_json',
-      },
-      brand,
-    };
   }
 
   // Tier 4: Declarative selector registry

@@ -204,15 +204,16 @@ export function discoverMainSlotWidgetProductCards(
   const rawCandidates: Element[] = [];
   const seenElements = new Set<Element>();
 
-  for (const selector of MAIN_SLOT_WIDGET_CARD_SELECTORS) {
-    const matches = safeQuerySelectorAll(mainSlot, selector);
-    for (const el of matches) {
-      if (seenElements.has(el)) continue;
-      if (primarySet.has(el) || isWithinAnyCard(el, primarySet)) continue;
-      if (isExcludedWidgetNode(el)) continue;
-      seenElements.add(el);
-      rawCandidates.push(el);
-    }
+  const matches = safeQuerySelectorAll(
+    mainSlot,
+    MAIN_SLOT_WIDGET_CARD_SELECTORS.join(', '),
+  );
+  for (const el of matches) {
+    if (seenElements.has(el)) continue;
+    if (primarySet.has(el) || isWithinAnyCard(el, primarySet)) continue;
+    if (isExcludedWidgetNode(el)) continue;
+    seenElements.add(el);
+    rawCandidates.push(el);
   }
 
   if (rawCandidates.length <= 1) {

@@ -41,7 +41,10 @@ export function mergeScrapedProductFields(
 
   if (
     source.title &&
-    (!target.title || (preferSource && source.title !== target.title))
+    (!target.title ||
+      (preferSource && source.title !== target.title) ||
+      (source.title.length > target.title.length &&
+        source.title.startsWith(target.title.replace(/\.{2,}|…$/, '').trim())))
   ) {
     target.title = source.title;
     changed = true;
