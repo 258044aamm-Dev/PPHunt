@@ -43,6 +43,7 @@ const ASIN_URL_PATTERNS: readonly RegExp[] = [
   /\/exec\/obidos\/ASIN\/([A-Z0-9]{10})(?:[/?#&]|$)/i,
   /\/o\/ASIN\/([A-Z0-9]{10})(?:[/?#&]|$)/i,
   /\/d\/[^/]+\/([A-Z0-9]{10})(?:[/?#&]|$)/i,
+  /amzn1\.asin\.(?:\d+\.)?([A-Z0-9]{10})(?:[:/?#&]|$)/i,
 ];
 
 /**
@@ -152,6 +153,7 @@ export function extractASIN(rawUrl: string | null | undefined): string | null {
     const nestedUrlParam =
       parsed.searchParams.get('url') ??
       parsed.searchParams.get('lp') ??
+      parsed.searchParams.get('r') ??
       parsed.searchParams.get('redirectUrl');
     if (nestedUrlParam) {
       let decoded = nestedUrlParam;
@@ -168,6 +170,21 @@ export function extractASIN(rawUrl: string | null | undefined): string | null {
             return asin;
           }
         }
+      }
+      try {
+        const nestedParsed = new URL(decoded, 'https://www.amazon.com');
+        const nestedAsinParam =
+          nestedParsed.searchParams.get('asin') ??
+          nestedParsed.searchParams.get('ASIN') ??
+          nestedParsed.searchParams.get('pd_rd_i');
+        if (nestedAsinParam) {
+          const upper = nestedAsinParam.trim().toUpperCase();
+          if (ASIN_EXACT_REGEX.test(upper)) {
+            return upper;
+          }
+        }
+      } catch {
+        // Ignore nested URL parse errors
       }
     }
   } catch {

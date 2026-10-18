@@ -311,7 +311,7 @@ export function extractBestImageUrl(
   if (
     src &&
     /^https?:\/\//i.test(src) &&
-    !/badges\/|prime-badge|1x1|sprite|transparent-pixel|grey-pixel|nav-sprite/i.test(
+    !/badges\/|prime-badge|1x1|sprite|transparent-pixel|grey-pixel|nav-sprite|\/impb\?|sponsored-ads\.amazon\.[^/]+\/px|aax-[^/]+\/e\/is\//i.test(
       src,
     )
   ) {
@@ -319,6 +319,81 @@ export function extractBestImageUrl(
   }
 
   return null;
+}
+
+interface ParsedAsinAdAttributesProps {
+  asin?: string;
+  imageUrl?: string;
+  dealString?: string;
+  title?: string;
+  rating?: number | null;
+  reviewCount?: number | null;
+}
+
+function parseAsinAdAttributesProps(
+  card: Element,
+): ParsedAsinAdAttributesProps | null {
+  const attrNode = card.hasAttribute('data-asinadattributesprops')
+    ? card
+    : safeQuerySelector(card, '[data-asinadattributesprops]');
+  const raw = attrNode?.getAttribute('data-asinadattributesprops');
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      asin?: string;
+      imageUrl?: string;
+      dealString?: string;
+      productComponents?: {
+        title?: string;
+        imageUrl?: string;
+        customerReviews?: string | { ratingValue?: string | number; rating?: string; count?: string | number };
+      };
+    };
+    const out: ParsedAsinAdAttributesProps = {};
+    if (typeof parsed.asin === 'string') out.asin = parsed.asin;
+    const imgUrl = parsed.productComponents?.imageUrl ?? parsed.imageUrl;
+    if (typeof imgUrl === 'string' && /^https?:\/\//i.test(imgUrl)) {
+      out.imageUrl = upgradeAmazonImageUrl(imgUrl) || imgUrl;
+    }
+    if (typeof parsed.dealString === 'string' && parsed.dealString.trim()) {
+      out.dealString = parsed.dealString.trim();
+    }
+    if (
+      typeof parsed.productComponents?.title === 'string' &&
+      parsed.productComponents.title.trim()
+    ) {
+      out.title = normalizeWhitespace(parsed.productComponents.title);
+    }
+    const rawReviews = parsed.productComponents?.customerReviews;
+    if (rawReviews) {
+      const revObj =
+        typeof rawReviews === 'string'
+          ? (JSON.parse(rawReviews) as {
+              ratingValue?: string | number;
+              rating?: string;
+              count?: string | number;
+            })
+          : rawReviews;
+      const rVal =
+        typeof revObj.ratingValue === 'number'
+          ? revObj.ratingValue
+          : parseRating(String(revObj.ratingValue ?? revObj.rating ?? ''));
+      if (rVal !== null && Number.isFinite(rVal)) {
+        out.rating = rVal;
+      }
+      const cVal =
+        typeof revObj.count === 'number'
+          ? revObj.count
+          : parseReviewCount(String(revObj.count ?? ''));
+      if (cVal !== null && Number.isFinite(cVal)) {
+        out.reviewCount = cVal;
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -390,7 +465,13 @@ export function extractCardPricingAndDiscounts(
       '.a-price:not([data-a-strike="true"]) .a-offscreen, .priceToPay .a-offscreen, .apexPriceToPay .a-offscreen',
     );
     for (const el of offscreenCandidates) {
-      if (el.closest('[data-a-strike="true"], .basisPrice, s, del')) continue;
+      if (
+        el.closest(
+          '[data-a-strike="true"], [data-strikethroughprice="true"], .a-text-strike, .basisPrice, s, del',
+        )
+      ) {
+        continue;
+      }
       const parsed = parsePrice(el.textContent, pageCurrency);
       if (parsed.value !== null) {
         price = parsed.value;
@@ -407,7 +488,12 @@ export function extractCardPricingAndDiscounts(
       card,
       '.a-price:not([data-a-strike="true"])',
     );
-    if (priceBlock && !priceBlock.closest('[data-a-strike="true"], .basisPrice')) {
+    if (
+      priceBlock &&
+      !priceBlock.closest(
+        '[data-a-strike="true"], [data-strikethroughprice="true"], .a-text-strike, .basisPrice',
+      )
+    ) {
       const wholeEl = safeQuerySelector(priceBlock, '.a-price-whole');
       const fractionEl = safeQuerySelector(priceBlock, '.a-price-fraction');
       const symbolEl = safeQuerySelector(priceBlock, '.a-price-symbol');
@@ -430,7 +516,13 @@ export function extractCardPricingAndDiscounts(
     for (const selector of AMAZON_SELECTORS.cardFields.sellingPrice) {
       const els = safeQuerySelectorAll(card, selector);
       for (const el of els) {
-        if (el.closest('[data-a-strike="true"], .basisPrice, s, del')) continue;
+        if (
+          el.closest(
+            '[data-a-strike="true"], [data-strikethroughprice="true"], .a-text-strike, .basisPrice, s, del',
+          )
+        ) {
+          continue;
+        }
         // Guard against matching rank `#1` or review counts on `.a-size-small`
         const rawText = normalizeWhitespace(el.textContent);
         if (!rawText || /^#\d+/.test(rawText)) continue;
@@ -453,7 +545,13 @@ export function extractCardPricingAndDiscounts(
     const nodes = safeQuerySelectorAll(card, 'span, div');
     for (const node of nodes) {
       if (node.children.length > 1) continue;
-      if (node.closest('[data-a-strike="true"], .basisPrice, s, del')) continue;
+      if (
+        node.closest(
+          '[data-a-strike="true"], [data-strikethroughprice="true"], .a-text-strike, .basisPrice, s, del',
+        )
+      ) {
+        continue;
+      }
       const rawText = normalizeWhitespace(node.textContent);
       if (!rawText || rawText.length > 32) continue;
       if (/coupon|save|off|voucher|rabatt/i.test(rawText)) continue;
@@ -522,6 +620,13 @@ export function extractCardPricingAndDiscounts(
     if (dealBadge !== undefined) break;
   }
 
+  if (dealBadge === undefined) {
+    const adProps = parseAsinAdAttributesProps(card);
+    if (adProps?.dealString) {
+      dealBadge = adProps.dealString;
+    }
+  }
+
   // Coupon (`Save 15% with coupon`, `Save $20.00 with coupon`)
   let coupon: string | undefined;
   for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
@@ -557,7 +662,7 @@ export function extractCardPricingAndDiscounts(
 export function extractCardAsinWithTier(
   card: Element,
 ): TieredValue<string | null> {
-  // Tier 1: `data-p13n-asin-metadata` JSON
+  // Tier 1: `data-p13n-asin-metadata` or `data-asinadattributesprops` JSON
   const metaNode = card.hasAttribute('data-p13n-asin-metadata')
     ? card
     : safeQuerySelector(card, '[data-p13n-asin-metadata]');
@@ -574,21 +679,40 @@ export function extractCardAsinWithTier(
     }
   }
 
-  // Tier 2: `data-asin` attribute on card or child
-  const directAsin = normalizeASIN(card.getAttribute('data-asin'));
+  const adProps = parseAsinAdAttributesProps(card);
+  if (adProps?.asin) {
+    const asin = normalizeASIN(adProps.asin);
+    if (asin) {
+      return { value: asin, tier: 'tier1_json' };
+    }
+  }
+
+  // Tier 2: `data-asin`, `data-csa-c-asin`, or `data-csa-c-item-id` attribute on card or child
+  const directAsin =
+    normalizeASIN(card.getAttribute('data-asin')) ??
+    normalizeASIN(card.getAttribute('data-csa-c-asin')) ??
+    normalizeASIN(card.getAttribute('data-csa-c-item-id'));
   if (directAsin) {
     return { value: directAsin, tier: 'tier2_semantic' };
   }
-  const nestedAsinEl = safeQuerySelector(card, '[data-asin]:not([data-asin=""])');
-  const nestedAsin = normalizeASIN(nestedAsinEl?.getAttribute('data-asin'));
-  if (nestedAsin) {
-    return { value: nestedAsin, tier: 'tier2_semantic' };
+  const nestedAsinEl = safeQuerySelector(
+    card,
+    '[data-asin]:not([data-asin=""]), [data-csa-c-asin]:not([data-csa-c-asin=""]), [data-csa-c-item-id*="amzn1.asin."]',
+  );
+  if (nestedAsinEl) {
+    const nestedAsin =
+      normalizeASIN(nestedAsinEl.getAttribute('data-asin')) ??
+      normalizeASIN(nestedAsinEl.getAttribute('data-csa-c-asin')) ??
+      normalizeASIN(nestedAsinEl.getAttribute('data-csa-c-item-id'));
+    if (nestedAsin) {
+      return { value: nestedAsin, tier: 'tier2_semantic' };
+    }
   }
 
-  // Tier 3: Structural `/dp/<ASIN>` or `/gp/product/<ASIN>` anchor discovery
+  // Tier 3: Structural `/dp/<ASIN>`, `/gp/product/<ASIN>`, or sponsored redirect anchor/popover discovery
   const anchors = safeQuerySelectorAll<HTMLAnchorElement>(
     card,
-    'a[href*="/dp/"], a[href*="/gp/product/"], a[href*="/gp/aw/d/"], a[href*="/sspa/click"]',
+    'a[href*="/dp/"], a[href*="/gp/product/"], a[href*="/gp/aw/d/"], a[href*="/sspa/click"], a[href*="sponsored-ads.amazon."], a[href*="aax-"]',
   );
   for (const anchor of anchors) {
     const asin = extractASIN(anchor.getAttribute('href'));
@@ -597,7 +721,19 @@ export function extractCardAsinWithTier(
     }
   }
 
+  const popoverEl = safeQuerySelector(card, '[data-a-popover*="asin="]');
+  if (popoverEl) {
+    const asin = extractASIN(popoverEl.getAttribute('data-a-popover'));
+    if (asin) {
+      return { value: asin, tier: 'tier3_structural' };
+    }
+  }
+
   return { value: null, tier: 'missing' };
+}
+
+function stripSponsoredTitlePrefix(raw: string): string {
+  return raw.replace(/^Sponsored\s+Ad\s*[-–—:]\s*/i, '').trim();
 }
 
 /**
@@ -648,18 +784,22 @@ export function extractCardTitleAndBrandWithTier(
     }
   }
 
-  // Tier 2: Semantic link heading inside `[data-cy="title-recipe"]` or `h2 a`
+  // Tier 2: Semantic link heading inside `[data-cy="title-recipe"]`, `h2 a`, or `a[data-type="productTitle"]`
   const semanticSelectors = [
     '[data-cy="title-recipe"] a h2 span',
     '[data-cy="title-recipe"] h2 a span',
     'h2 a.a-link-normal span',
     'h2 a span',
+    'a[data-type="productTitle"]',
+    '.a-truncate .a-truncate-full',
     '[data-testid="product-card-title"]',
     '[data-testid="deal-title"]',
   ];
   for (const selector of semanticSelectors) {
     const el = safeQuerySelector(card, selector);
-    const text = normalizeWhitespace(el?.textContent);
+    const text = stripSponsoredTitlePrefix(
+      normalizeWhitespace(el?.textContent),
+    );
     if (text && text.length >= 2) {
       return {
         title: { value: text, tier: 'tier2_semantic' },
@@ -668,11 +808,25 @@ export function extractCardTitleAndBrandWithTier(
     }
   }
 
+  // Tier 1: `data-asinadattributesprops` JSON title if present
+  const adProps = parseAsinAdAttributesProps(card);
+  if (adProps?.title && adProps.title.length >= 2) {
+    return {
+      title: {
+        value: stripSponsoredTitlePrefix(adProps.title),
+        tier: 'tier1_json',
+      },
+      brand,
+    };
+  }
+
   // Tier 4: Declarative selector registry
   for (const selector of AMAZON_SELECTORS.cardFields.title) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
-      const text = normalizeWhitespace(el.textContent);
+      const text = stripSponsoredTitlePrefix(
+        normalizeWhitespace(el.textContent),
+      );
       if (text && text !== brand && text.length >= 2) {
         return {
           title: { value: text, tier: 'tier4_selector' },
@@ -682,10 +836,10 @@ export function extractCardTitleAndBrandWithTier(
     }
   }
 
-  // Tier 3: Structural `/dp/<ASIN>` anchor text fallback
+  // Tier 3: Structural `/dp/<ASIN>` or sponsored redirect anchor text fallback
   const anchors = safeQuerySelectorAll<HTMLAnchorElement>(
     card,
-    'a[href*="/dp/"], a[href*="/gp/product/"], a[href*="/sspa/click"]',
+    'a[href*="/dp/"], a[href*="/gp/product/"], a[href*="/gp/aw/d/"], a[href*="/sspa/click"], a[href*="sponsored-ads.amazon."], a[href*="aax-"]',
   );
   let bestText = '';
   for (const anchor of anchors) {
@@ -693,12 +847,16 @@ export function extractCardTitleAndBrandWithTier(
       const linkAsin = extractASIN(anchor.getAttribute('href'));
       if (linkAsin && linkAsin !== asin) continue;
     }
-    const candidate =
+    const rawCandidate =
       normalizeWhitespace(anchor.getAttribute('title')) ||
+      normalizeWhitespace(anchor.getAttribute('aria-label')) ||
       normalizeWhitespace(anchor.textContent);
+    const candidate = stripSponsoredTitlePrefix(rawCandidate);
     if (
       candidate.length > bestText.length &&
       candidate !== brand &&
+      !/^Rated\s+\d/i.test(candidate) &&
+      !/^\d+(?:[.,]\d+)?\s*out of\s*5/i.test(candidate) &&
       !/^\$?\d+[.,]\d{2}$/.test(candidate) &&
       !/^\d[\d,.]*$/.test(candidate)
     ) {
@@ -766,6 +924,18 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
     if (reviewCount !== null) break;
   }
 
+  if (rating === null || reviewCount === null) {
+    const adProps = parseAsinAdAttributesProps(card);
+    if (rating === null && typeof adProps?.rating === 'number') {
+      rating = adProps.rating;
+      ratingTier = 'tier1_json';
+    }
+    if (reviewCount === null && typeof adProps?.reviewCount === 'number') {
+      reviewCount = adProps.reviewCount;
+      reviewTier = 'tier1_json';
+    }
+  }
+
   return {
     rating: { value: rating, tier: ratingTier },
     reviewCount: { value: reviewCount, tier: reviewTier },
@@ -795,6 +965,13 @@ export function extractCardImageWithTier(
             : 'tier3_structural',
       };
     }
+  }
+  const adProps = parseAsinAdAttributesProps(card);
+  if (adProps?.imageUrl) {
+    return {
+      value: adProps.imageUrl,
+      tier: 'tier1_json',
+    };
   }
   return { value: null, tier: 'missing' };
 }
@@ -925,10 +1102,35 @@ export function extractCardIsPrime(
 export function extractCardIsSponsored(card: Element): boolean {
   if (
     card.getAttribute('data-component-type') === 'sp-sponsored-result' ||
+    card.getAttribute('data-component-type') === 'sbv-video-single-product' ||
     card.classList.contains('AdHolder')
   ) {
     return true;
   }
+
+  // Check if the card resides inside an enclosing sponsored search widget container
+  // (e.g. Sponsored Brand themed collection, Sponsored Brand Video collection, or Single-Product Sponsored Video)
+  try {
+    const sponsoredParent = card.closest(
+      '.AdHolder, [data-component-type="sp-sponsored-result"], [data-component-type="sbv-video-single-product"], .sb-video-creative, .sb-desktop, [cel_widget_id*="sb-themed-collection"], [cel_widget_id*="sb-video-product-collection"], [cel_widget_id^="MAIN-VIDEO_SINGLE_PRODUCT"], [data-card-metrics-id*="sb-themed-collection"], [data-card-metrics-id*="sb-video-product-collection"]',
+    );
+    if (sponsoredParent) {
+      return true;
+    }
+  } catch {
+    // Ignore selector error in older DOM implementations
+  }
+
+  // Check for sponsored redirect links inside the card
+  if (
+    safeQuerySelector(
+      card,
+      'a[href*="sponsored-ads.amazon."], a[href*="/sspa/click"], [data-component-props*="SponsoredProducts"]',
+    )
+  ) {
+    return true;
+  }
+
   for (const selector of AMAZON_SELECTORS.cardFields.sponsored) {
     const el = safeQuerySelector(card, selector);
     if (el) {
@@ -951,6 +1153,35 @@ export function extractCardIsSponsored(card: Element): boolean {
       return true;
     }
   }
+
+  // Check if an enclosing `.s-main-slot > .s-result-item[data-asin=""]` widget wrapper carries a widget-level Sponsored disclosure
+  try {
+    const enclosingWidget = card.closest(
+      '.s-main-slot > .s-result-item[data-asin=""], .s-main-slot > .s-widget',
+    );
+    if (
+      enclosingWidget &&
+      !enclosingWidget.matches(
+        '[data-component-type="s-shopping-adviser"], [cel_widget_id^="MAIN-SHOPPING_ADVISER"]',
+      ) &&
+      !safeQuerySelector(
+        enclosingWidget,
+        '[data-component-type="s-shopping-adviser"]',
+      )
+    ) {
+      if (
+        safeQuerySelector(
+          enclosingWidget,
+          '.puis-sponsored-label-text, [data-component-props*="SponsoredProducts"], .sb-desktop-sponsored-Creator, [id^="sponsored-brands-"]',
+        )
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    // Ignore selector errors
+  }
+
   return false;
 }
 
