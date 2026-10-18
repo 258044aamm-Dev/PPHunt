@@ -159,15 +159,23 @@ export default defineContentScript({
         },
       });
 
-      sendRuntimeMessage({
-        type: 'TEMU_COLLECTION_PROGRESS',
-        payload: {
-          collectedCount: totalCollected,
-          targetCount,
-          status: 'collecting',
-          scrollCount: scrollController?.currentScrollCount ?? 0,
-        },
-      });
+      const willCompleteNow =
+        isCollecting &&
+        ((targetCount > 0 && totalCollected >= targetCount) ||
+          detectTemuPageType(window.location.href, document) ===
+            'product_detail');
+
+      if (!willCompleteNow) {
+        sendRuntimeMessage({
+          type: 'TEMU_COLLECTION_PROGRESS',
+          payload: {
+            collectedCount: totalCollected,
+            targetCount,
+            status: 'collecting',
+            scrollCount: scrollController?.currentScrollCount ?? 0,
+          },
+        });
+      }
 
       if (targetCount > 0 && totalCollected >= targetCount) {
         stopCollection('target_reached');

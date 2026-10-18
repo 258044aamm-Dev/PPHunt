@@ -188,6 +188,9 @@ export interface AmazonBackgroundController {
  */
 export function createAmazonBackgroundController(): AmazonBackgroundController {
   let activeCollection: ActiveCollectionRuntimeState | null = null;
+  let pendingProductsChain: Promise<void> = Promise.resolve();
+  const finalizedSessionKeys = new Set<string>();
+  let lastFinalizedSession: ActiveCollectionRuntimeState | null = null;
 
   const hydrateActiveCollection =
     async (): Promise<ActiveCollectionRuntimeState | null> => {
@@ -282,6 +285,9 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     const existingAsins = await getExistingASINs(sessionKey, MAX_SEEDED_ASINS);
     const scrollSettings = await resolveScrollRuntimeSettings();
 
+    finalizedSessionKeys.delete(sessionKey);
+    lastFinalizedSession = null;
+
     activeCollection = {
       tabId,
       sessionKey,
@@ -369,10 +375,13 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
   };
 
   const handleStopCollection = async (tabId: number): Promise<void> => {
+    await pendingProductsChain;
     const active = await hydrateActiveCollection();
     await dispatchToAmazonTab(tabId, { type: 'STOP_COLLECTION_CMD' });
 
     if (active) {
+      finalizedSessionKeys.add(active.sessionKey);
+      lastFinalizedSession = { ...active };
       const completedAt = new Date().toISOString();
       await updateSessionStatus(active.sessionKey, 'completed', {
         collected: active.lastCollectedCount,
@@ -394,7 +403,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     await clearActiveSession();
   };
 
-  const handleProductsCollected = async (
+  const processProductsCollected = async (
     payload: {
       products: unknown[];
       totalCount: number;
@@ -403,6 +412,9 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     senderUrl?: string,
   ): Promise<void> => {
     let active = await hydrateActiveCollection();
+    if (!active && lastFinalizedSession) {
+      active = lastFinalizedSession;
+    }
     if (!active) {
       const nowIso = new Date().toISOString();
       const fallbackUrl = senderUrl ?? 'https://www.amazon.com';
@@ -418,6 +430,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       };
       activeCollection = active;
     }
+
+    const isSessionFinalized = finalizedSessionKeys.has(active.sessionKey);
 
     if (
       senderUrl &&
@@ -496,6 +510,12 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       active.lastCollectedCount,
       payload.totalCount,
     );
+
+    // Never overwrite a completed/stopped session back to 'collecting'
+    if (isSessionFinalized || finalizedSessionKeys.has(active.sessionKey)) {
+      return;
+    }
+
     await persistPointer(active);
     await updateSessionStatus(active.sessionKey, 'collecting', {
       collected: active.lastCollectedCount,
@@ -515,34 +535,75 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     });
   };
 
+  const handleProductsCollected = (
+    payload: {
+      products: unknown[];
+      totalCount: number;
+      isNewBatch: boolean;
+    },
+    senderUrl?: string,
+  ): Promise<void> => {
+    const next = pendingProductsChain.then(
+      () => processProductsCollected(payload, senderUrl),
+      () => processProductsCollected(payload, senderUrl),
+    );
+    pendingProductsChain = next.catch(() => {});
+    return next;
+  };
+
   const handleCollectionProgress = async (payload: {
     collected: number;
     target: number;
     status: AmazonCollectionStatus;
   }): Promise<void> => {
+    await pendingProductsChain;
     const active = await hydrateActiveCollection();
-    const sessionKey = active?.sessionKey ?? `0_${Date.now()}`;
+    if (
+      !active &&
+      lastFinalizedSession &&
+      payload.status === 'collecting'
+    ) {
+      // Ignore late 'collecting' progress arriving after session completion
+      return;
+    }
+    const sessionKey =
+      active?.sessionKey ??
+      lastFinalizedSession?.sessionKey ??
+      `0_${Date.now()}`;
+    if (
+      finalizedSessionKeys.has(sessionKey) &&
+      payload.status === 'collecting'
+    ) {
+      return;
+    }
     const effectiveTarget = active?.targetCount ?? clampTargetCount(payload.target);
     const effectiveMode = active?.mode ?? 'manual';
     const effectiveStartedAt = active?.startedAt ?? new Date().toISOString();
     const effectiveUrl = active?.url ?? 'https://www.amazon.com';
+    const effectiveCollected = active
+      ? Math.max(active.lastCollectedCount, payload.collected)
+      : payload.collected;
 
     if (active) {
-      active.lastCollectedCount = payload.collected;
+      active.lastCollectedCount = effectiveCollected;
     }
 
     await updateSessionStatus(sessionKey, payload.status, {
-      collected: payload.collected,
+      collected: effectiveCollected,
       target: effectiveTarget,
     });
 
     if (payload.status === 'completed') {
+      finalizedSessionKeys.add(sessionKey);
+      if (active) {
+        lastFinalizedSession = { ...active };
+      }
       await addHistoryEntry({
         sessionKey,
         url: effectiveUrl,
         mode: effectiveMode,
         targetCount: effectiveTarget,
-        collectedCount: payload.collected,
+        collectedCount: effectiveCollected,
         startedAt: effectiveStartedAt,
         completedAt: new Date().toISOString(),
         status: 'completed',
@@ -556,7 +617,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     broadcastRuntimeMessage({
       type: 'UPDATE_PROGRESS',
       payload: {
-        collected: payload.collected,
+        collected: effectiveCollected,
         target: effectiveTarget,
         status: payload.status,
         error: null,

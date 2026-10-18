@@ -60,6 +60,9 @@ export function registerTemuBackgroundHandlers(): {
   };
   let stateReady = false;
   let hydratePromise: Promise<void> | null = null;
+  let pendingTemuProductsChain: Promise<void> = Promise.resolve();
+  const finalizedTemuSessionIds = new Set<string>();
+  let lastFinalizedTemuSessionId: string | null = null;
 
   async function doHydrate(): Promise<void> {
     const stored = await readActiveTemuSession();
@@ -315,6 +318,31 @@ export function registerTemuBackgroundHandlers(): {
     pageType: 'search' | 'product_detail' | 'category' | 'unknown',
     pageUrl: string
   ): Promise<void> {
+    if (!state.sessionId && lastFinalizedTemuSessionId) {
+      // Products arrived just as the session finalized; save under the finalized sessionId without reopening state
+      const targetSessionId = lastFinalizedTemuSessionId;
+      const nowIso = new Date().toISOString();
+      const validated: TemuProduct[] = [];
+      for (const raw of rawProducts) {
+        if (!raw || typeof raw !== 'object') continue;
+        const normalized = validateAndNormalizeTemuScrapedProduct(
+          raw as Parameters<typeof validateAndNormalizeTemuScrapedProduct>[0],
+          pageUrl
+        );
+        if (!normalized) continue;
+        const parsed = TemuProductSchema.safeParse({
+          ...normalized,
+          collectedAt: nowIso,
+          sessionId: targetSessionId,
+        });
+        if (parsed.success) validated.push(parsed.data);
+      }
+      if (validated.length > 0) {
+        await upsertTemuProducts(validated, state.targetCount);
+      }
+      return;
+    }
+
     if (!state.sessionId) {
       state.sessionId = crypto.randomUUID();
       state.startedAt = new Date().toISOString();
@@ -330,6 +358,9 @@ export function registerTemuBackgroundHandlers(): {
     }
 
     const sessionId = state.sessionId;
+    if (finalizedTemuSessionIds.has(sessionId)) {
+      return;
+    }
     if (pageUrl) {
       state.url = pageUrl;
       state.pageType = pageType;
@@ -376,6 +407,10 @@ export function registerTemuBackgroundHandlers(): {
       validatedProducts,
       state.targetCount
     );
+
+    if (finalizedTemuSessionIds.has(sessionId)) {
+      return;
+    }
 
     state.lastCollectedCount = Math.max(
       state.lastCollectedCount,
@@ -432,6 +467,8 @@ export function registerTemuBackgroundHandlers(): {
           const { mode, targetCount, tabId, sessionId } = msg.payload;
           state.tabId = tabId;
           state.sessionId = sessionId ?? crypto.randomUUID();
+          finalizedTemuSessionIds.delete(state.sessionId);
+          lastFinalizedTemuSessionId = null;
           state.mode = mode;
           state.targetCount = targetCount;
           state.startedAt = new Date().toISOString();
@@ -546,27 +583,31 @@ export function registerTemuBackgroundHandlers(): {
 
         case 'TEMU_STOP_COLLECTION': {
           const { tabId } = msg.payload;
-          const stoppedSessionId = state.sessionId;
-          const stoppedCount = state.lastCollectedCount;
-          const stoppedTarget = state.targetCount;
-          const stoppedUrl = state.url;
-          const stoppedMode = state.mode;
-          const stoppedStartedAt = state.startedAt;
-          const stoppedPageType = state.pageType;
-          const stoppedQuery = state.searchQuery;
-
-          state.tabId = null;
-          state.sessionId = null;
-          state.lastCollectedCount = 0;
-          void clearActiveTemuSession();
-
           browser.tabs
             .sendMessage(tabId, { type: 'TEMU_STOP_COLLECTION_CMD' })
             .catch(() => {});
 
-          if (stoppedSessionId) {
-            const completedAt = new Date().toISOString();
-            void (async () => {
+          void pendingTemuProductsChain.then(async () => {
+            const stoppedSessionId = state.sessionId;
+            const stoppedCount = state.lastCollectedCount;
+            const stoppedTarget = state.targetCount;
+            const stoppedUrl = state.url;
+            const stoppedMode = state.mode;
+            const stoppedStartedAt = state.startedAt;
+            const stoppedPageType = state.pageType;
+            const stoppedQuery = state.searchQuery;
+
+            if (stoppedSessionId) {
+              finalizedTemuSessionIds.add(stoppedSessionId);
+              lastFinalizedTemuSessionId = stoppedSessionId;
+            }
+            state.tabId = null;
+            state.sessionId = null;
+            state.lastCollectedCount = 0;
+            void clearActiveTemuSession();
+
+            if (stoppedSessionId) {
+              const completedAt = new Date().toISOString();
               await updateTemuSessionStatus(stoppedSessionId, 'stopped', {
                 collected: stoppedCount,
                 target: stoppedTarget,
@@ -585,8 +626,8 @@ export function registerTemuBackgroundHandlers(): {
                   status: 'stopped',
                 }).catch(() => {});
               }
-            })();
-          }
+            }
+          });
           break;
         }
 
@@ -615,11 +656,13 @@ export function registerTemuBackgroundHandlers(): {
         case 'TEMU_PRODUCTS_COLLECTED': {
           const { products, pageType, pageUrl } = msg.payload;
           if (Array.isArray(products) && products.length > 0) {
-            void persistTemuCollectedProducts(
-              products,
-              pageType,
-              pageUrl || senderTabUrl || 'https://www.temu.com/'
-            ).catch((err) => {
+            const targetUrl =
+              pageUrl || senderTabUrl || 'https://www.temu.com/';
+            const next = pendingTemuProductsChain.then(
+              () => persistTemuCollectedProducts(products, pageType, targetUrl),
+              () => persistTemuCollectedProducts(products, pageType, targetUrl),
+            );
+            pendingTemuProductsChain = next.catch((err) => {
               console.warn('[PPHunt:Temu] Failed to persist products:', err);
             });
           }
@@ -628,6 +671,13 @@ export function registerTemuBackgroundHandlers(): {
 
         case 'TEMU_COLLECTION_PROGRESS': {
           const { collectedCount, targetCount, status } = msg.payload;
+          if (
+            state.sessionId &&
+            finalizedTemuSessionIds.has(state.sessionId) &&
+            status === 'collecting'
+          ) {
+            break;
+          }
           state.lastCollectedCount = Math.max(
             state.lastCollectedCount,
             collectedCount
@@ -653,30 +703,38 @@ export function registerTemuBackgroundHandlers(): {
 
         case 'TEMU_COLLECTION_COMPLETE': {
           const { totalCollected, reason } = msg.payload;
-          const finalCount = Math.max(state.lastCollectedCount, totalCollected);
-          const completedSessionId = state.sessionId;
-          const completedTarget = state.targetCount;
-          const completedUrl =
-            state.url ?? senderTabUrl ?? 'https://www.temu.com/';
-          const completedMode = state.mode;
-          const completedPageType = state.pageType;
-          const completedQuery = state.searchQuery;
-          const completedStartedAt = state.startedAt;
-          const finalStatus =
-            reason === 'user_stopped'
-              ? 'stopped'
-              : reason === 'error'
-                ? 'error'
-                : 'completed';
+          void pendingTemuProductsChain.then(async () => {
+            const finalCount = Math.max(
+              state.lastCollectedCount,
+              totalCollected,
+            );
+            const completedSessionId =
+              state.sessionId ?? lastFinalizedTemuSessionId;
+            const completedTarget = state.targetCount;
+            const completedUrl =
+              state.url ?? senderTabUrl ?? 'https://www.temu.com/';
+            const completedMode = state.mode;
+            const completedPageType = state.pageType;
+            const completedQuery = state.searchQuery;
+            const completedStartedAt = state.startedAt;
+            const finalStatus =
+              reason === 'user_stopped'
+                ? 'stopped'
+                : reason === 'error'
+                  ? 'error'
+                  : 'completed';
 
-          state.tabId = null;
-          state.sessionId = null;
-          state.lastCollectedCount = 0;
-          void clearActiveTemuSession();
+            if (completedSessionId) {
+              finalizedTemuSessionIds.add(completedSessionId);
+              lastFinalizedTemuSessionId = completedSessionId;
+            }
+            state.tabId = null;
+            state.sessionId = null;
+            state.lastCollectedCount = 0;
+            void clearActiveTemuSession();
 
-          if (completedSessionId) {
-            const completedAt = new Date().toISOString();
-            void (async () => {
+            if (completedSessionId) {
+              const completedAt = new Date().toISOString();
               const existingRow = await getTemuSession(completedSessionId);
               await updateTemuSessionStatus(completedSessionId, finalStatus, {
                 collected: finalCount,
@@ -693,23 +751,25 @@ export function registerTemuBackgroundHandlers(): {
                   targetCount: existingRow?.targetCount ?? completedTarget,
                   collectedCount: finalCount,
                   startedAt:
-                    existingRow?.startedAt ?? completedStartedAt ?? completedAt,
+                    existingRow?.startedAt ??
+                    completedStartedAt ??
+                    completedAt,
                   completedAt,
                   status: finalStatus,
                 }).catch(() => {});
               }
-            })();
-          }
+            }
 
-          broadcastToUi({
-            type: 'TEMU_COLLECTION_STATUS',
-            payload: {
-              status: finalStatus,
-              collectedCount: finalCount,
-              targetCount: completedTarget,
-              sessionId: completedSessionId,
-              reason,
-            },
+            broadcastToUi({
+              type: 'TEMU_COLLECTION_STATUS',
+              payload: {
+                status: finalStatus,
+                collectedCount: finalCount,
+                targetCount: completedTarget,
+                sessionId: completedSessionId,
+                reason,
+              },
+            });
           });
           break;
         }

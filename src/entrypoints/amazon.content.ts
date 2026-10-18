@@ -254,14 +254,23 @@ export default defineContentScript({
         }
       }
 
-      sendRuntimeMessageSafe({
-        type: 'COLLECTION_PROGRESS',
-        payload: {
-          collected: totalReported,
-          target: targetCount,
-          status: 'collecting',
-        },
-      });
+      const isDetailPage =
+        isNewBatch &&
+        detectAmazonPageType(window.location.href, document) ===
+          'product-detail';
+      const willCompleteNow =
+        isCollecting && (totalReported >= targetCount || isDetailPage);
+
+      if (!willCompleteNow) {
+        sendRuntimeMessageSafe({
+          type: 'COLLECTION_PROGRESS',
+          payload: {
+            collected: totalReported,
+            target: targetCount,
+            status: 'collecting',
+          },
+        });
+      }
 
       if (totalReported >= targetCount && isCollecting) {
         finishCollection('target_reached');
