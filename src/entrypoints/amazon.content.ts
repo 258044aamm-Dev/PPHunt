@@ -187,7 +187,11 @@ export default defineContentScript({
           if (m.addedNodes.length > 0) {
             const targetEl =
               m.target instanceof Element ? m.target : m.target.parentElement;
-            if (targetEl && !targetEl.closest('.a-carousel-card')) {
+            if (
+              targetEl &&
+              (!targetEl.closest('.a-carousel-card') ||
+                Boolean(targetEl.closest('.s-main-slot')))
+            ) {
               hasRelevantMutation = true;
               break;
             }

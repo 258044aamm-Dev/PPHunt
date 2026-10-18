@@ -1,4 +1,5 @@
 import { filterLeafCandidateCards } from './category-page';
+import { discoverMainSlotWidgetProductCards } from './search-results';
 import { safeQuerySelectorAll } from './selectors';
 
 const SCOPED_PRODUCT_CARD_SELECTORS = [
@@ -16,7 +17,7 @@ const SCOPED_PRODUCT_CARD_SELECTORS = [
 
 /**
  * Counts real scoped product cards in the document while ignoring peripheral
- * recommendation carousels (`.a-carousel-card`) and footer `/dp/` links.
+ * recommendation carousels (`.a-carousel-card` outside `.s-main-slot`) and footer `/dp/` links.
  */
 export function countProductCards(doc?: Document | null): number {
   const activeDoc =
@@ -26,8 +27,16 @@ export function countProductCards(doc?: Document | null): number {
   const candidates = safeQuerySelectorAll(
     activeDoc,
     SCOPED_PRODUCT_CARD_SELECTORS.join(', '),
-  ).filter((el) => !el.closest('.a-carousel-card, [id*="sp_detail"], [id*="sims-consolidated"]'));
+  ).filter(
+    (el) =>
+      !el.closest(
+        '.a-carousel-card, .atc-faceout-container, [id*="sp_detail"], [id*="sims-consolidated"]',
+      ),
+  );
 
   const leafCards = filterLeafCandidateCards(candidates);
-  return leafCards.length;
+  const widgetCards = discoverMainSlotWidgetProductCards(activeDoc, leafCards);
+
+  const uniqueCards = new Set<Element>([...leafCards, ...widgetCards]);
+  return uniqueCards.size;
 }
