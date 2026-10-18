@@ -1,5 +1,6 @@
 import type { ScrapedAmazonProduct } from '../types';
 import { resolveProductUrl } from '../utils/amazon-url';
+import { mergeScrapedProductFields } from './dedup';
 import {
   defaultAmazonDriftTelemetry,
   type AmazonDriftTelemetry,
@@ -18,6 +19,7 @@ import {
   extractCardRatingAndReviewsWithTier,
   extractCardSeller,
   extractCardTitleAndBrandWithTier,
+  isWithinAnyCard,
   normalizeWhitespace,
   validateAndNormalizeScrapedProduct,
 } from './field-parsers';
@@ -155,6 +157,82 @@ export function parseAmazonSearchCard(
 
 export const parseSearchCard = parseAmazonSearchCard;
 
+const MAIN_SLOT_WIDGET_CARD_SELECTORS: readonly string[] = [
+  '.s-result-item[data-asin]:not([data-asin=""])',
+  '[data-type="productContainer"][data-asin]:not([data-asin=""])',
+  '.a-carousel-card [data-asin]:not([data-asin=""])',
+  '[data-asinadattributesprops]',
+  '[data-component-type="sbv-video-single-product"]',
+];
+
+function isExcludedWidgetNode(el: Element): boolean {
+  if (el.classList.contains('atc-faceout-container')) {
+    return true;
+  }
+  const tag = el.tagName.toUpperCase();
+  if (tag === 'FORM' || tag === 'BUTTON' || tag === 'INPUT') {
+    return true;
+  }
+  try {
+    if (
+      el.closest(
+        '.atc-faceout-container, [cel_widget_id*="multi-brand-creative"], [data-card-metrics-id*="multi-brand-creative"], #rhf, #navFooter',
+      )
+    ) {
+      return true;
+    }
+  } catch {
+    // Ignore selector errors
+  }
+  return false;
+}
+
+/**
+ * Discovers real product cards inside `.s-main-slot` search widgets (Sponsored Brand carousels,
+ * Sponsored Brand Video collections, Single-Product Sponsored Video widgets, and Customer Review /
+ * Shopping Adviser / Thematic carousels) while excluding nested `.atc-faceout-container` nodes,
+ * non-product `multi-brand-creative` store banners, and peripheral `#rhf` noise.
+ */
+export function discoverMainSlotWidgetProductCards(
+  doc: Document,
+  primaryCards: readonly Element[] = [],
+): Element[] {
+  const mainSlot = safeQuerySelector(doc, '.s-main-slot');
+  if (!mainSlot) return [];
+
+  const primarySet = new Set<Element>(primaryCards);
+  const rawCandidates: Element[] = [];
+  const seenElements = new Set<Element>();
+
+  for (const selector of MAIN_SLOT_WIDGET_CARD_SELECTORS) {
+    const matches = safeQuerySelectorAll(mainSlot, selector);
+    for (const el of matches) {
+      if (seenElements.has(el)) continue;
+      if (primarySet.has(el) || isWithinAnyCard(el, primarySet)) continue;
+      if (isExcludedWidgetNode(el)) continue;
+      seenElements.add(el);
+      rawCandidates.push(el);
+    }
+  }
+
+  if (rawCandidates.length <= 1) {
+    return rawCandidates;
+  }
+
+  // Keep only the outermost single-product widget card when candidates are nested inside each other
+  const candidateSet = new Set<Element>(rawCandidates);
+  return rawCandidates.filter((el) => {
+    let cursor = el.parentElement;
+    while (cursor && cursor !== mainSlot) {
+      if (candidateSet.has(cursor)) {
+        return false;
+      }
+      cursor = cursor.parentElement;
+    }
+    return true;
+  });
+}
+
 /**
  * Parses all Amazon search result cards in a `Document`, isolating per-card exceptions
  * and memoizing complete cards in `AmazonParseCache`.
@@ -194,36 +272,40 @@ export function parseAmazonSearchResults(
     }
   }
 
-  let cards: Element[] = [];
+  let primaryCards: Element[] = [];
   for (const selector of AMAZON_SELECTORS.search.cardContainers) {
     const matches = safeQuerySelectorAll(mainRoot, selector).filter(
-      (el) => !el.closest('.a-carousel-card'),
+      (el) => !el.closest('.a-carousel-card') && !isExcludedWidgetNode(el),
     );
     if (matches.length > 0) {
-      cards = matches;
+      primaryCards = matches;
       break;
     }
   }
 
-  if (cards.length === 0 && mainRoot !== doc) {
+  if (primaryCards.length === 0 && mainRoot !== doc) {
     for (const selector of AMAZON_SELECTORS.search.cardContainers) {
       const matches = safeQuerySelectorAll(doc, selector).filter(
-        (el) => !el.closest('.a-carousel-card'),
+        (el) => !el.closest('.a-carousel-card') && !isExcludedWidgetNode(el),
       );
       if (matches.length > 0) {
-        cards = matches;
+        primaryCards = matches;
         break;
       }
     }
   }
 
-  if (cards.length === 0) {
+  const widgetCards = discoverMainSlotWidgetProductCards(doc, primaryCards);
+
+  if (primaryCards.length === 0 && widgetCards.length === 0) {
     const structural = discoverStructuralProductCards(mainRoot);
     const asinCards = safeQuerySelectorAll(
       mainRoot,
       '[data-asin]:not([data-asin=""])',
-    ).filter((el) => !el.closest('.a-carousel-card'));
-    cards =
+    ).filter(
+      (el) => !el.closest('.a-carousel-card') && !isExcludedWidgetNode(el),
+    );
+    primaryCards =
       structural.length >= asinCards.length && structural.length > 0
         ? structural
         : asinCards.length > 0
@@ -231,21 +313,46 @@ export function parseAmazonSearchResults(
           : structural;
   }
 
-  const results: ScrapedAmazonProduct[] = [];
-  const seenAsinsInPass = new Set<string>();
+  const primarySet = new Set<Element>(primaryCards);
+  const allCards: Element[] = [...primaryCards, ...widgetCards];
 
-  for (const card of cards) {
+  const results: ScrapedAmazonProduct[] = [];
+  const entriesByAsin = new Map<
+    string,
+    { product: ScrapedAmazonProduct; isPrimary: boolean }
+  >();
+
+  for (const card of allCards) {
     try {
+      const isPrimary = primarySet.has(card);
       const quickAsin = extractCardAsinWithTier(card).value;
-      if (quickAsin && seenAsinsInPass.has(quickAsin)) {
-        continue;
+      if (quickAsin) {
+        const existingQuick = entriesByAsin.get(quickAsin);
+        // If two primary `s-search-result` cards share an ASIN, first-card-wins without re-parsing
+        if (existingQuick && existingQuick.isPrimary && isPrimary) {
+          continue;
+        }
       }
+
       const parsed = cache.getOrParse(card, (el) =>
         parseAmazonSearchCard(el, activeUrl, options),
       );
-      if (parsed && !seenAsinsInPass.has(parsed.asin)) {
-        seenAsinsInPass.add(parsed.asin);
-        results.push(parsed);
+      if (!parsed) continue;
+
+      const existing = entriesByAsin.get(parsed.asin);
+      if (!existing) {
+        // Clone before storing so in-place field merging never mutates a cached object reference unexpectedly
+        const cloned: ScrapedAmazonProduct = { ...parsed };
+        entriesByAsin.set(parsed.asin, { product: cloned, isPrimary });
+        results.push(cloned);
+      } else {
+        // Merge non-null fields, preferring the primary `s-search-result` card over compact widget cards
+        mergeScrapedProductFields(existing.product, parsed, {
+          preferSource: isPrimary && !existing.isPrimary,
+        });
+        if (isPrimary && !existing.isPrimary) {
+          existing.isPrimary = true;
+        }
       }
     } catch (err) {
       console.warn('[PPHunt] Search card iteration error:', err);

@@ -6,6 +6,85 @@ export interface MergeAndFilterResult {
   updatedExisting: boolean;
 }
 
+const MERGEABLE_NULLABLE_FIELDS = [
+  'price',
+  'listPrice',
+  'discountPercentage',
+  'dealBadge',
+  'rating',
+  'reviewCount',
+  'bestSellersRank',
+  'pastMonthSales',
+  'coupon',
+  'badge',
+  'delivery',
+  'imageUrl',
+  'brand',
+  'availability',
+  'seller',
+  'description',
+] as const;
+
+/**
+ * Merges fields from `source` into `target` in place.
+ * When `preferSource` is true (e.g. `source` is a primary `s-search-result` card and `target`
+ * came from a compact widget card), non-null/defined fields on `source` overwrite `target`
+ * while preserving any fields that are only present on `target`.
+ */
+export function mergeScrapedProductFields(
+  target: ScrapedAmazonProduct,
+  source: ScrapedAmazonProduct,
+  options: { preferSource?: boolean } = {},
+): boolean {
+  let changed = false;
+  const preferSource = Boolean(options.preferSource);
+
+  if (
+    source.title &&
+    (!target.title || (preferSource && source.title !== target.title))
+  ) {
+    target.title = source.title;
+    changed = true;
+  }
+
+  for (const key of MERGEABLE_NULLABLE_FIELDS) {
+    const targetVal = target[key];
+    const sourceVal = source[key];
+    if (sourceVal === null || sourceVal === undefined) continue;
+
+    if (
+      targetVal === null ||
+      targetVal === undefined ||
+      (preferSource && targetVal !== sourceVal)
+    ) {
+      (target as unknown as Record<string, unknown>)[key] = sourceVal;
+      changed = true;
+    }
+  }
+
+  if (
+    source.price !== null &&
+    source.price !== undefined &&
+    source.currency &&
+    target.currency !== source.currency
+  ) {
+    target.currency = source.currency;
+    changed = true;
+  }
+
+  if (!target.isPrime && source.isPrime) {
+    target.isPrime = true;
+    changed = true;
+  }
+
+  if (preferSource && target.isSponsored !== source.isSponsored) {
+    target.isSponsored = source.isSponsored;
+    changed = true;
+  }
+
+  return changed;
+}
+
 /**
  * ASIN-based deduplication & late-hydration enrichment engine (`AmazonDeduplicationEngine`).
  * Supports seeding session ASINs, toggling duplicate detection, and enriching previously
@@ -135,54 +214,7 @@ export class AmazonDeduplicationEngine {
     target: ScrapedAmazonProduct,
     source: ScrapedAmazonProduct,
   ): boolean {
-    let changed = false;
-
-    const nullableFields = [
-      'price',
-      'listPrice',
-      'discountPercentage',
-      'dealBadge',
-      'rating',
-      'reviewCount',
-      'bestSellersRank',
-      'pastMonthSales',
-      'coupon',
-      'badge',
-      'delivery',
-      'imageUrl',
-      'brand',
-      'availability',
-      'seller',
-      'description',
-    ] as const;
-
-    for (const key of nullableFields) {
-      if (
-        (target[key] === null || target[key] === undefined) &&
-        source[key] !== null &&
-        source[key] !== undefined
-      ) {
-        (target as unknown as Record<string, unknown>)[key] = source[key];
-        changed = true;
-      }
-    }
-
-    if (
-      source.price !== null &&
-      source.price !== undefined &&
-      source.currency &&
-      target.currency !== source.currency
-    ) {
-      target.currency = source.currency;
-      changed = true;
-    }
-
-    if (!target.isPrime && source.isPrime) {
-      target.isPrime = true;
-      changed = true;
-    }
-
-    return changed;
+    return mergeScrapedProductFields(target, source);
   }
 
   public get size(): number {
