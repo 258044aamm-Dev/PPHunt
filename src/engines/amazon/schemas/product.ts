@@ -6,6 +6,12 @@ export const AmazonAsinSchema = z
 
 export const ProductSourceSchema = z.enum(['search', 'category', 'detail']);
 
+export const AmazonListingCategorySchema = z.enum([
+  'organic',
+  'sponsored',
+  'recommendation',
+]);
+
 export const AmazonProductSchema = z.object({
   id: z.number().int().positive().optional(),
   asin: AmazonAsinSchema,
@@ -37,6 +43,9 @@ export const AmazonProductSchema = z.object({
   description: z.string().nullable().optional().default(null),
   features: z.array(z.string()).optional().default([]),
   source: ProductSourceSchema,
+  listingCategory: AmazonListingCategorySchema.optional(),
+  sectionLabel: z.string().nullable().optional(),
+  placements: z.array(z.string()).optional(),
   collectedAt: z.iso.datetime({ offset: true }),
   sessionKey: z.string().min(1),
 });

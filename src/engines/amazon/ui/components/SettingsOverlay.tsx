@@ -448,6 +448,14 @@ export function AmazonSettingsOverlay() {
                 onChange={(v) => updateSettings({ duplicateDetection: v })}
               />
               <ToggleSetting
+                label="Separate collapsible category sections"
+                description="Group preview table into collapsible Organic, Sponsored, and Recommendation section blocks (disabled by default)"
+                checked={Boolean(settings.separateCategorySections)}
+                onChange={(v) =>
+                  updateSettings({ separateCategorySections: v })
+                }
+              />
+              <ToggleSetting
                 label="Notifications"
                 description="Show toasts for events like target reached"
                 checked={settings.notifications}

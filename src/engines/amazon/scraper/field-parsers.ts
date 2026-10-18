@@ -1,5 +1,6 @@
 import type {
   AmazonExtractionTier,
+  AmazonListingCategory,
   ProductSource,
   ScrapedAmazonProduct,
 } from '../types';
@@ -1185,6 +1186,133 @@ export function extractCardIsSponsored(card: Element): boolean {
   return false;
 }
 
+function cleanWidgetSectionHeading(raw: string | null | undefined): string | null {
+  const text = normalizeWhitespace(raw);
+  if (!text) return null;
+  const cleaned = text
+    .replace(/\bPage\s+\d+\s+of\s+\d+\b.*$/i, '')
+    .replace(/\b(?:See more|Shop now|Learn more|Sponsored)\s*$/i, '')
+    .replace(/\s*[|·•-]\s*$/, '')
+    .trim();
+  if (!cleaned || cleaned.length < 3 || cleaned.length > 90) {
+    return null;
+  }
+  if (/^(?:results|price and other details|check each product page|sponsored)$/i.test(cleaned)) {
+    return null;
+  }
+  return cleaned;
+}
+
+function findEnclosingWidgetHeading(card: Element, widgetRoot: Element): string | null {
+  const headingCandidates = safeQuerySelectorAll(
+    widgetRoot,
+    'h1, h2, h3, [role="heading"], .a-carousel-heading, .puis-card-title, .a-size-large.a-text-bold, .a-size-medium-plus.a-text-bold',
+  );
+  for (const el of headingCandidates) {
+    // Skip any heading inside a product card item or carousel slide
+    if (card.contains(el)) continue;
+    try {
+      if (
+        el.closest(
+          '.a-carousel-card, [data-component-type="s-search-result"], .s-result-item[data-asin]:not([data-asin=""])',
+        )
+      ) {
+        continue;
+      }
+    } catch {
+      // Ignore selector error
+    }
+    const cleaned = cleanWidgetSectionHeading(el.textContent);
+    if (cleaned) {
+      return cleaned;
+    }
+  }
+  return null;
+}
+
+/**
+ * Classifies a product card into `'organic' | 'sponsored' | 'recommendation'` and extracts
+ * the enclosing widget's human-readable section heading (e.g. `"People Also View"`,
+ * `"People Also Like"`, `"Recently bought and rated"`, `"Highly rated by customers"`,
+ * `"Sponsored Brand"`, `"Sponsored Video"`).
+ *
+ * Returns `{}` for standard primary `[data-component-type="s-search-result"]` cards so
+ * baseline snapshot shapes remain untouched (their category resolves deterministically
+ * from `isSponsored`).
+ */
+export function extractCardListingCategoryAndSection(
+  card: Element,
+  isSponsored: boolean,
+): {
+  listingCategory?: AmazonListingCategory;
+  sectionLabel?: string;
+} {
+  try {
+    // 1. Sponsored Brand themed collection carousel
+    const sbThemed = card.closest(
+      '[cel_widget_id*="sb-themed-collection"], [data-card-metrics-id*="sb-themed-collection"], [id^="sponsored-brands-"]',
+    );
+    if (sbThemed) {
+      return {
+        listingCategory: 'sponsored',
+        sectionLabel: 'Sponsored Brand',
+      };
+    }
+
+    // 2. Sponsored Brand Video multi-product or single-product video creative
+    const sbVideo = card.closest(
+      '.sb-video-creative, [cel_widget_id*="sb-video-product-collection"], [data-card-metrics-id*="sb-video-product-collection"], [data-component-type="sbv-video-single-product"], [cel_widget_id^="MAIN-VIDEO_SINGLE_PRODUCT"]',
+    );
+    if (sbVideo || card.getAttribute('data-component-type') === 'sbv-video-single-product') {
+      return {
+        listingCategory: 'sponsored',
+        sectionLabel: 'Sponsored Video',
+      };
+    }
+
+    // 3. Recommendation / Shopping Adviser / Featured ASINs / Discovery carousels & widgets
+    const recommendationWidget = card.closest(
+      '[data-component-type="s-shopping-adviser"], [data-component-type="s-searchgrid-carousel"], [cel_widget_id^="MAIN-SHOPPING_ADVISER"], [cel_widget_id^="MAIN-FEATURED_ASINS_LIST"], .s-main-slot > .s-result-item[data-asin=""], .s-main-slot > .s-widget, .a-carousel-container',
+    );
+    const inCarouselCard = Boolean(card.closest('.a-carousel-card'));
+    const isBestsellerGrid =
+      card.classList.contains('zg-grid-general-faceout') ||
+      Boolean(card.closest('#gridItemRoot, .zg-grid-general-faceout'));
+    const hasP13nMeta =
+      !isBestsellerGrid &&
+      (card.hasAttribute('data-p13n-asin-metadata') ||
+        Boolean(safeQuerySelector(card, '[data-p13n-asin-metadata]')));
+
+    if (recommendationWidget || inCarouselCard || hasP13nMeta) {
+      const headingRoot =
+        card.closest(
+          '.s-main-slot > .s-result-item[data-asin=""], .s-main-slot > .s-widget, [data-component-type="s-shopping-adviser"], [data-component-type="s-searchgrid-carousel"], [cel_widget_id^="MAIN-SHOPPING_ADVISER"], [cel_widget_id^="MAIN-FEATURED_ASINS_LIST"]',
+        ) ??
+        card.closest('.a-carousel-container') ??
+        recommendationWidget;
+      const heading = headingRoot
+        ? findEnclosingWidgetHeading(card, headingRoot)
+        : null;
+
+      if (isSponsored) {
+        return {
+          listingCategory: 'sponsored',
+          sectionLabel: heading ?? 'Sponsored Carousel',
+        };
+      }
+
+      return {
+        listingCategory: 'recommendation',
+        sectionLabel: heading ?? 'Recommendation',
+      };
+    }
+  } catch {
+    // Ignore selector errors in older DOM implementations
+  }
+
+  return {};
+}
+
 /**
  * Validates and normalizes a raw scraped product candidate into a clean `ScrapedAmazonProduct`.
  * Logs a warning and returns `null` when invalid or if a property getter throws.
@@ -1294,6 +1422,21 @@ export function validateAndNormalizeScrapedProduct(
     }
     if (raw.delivery) {
       normalized.delivery = raw.delivery;
+    }
+    if (
+      raw.listingCategory === 'organic' ||
+      raw.listingCategory === 'sponsored' ||
+      raw.listingCategory === 'recommendation'
+    ) {
+      normalized.listingCategory = raw.listingCategory;
+    }
+    if (typeof raw.sectionLabel === 'string' && raw.sectionLabel.trim()) {
+      normalized.sectionLabel = raw.sectionLabel.trim();
+    }
+    if (Array.isArray(raw.placements) && raw.placements.length > 0) {
+      normalized.placements = raw.placements.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0,
+      );
     }
 
     return normalized;

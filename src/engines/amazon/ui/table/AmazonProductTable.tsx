@@ -16,7 +16,12 @@ import { TableToolbar } from '@/entrypoints/sidepanel/components/TableToolbar';
 import { sortProducts } from '@/lib/sorting/product-sorter';
 import { db } from '../../db/database';
 import { deleteProducts } from '../../db/products';
-import type { AmazonProduct } from '../../types/product';
+import type { AmazonListingCategory, AmazonProduct } from '../../types/product';
+import {
+  countProductsByListingCategory,
+  matchesListingCategoryFilter,
+  type ListingCategoryFilter,
+} from '../../utils/listing-category';
 import { AmazonExportModal } from '../components/ExportModal';
 import { useAmazonSettings } from '../hooks/useAmazonSettings';
 import { useAmazonUIStore } from '../store/uiStore';
@@ -54,6 +59,15 @@ export function AmazonProductTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
+  const [categoryFilter, setCategoryFilter] =
+    useState<ListingCategoryFilter>('all');
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<AmazonListingCategory, boolean>
+  >({
+    organic: false,
+    sponsored: false,
+    recommendation: false,
+  });
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
 
@@ -88,7 +102,25 @@ export function AmazonProductTable({
   );
 
   const parentRef = useRef<HTMLDivElement>(null);
-  const { settings } = useAmazonSettings();
+  const { settings, updateSettings } = useAmazonSettings();
+  const separateCategorySections = Boolean(settings?.separateCategorySections);
+
+  const handleToggleSeparateSections = useCallback(
+    (next: boolean) => {
+      void updateSettings({ separateCategorySections: next });
+    },
+    [updateSettings],
+  );
+
+  const toggleSectionCollapsed = useCallback(
+    (category: AmazonListingCategory) => {
+      setCollapsedSections((prev) => ({
+        ...prev,
+        [category]: !prev[category],
+      }));
+    },
+    [],
+  );
 
   const activeColumns = useMemo(
     () => getAmazonColumnsForSettings(settings?.enabledFields),
@@ -110,7 +142,7 @@ export function AmazonProductTable({
 
   const data = useMemo(() => products ?? [], [products]);
 
-  const filteredProducts = useMemo(() => {
+  const textFilteredProducts = useMemo(() => {
     if (!globalFilter) return data;
     const lower = globalFilter.toLowerCase();
     return data.filter(
@@ -127,9 +159,23 @@ export function AmazonProductTable({
         (p.pastMonthSales ?? '').toLowerCase().includes(lower) ||
         (p.coupon ?? '').toLowerCase().includes(lower) ||
         (p.badge ?? '').toLowerCase().includes(lower) ||
-        (p.delivery ?? '').toLowerCase().includes(lower),
+        (p.delivery ?? '').toLowerCase().includes(lower) ||
+        (p.sectionLabel ?? '').toLowerCase().includes(lower) ||
+        (p.placements ?? []).some((pl) => pl.toLowerCase().includes(lower)),
     );
   }, [data, globalFilter]);
+
+  const categoryCounts = useMemo(
+    () => countProductsByListingCategory(textFilteredProducts),
+    [textFilteredProducts],
+  );
+
+  const filteredProducts = useMemo(() => {
+    if (categoryFilter === 'all') return textFilteredProducts;
+    return textFilteredProducts.filter((p) =>
+      matchesListingCategoryFilter(p, categoryFilter),
+    );
+  }, [textFilteredProducts, categoryFilter]);
 
   const sortedAllProducts = useMemo(
     () => sortProducts(data, sorting),
@@ -274,7 +320,7 @@ export function AmazonProductTable({
   return (
     <div className="flex flex-col h-full flex-1 min-h-0 min-w-0 w-full">
       <TableToolbar
-        totalCount={data.length}
+        totalCount={filteredProducts.length}
         selectedCount={selectedIds.length}
         globalFilter={globalFilter}
         onGlobalFilterChange={handleGlobalFilterChange}
@@ -285,6 +331,11 @@ export function AmazonProductTable({
         sorting={sorting}
         onSortingChange={handleSortingChange}
         engine="amazon"
+        categoryFilter={categoryFilter}
+        onCategoryFilterChange={setCategoryFilter}
+        categoryCounts={categoryCounts}
+        separateCategorySections={separateCategorySections}
+        onToggleSeparateCategorySections={handleToggleSeparateSections}
       />
 
       <div
@@ -298,141 +349,346 @@ export function AmazonProductTable({
         className="preview-table-scroll flex-1 min-h-0 min-w-0 w-full overflow-x-auto overflow-y-auto bg-surface border border-hairline-soft rounded-md focus:outline-none focus-visible:ring-1 focus-visible:ring-clay"
         style={fullHeight ? undefined : { maxHeight: 'calc(100vh - 220px)' }}
       >
-        <table
-          className="border-collapse table-fixed"
-          style={{
-            width: `${totalTableWidth}px`,
-            minWidth: `${totalTableWidth}px`,
-          }}
-        >
-          <thead className="sticky top-0 z-10 bg-surface-card">
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr
-                key={headerGroup.id}
-                className="border-b border-hairline-soft"
-              >
-                {headerGroup.headers.map((header) => {
-                  const isSorted = header.column.getIsSorted();
-                  const sortIndex = header.column.getSortIndex();
-                  return (
-                    <th
-                      key={header.id}
-                      className={`px-2.5 py-2 text-left font-sans text-xs font-semibold uppercase tracking-wider select-none relative ${
-                        isSorted ? 'text-ink' : 'text-ink-muted'
-                      }`}
-                      style={{ width: header.getSize() }}
+        {separateCategorySections ? (
+          <div
+            className="flex flex-col gap-3 p-2.5"
+            data-testid="collapsible-category-sections"
+          >
+            {(
+              [
+                {
+                  category: 'organic',
+                  title: 'Organic Search Results',
+                  icon: '●',
+                  description: 'Primary organic search listings',
+                  headerClass: 'bg-moss/10 border-moss/30 text-moss',
+                },
+                {
+                  category: 'sponsored',
+                  title: 'Sponsored Products',
+                  icon: '▲',
+                  description:
+                    'Sponsored search results, Sponsored Brands & Video ads',
+                  headerClass: 'bg-golden/10 border-golden/30 text-golden',
+                },
+                {
+                  category: 'recommendation',
+                  title: 'Recommendations & Featured Sections',
+                  icon: '★',
+                  description:
+                    'People Also View, People Also Like, Customer Review & Discovery carousels',
+                  headerClass: 'bg-sky/10 border-sky/30 text-sky',
+                },
+              ] as const
+            )
+              .filter(
+                (section) =>
+                  categoryFilter === 'all' ||
+                  categoryFilter === section.category,
+              )
+              .map((section) => {
+                const sectionRows = rows.filter((row: any) =>
+                  matchesListingCategoryFilter(row.original, section.category),
+                );
+                const isCollapsed = collapsedSections[section.category];
+                const sectionSubtitles = Array.from(
+                  new Set(
+                    sectionRows
+                      .map((r: any) => r.original.sectionLabel?.trim())
+                      .filter((s: unknown): s is string => Boolean(s)),
+                  ),
+                );
+
+                return (
+                  <div
+                    key={section.category}
+                    data-testid={`category-section-${section.category}`}
+                    className="border border-hairline-soft rounded-sm overflow-hidden bg-surface"
+                  >
+                    <button
+                      type="button"
+                      data-testid={`category-section-toggle-${section.category}`}
+                      aria-expanded={!isCollapsed}
+                      onClick={() => toggleSectionCollapsed(section.category)}
+                      className={`w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-hairline-soft text-left transition-colors cursor-pointer ${section.headerClass}`}
                     >
-                      {header.isPlaceholder ? null : (
-                        <div
-                          className={
-                            header.column.getCanSort()
-                              ? 'cursor-pointer hover:text-ink transition-colors flex items-center gap-1'
-                              : ''
-                          }
-                          title={
-                            header.column.getCanSort()
-                              ? 'Click to sort · Shift+Click to add multi-column sort'
-                              : undefined
-                          }
-                          onClick={header.column.getToggleSortingHandler()}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs">
+                          {isCollapsed ? '▶' : '▼'}
+                        </span>
+                        <span aria-hidden="true">{section.icon}</span>
+                        <span className="font-serif text-xs font-semibold text-ink">
+                          {section.title}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-sm bg-surface-card border border-hairline-soft font-mono text-[10px] text-ink">
+                          {sectionRows.length}
+                        </span>
+                        {sectionSubtitles.length > 0 && (
+                          <span className="font-sans text-[10px] text-ink-muted">
+                            ({sectionSubtitles.join(' · ')})
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-serif text-[11px] text-ink-muted">
+                        {section.description}
+                      </span>
+                    </button>
+
+                    {!isCollapsed && (
+                      <div className="overflow-x-auto">
+                        <table
+                          className="border-collapse table-fixed"
+                          style={{
+                            width: `${totalTableWidth}px`,
+                            minWidth: `${totalTableWidth}px`,
+                          }}
                         >
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                          {{
-                            asc: ' ↑',
-                            desc: ' ↓',
-                          }[isSorted as string] ?? null}
-                          {sorting.length > 1 && sortIndex >= 0 && (
-                            <span className="font-mono text-[10px] text-clay">
-                              {sortIndex + 1}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {header.column.getCanResize() && (
-                        <div
-                          onMouseDown={header.getResizeHandler()}
-                          onTouchStart={header.getResizeHandler()}
-                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-clay/30 transition-colors"
-                        />
-                      )}
-                    </th>
-                  );
-                })}
-              </tr>
-            ))}
-          </thead>
-
-          <tbody>
-            {virtualItems.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={activeColumns.length}
-                  className="px-4 py-8 text-center font-serif text-xs text-ink-muted"
+                          <thead className="bg-surface-card">
+                            {table.getHeaderGroups().map((headerGroup) => (
+                              <tr
+                                key={`${section.category}-${headerGroup.id}`}
+                                className="border-b border-hairline-soft"
+                              >
+                                {headerGroup.headers.map((header) => {
+                                  const isSorted = header.column.getIsSorted();
+                                  const sortIndex =
+                                    header.column.getSortIndex();
+                                  return (
+                                    <th
+                                      key={header.id}
+                                      className={`px-2.5 py-2 text-left font-sans text-xs font-semibold uppercase tracking-wider select-none relative ${
+                                        isSorted ? 'text-ink' : 'text-ink-muted'
+                                      }`}
+                                      style={{ width: header.getSize() }}
+                                    >
+                                      {header.isPlaceholder ? null : (
+                                        <div
+                                          className={
+                                            header.column.getCanSort()
+                                              ? 'cursor-pointer hover:text-ink transition-colors flex items-center gap-1'
+                                              : ''
+                                          }
+                                          onClick={header.column.getToggleSortingHandler()}
+                                        >
+                                          {flexRender(
+                                            header.column.columnDef.header,
+                                            header.getContext(),
+                                          )}
+                                          {{
+                                            asc: ' ↑',
+                                            desc: ' ↓',
+                                          }[isSorted as string] ?? null}
+                                          {sorting.length > 1 &&
+                                            sortIndex >= 0 && (
+                                              <span className="font-mono text-[10px] text-clay">
+                                                {sortIndex + 1}
+                                              </span>
+                                            )}
+                                        </div>
+                                      )}
+                                    </th>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </thead>
+                          <tbody>
+                            {sectionRows.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={activeColumns.length}
+                                  className="px-4 py-4 text-center font-serif text-xs text-ink-muted"
+                                >
+                                  No {section.title.toLowerCase()} in current
+                                  view.
+                                </td>
+                              </tr>
+                            ) : (
+                              sectionRows.map((row: any, idx: number) => {
+                                const isSelected = row.getIsSelected();
+                                return (
+                                  <tr
+                                    key={`${section.category}-${row.id}`}
+                                    data-index={idx}
+                                    className={`border-b border-hairline-soft transition-colors ${
+                                      isSelected
+                                        ? 'bg-clay/10'
+                                        : 'hover:bg-surface-soft/70'
+                                    }`}
+                                    style={{ height: ROW_HEIGHT }}
+                                  >
+                                    {row.getVisibleCells().map((cell: any) => (
+                                      <td
+                                        key={cell.id}
+                                        className="px-2.5 py-1.5 text-sm"
+                                        style={{
+                                          width: cell.column.getSize(),
+                                        }}
+                                      >
+                                        {cell.column.id === 'rowNumber' ? (
+                                          <span
+                                            className="font-mono text-xs tabular-nums text-ink-muted"
+                                            data-testid="table-row-number"
+                                          >
+                                            {idx + 1}
+                                          </span>
+                                        ) : (
+                                          flexRender(
+                                            cell.column.columnDef.cell,
+                                            cell.getContext(),
+                                          )
+                                        )}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        ) : (
+          <table
+            className="border-collapse table-fixed"
+            style={{
+              width: `${totalTableWidth}px`,
+              minWidth: `${totalTableWidth}px`,
+            }}
+          >
+            <thead className="sticky top-0 z-10 bg-surface-card">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr
+                  key={headerGroup.id}
+                  className="border-b border-hairline-soft"
                 >
-                  No products match your filter.
-                </td>
-              </tr>
-            ) : (
-              <>
-                {firstVirtualItem && firstVirtualItem.index > 0 && (
-                  <tr>
-                    <td
-                      colSpan={activeColumns.length}
-                      style={{ height: firstVirtualItem.start }}
-                    />
-                  </tr>
-                )}
+                  {headerGroup.headers.map((header) => {
+                    const isSorted = header.column.getIsSorted();
+                    const sortIndex = header.column.getSortIndex();
+                    return (
+                      <th
+                        key={header.id}
+                        className={`px-2.5 py-2 text-left font-sans text-xs font-semibold uppercase tracking-wider select-none relative ${
+                          isSorted ? 'text-ink' : 'text-ink-muted'
+                        }`}
+                        style={{ width: header.getSize() }}
+                      >
+                        {header.isPlaceholder ? null : (
+                          <div
+                            className={
+                              header.column.getCanSort()
+                                ? 'cursor-pointer hover:text-ink transition-colors flex items-center gap-1'
+                                : ''
+                            }
+                            title={
+                              header.column.getCanSort()
+                                ? 'Click to sort · Shift+Click to add multi-column sort'
+                                : undefined
+                            }
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                            {{
+                              asc: ' ↑',
+                              desc: ' ↓',
+                            }[isSorted as string] ?? null}
+                            {sorting.length > 1 && sortIndex >= 0 && (
+                              <span className="font-mono text-[10px] text-clay">
+                                {sortIndex + 1}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {header.column.getCanResize() && (
+                          <div
+                            onMouseDown={header.getResizeHandler()}
+                            onTouchStart={header.getResizeHandler()}
+                            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-clay/30 transition-colors"
+                          />
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              ))}
+            </thead>
 
-                {virtualItems.map((virtualRow) => {
-                  const row = rows[virtualRow.index];
-                  if (!row) return null;
-                  const isSelected = row.getIsSelected();
+            <tbody>
+              {virtualItems.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={activeColumns.length}
+                    className="px-4 py-8 text-center font-serif text-xs text-ink-muted"
+                  >
+                    No products match your filter.
+                  </td>
+                </tr>
+              ) : (
+                <>
+                  {firstVirtualItem && firstVirtualItem.index > 0 && (
+                    <tr>
+                      <td
+                        colSpan={activeColumns.length}
+                        style={{ height: firstVirtualItem.start }}
+                      />
+                    </tr>
+                  )}
 
-                  return (
-                    <tr
-                      key={row.id}
-                      data-index={virtualRow.index}
-                      className={`
+                  {virtualItems.map((virtualRow) => {
+                    const row = rows[virtualRow.index];
+                    if (!row) return null;
+                    const isSelected = row.getIsSelected();
+
+                    return (
+                      <tr
+                        key={row.id}
+                        data-index={virtualRow.index}
+                        className={`
                         border-b border-hairline-soft transition-colors
                         ${isSelected ? 'bg-clay/10' : 'hover:bg-surface-soft/70'}
                       `}
-                      style={{ height: ROW_HEIGHT }}
-                    >
-                      {row.getVisibleCells().map((cell: any) => (
-                        <td
-                          key={cell.id}
-                          className="px-2.5 py-1.5 text-sm"
-                          style={{ width: cell.column.getSize() }}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
+                        style={{ height: ROW_HEIGHT }}
+                      >
+                        {row.getVisibleCells().map((cell: any) => (
+                          <td
+                            key={cell.id}
+                            className="px-2.5 py-1.5 text-sm"
+                            style={{ width: cell.column.getSize() }}
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
 
-                {virtualItems.length > 0 && (
-                  <tr>
-                    <td
-                      colSpan={activeColumns.length}
-                      style={{
-                        height:
-                          totalSize -
-                          (virtualItems[virtualItems.length - 1]?.end ?? 0),
-                      }}
-                    />
-                  </tr>
-                )}
-              </>
-            )}
-          </tbody>
-        </table>
+                  {virtualItems.length > 0 && (
+                    <tr>
+                      <td
+                        colSpan={activeColumns.length}
+                        style={{
+                          height:
+                            totalSize -
+                            (virtualItems[virtualItems.length - 1]?.end ?? 0),
+                        }}
+                      />
+                    </tr>
+                  )}
+                </>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <AmazonExportModal
@@ -441,7 +697,7 @@ export function AmazonProductTable({
         allProducts={sortedAllProducts}
         selectedProducts={selectedProducts}
         filteredProducts={sortedAndFilteredProducts}
-        hasFilter={!!globalFilter}
+        hasFilter={Boolean(globalFilter) || categoryFilter !== 'all'}
         hasSelection={selectedIds.length > 0}
       />
 

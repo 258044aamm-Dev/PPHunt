@@ -1,5 +1,10 @@
 import type { EnabledFieldsConfig } from '../types';
 import type { AmazonProduct } from '../types/product';
+import {
+  formatListingCategoryLabel,
+  resolveListingCategory,
+  resolveProductPlacements,
+} from '../utils/listing-category';
 
 export type ExportFormat = 'csv' | 'excel' | 'clipboard';
 
@@ -74,7 +79,24 @@ export const EXPORT_COLUMNS: Record<
   URL: 'url',
   Description: 'description',
   Features: (p) => (p.features ?? []).join('; '),
-  Source: 'source',
+  Category: (p) => formatListingCategoryLabel(resolveListingCategory(p)),
+  Section: (p) => resolveProductPlacements(p).join(' + '),
+  Source: (p) => {
+    const baseSource = p.source ?? 'search';
+    if (Array.isArray(p.placements) && p.placements.length > 1) {
+      return `${baseSource} (${p.placements.join(' + ')})`;
+    }
+    if (p.sectionLabel) {
+      const catLabel = formatListingCategoryLabel(resolveListingCategory(p));
+      return p.sectionLabel.toLowerCase() === catLabel.toLowerCase()
+        ? `${baseSource} (${catLabel})`
+        : `${baseSource} (${catLabel}: ${p.sectionLabel})`;
+    }
+    if (p.listingCategory === 'recommendation') {
+      return `${baseSource} (Recommendation)`;
+    }
+    return baseSource;
+  },
   'Collected At': 'collectedAt',
 };
 
@@ -103,6 +125,8 @@ const FIELD_KEY_TO_HEADER: Record<string, string> = {
   url: 'URL',
   description: 'Description',
   features: 'Features',
+  listingCategory: 'Category',
+  sectionLabel: 'Section',
   source: 'Source',
   collectedAt: 'Collected At',
 };

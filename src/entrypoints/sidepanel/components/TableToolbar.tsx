@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { SortingState } from '@tanstack/react-table';
+import type { ListingCategoryFilter } from '@/engines/amazon/utils/listing-category';
 import { formatNumber } from '@/lib/utils/formatters';
 import {
   getSortPresetsForEngine,
@@ -19,6 +20,11 @@ interface TableToolbarProps {
   sorting?: SortingState;
   onSortingChange?: (sorting: SortingState) => void;
   engine?: 'amazon' | 'temu';
+  categoryFilter?: ListingCategoryFilter;
+  onCategoryFilterChange?: (filter: ListingCategoryFilter) => void;
+  categoryCounts?: Record<ListingCategoryFilter, number>;
+  separateCategorySections?: boolean;
+  onToggleSeparateCategorySections?: (next: boolean) => void;
 }
 
 /**
@@ -37,6 +43,11 @@ export function TableToolbar({
   sorting = [],
   onSortingChange,
   engine = 'amazon',
+  categoryFilter = 'all',
+  onCategoryFilterChange,
+  categoryCounts,
+  separateCategorySections = false,
+  onToggleSeparateCategorySections,
 }: TableToolbarProps) {
   const presets = getSortPresetsForEngine(engine);
   const sortableFields = getSortableFieldsForEngine(engine);
@@ -193,6 +204,96 @@ export function TableToolbar({
           </div>
         )}
       </div>
+
+      {/* Category Filter Pills (Organic / Sponsored / Recommendations) + Separate Sections Toggle */}
+      {onCategoryFilterChange && categoryCounts && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2"
+          data-testid="category-filter-pills"
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                {
+                  id: 'all',
+                  label: 'All',
+                  icon: null,
+                  activeClass: 'bg-ink text-canvas border-ink font-medium',
+                  inactiveClass:
+                    'bg-surface-card text-ink-muted border-hairline-soft hover:text-ink',
+                },
+                {
+                  id: 'organic',
+                  label: 'Organic',
+                  icon: '●',
+                  activeClass:
+                    'bg-moss/20 text-moss border-moss font-medium',
+                  inactiveClass:
+                    'bg-surface-card text-ink-muted border-hairline-soft hover:text-moss',
+                },
+                {
+                  id: 'sponsored',
+                  label: 'Sponsored',
+                  icon: '▲',
+                  activeClass:
+                    'bg-golden/20 text-golden border-golden font-medium',
+                  inactiveClass:
+                    'bg-surface-card text-ink-muted border-hairline-soft hover:text-golden',
+                },
+                {
+                  id: 'recommendation',
+                  label: 'Recommendations',
+                  icon: '★',
+                  activeClass:
+                    'bg-sky/20 text-sky border-sky font-medium',
+                  inactiveClass:
+                    'bg-surface-card text-ink-muted border-hairline-soft hover:text-sky',
+                },
+              ] as const
+            ).map((pill) => {
+              const isActive = categoryFilter === pill.id;
+              const count = categoryCounts[pill.id] ?? 0;
+              return (
+                <button
+                  key={pill.id}
+                  type="button"
+                  data-testid={`category-pill-${pill.id}`}
+                  aria-pressed={isActive}
+                  onClick={() => onCategoryFilterChange(pill.id)}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-sm border font-sans text-[11px] transition-colors cursor-pointer ${
+                    isActive ? pill.activeClass : pill.inactiveClass
+                  }`}
+                >
+                  {pill.icon && <span aria-hidden="true">{pill.icon}</span>}
+                  <span>{pill.label}</span>
+                  <span className="font-mono text-[10px] opacity-80">
+                    ({formatNumber(count)})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {onToggleSeparateCategorySections && (
+            <button
+              type="button"
+              data-testid="toggle-separate-sections-btn"
+              aria-pressed={separateCategorySections}
+              onClick={() =>
+                onToggleSeparateCategorySections(!separateCategorySections)
+              }
+              title="Group products into collapsible Organic, Sponsored, and Recommendation section blocks (configurable in Settings)"
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-sm border font-sans text-[11px] transition-colors cursor-pointer ${
+                separateCategorySections
+                  ? 'bg-clay/15 text-clay border-clay font-medium'
+                  : 'bg-surface-card text-ink-muted border-hairline-soft hover:text-ink'
+              }`}
+            >
+              <span>Sections: {separateCategorySections ? 'On' : 'Off'}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Active multi-sort pills */}
       {onSortingChange && sorting.length > 0 && (

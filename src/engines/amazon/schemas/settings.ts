@@ -78,6 +78,7 @@ export const AmazonSettingsSchema = z.object({
   exportImages: z.enum(['auto', 'always', 'never']).default('auto'),
   includeBOM: z.boolean().default(true),
   notifications: z.boolean().default(true),
+  separateCategorySections: z.boolean().default(false),
   enabledFields: EnabledFieldsSchema.default(() => ({
     ...DEFAULT_ENABLED_FIELDS,
   })),
@@ -121,6 +122,7 @@ export const PartialAmazonSettingsSchema = z.object({
   exportImages: z.enum(['auto', 'always', 'never']).optional(),
   includeBOM: z.boolean().optional(),
   notifications: z.boolean().optional(),
+  separateCategorySections: z.boolean().optional(),
   enabledFields: EnabledFieldsSchema.partial().optional(),
 });
 

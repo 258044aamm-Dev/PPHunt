@@ -9,6 +9,11 @@ import {
 import type { ValidatedSettings } from '../../schemas/settings';
 import type { AmazonProduct } from '../../types/product';
 import { formatCurrency } from '../../utils/formatters';
+import {
+  formatListingCategoryLabel,
+  resolveListingCategory,
+  resolveProductPlacements,
+} from '../../utils/listing-category';
 
 const columnHelper = createColumnHelper<typeof stockFeatures, AmazonProduct>();
 
@@ -135,18 +140,72 @@ const imageUrlColumn = columnHelper.accessor('imageUrl', {
 const titleColumn = columnHelper.accessor('title', {
   header: 'Title',
   cell: (info) => {
+    const product = info.row.original;
     const title = info.getValue();
-    const url = info.row.original.url;
+    const url = product.url;
+    const category = resolveListingCategory(product);
+    const categoryLabel = formatListingCategoryLabel(category);
+    const sectionLabel = product.sectionLabel?.trim() || null;
+    const showSectionSubtitle =
+      Boolean(sectionLabel) &&
+      sectionLabel?.toLowerCase() !== categoryLabel.toLowerCase();
+    const placements = resolveProductPlacements(product);
+    const extraPlacements = placements.length > 1 ? placements.slice(1) : [];
+
+    const badgeStyle =
+      category === 'sponsored'
+        ? 'bg-golden/15 text-golden border-golden/30'
+        : category === 'recommendation'
+          ? 'bg-sky/15 text-sky border-sky/30'
+          : 'bg-moss/15 text-moss border-moss/30';
+
+    const badgeIcon =
+      category === 'sponsored'
+        ? '▲'
+        : category === 'recommendation'
+          ? '★'
+          : '●';
+
     return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-serif text-xs text-ink underline decoration-hairline hover:text-clay hover:decoration-clay line-clamp-2 leading-snug transition-colors"
-        title={title ?? undefined}
-      >
-        {title ?? '—'}
-      </a>
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="flex flex-wrap items-center gap-1">
+          <span
+            data-testid={`product-category-badge-${product.asin}`}
+            title={
+              showSectionSubtitle
+                ? `${categoryLabel} (${sectionLabel})`
+                : categoryLabel
+            }
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm border font-sans text-[10px] font-medium leading-none whitespace-nowrap ${badgeStyle}`}
+          >
+            <span aria-hidden="true">{badgeIcon}</span>
+            <span>{categoryLabel}</span>
+            {showSectionSubtitle && (
+              <span className="opacity-85 truncate max-w-[140px]">
+                · {sectionLabel}
+              </span>
+            )}
+          </span>
+          {extraPlacements.length > 0 && (
+            <span
+              data-testid={`product-multi-placement-${product.asin}`}
+              title={`Appeared in multiple sections: ${placements.join(' + ')}`}
+              className="inline-flex items-center px-1.5 py-0.5 rounded-sm border border-clay/30 bg-clay/15 text-clay font-sans text-[10px] font-medium leading-none whitespace-nowrap"
+            >
+              + {extraPlacements.join(', ')}
+            </span>
+          )}
+        </div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-serif text-xs text-ink underline decoration-hairline hover:text-clay hover:decoration-clay line-clamp-2 leading-snug transition-colors"
+          title={title ?? undefined}
+        >
+          {title ?? '—'}
+        </a>
+      </div>
     );
   },
   size: 280,

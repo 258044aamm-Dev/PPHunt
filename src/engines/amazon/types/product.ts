@@ -1,5 +1,7 @@
 export type ProductSource = 'search' | 'category' | 'detail';
 
+export type AmazonListingCategory = 'organic' | 'sponsored' | 'recommendation';
+
 /**
  * Clean-slate scraped Amazon product record produced by the 4-tier self-healing parser.
  * Optional deal/BSR keys are omitted when absent so snapshot shapes remain clean and deterministic.
@@ -29,6 +31,9 @@ export interface ScrapedAmazonProduct {
   description?: string | null;
   features?: string[];
   source: ProductSource;
+  listingCategory?: AmazonListingCategory;
+  sectionLabel?: string | null;
+  placements?: string[];
 }
 
 /**

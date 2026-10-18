@@ -21,6 +21,7 @@ export {
 } from './constants/defaults';
 export * from './utils/amazon-url';
 export * from './utils/currency';
+export * from './utils/listing-category';
 export {
   parsePrice,
   parsePriceFromElements,

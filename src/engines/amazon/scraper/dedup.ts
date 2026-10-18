@@ -1,5 +1,9 @@
 import type { ScrapedAmazonProduct } from '../types';
 import { normalizeASIN } from '../utils/amazon-url';
+import {
+  resolveListingCategory,
+  resolveProductPlacements,
+} from '../utils/listing-category';
 
 export interface MergeAndFilterResult {
   newProducts: ScrapedAmazonProduct[];
@@ -77,6 +81,47 @@ export function mergeScrapedProductFields(
 
   if (!target.isPrime && source.isPrime) {
     target.isPrime = true;
+    changed = true;
+  }
+
+  // Record multi-placement context before overwriting `isSponsored` / `listingCategory`
+  const targetPlacements = resolveProductPlacements(target);
+  const sourcePlacements = resolveProductPlacements(source);
+  const orderedPlacements = preferSource
+    ? [...sourcePlacements, ...targetPlacements]
+    : [...targetPlacements, ...sourcePlacements];
+  const distinctPlacements: string[] = [];
+  for (const p of orderedPlacements) {
+    if (p && !distinctPlacements.includes(p)) {
+      distinctPlacements.push(p);
+    }
+  }
+  if (distinctPlacements.length > 1) {
+    const prevKey = (target.placements ?? []).join('|');
+    const nextKey = distinctPlacements.join('|');
+    if (prevKey !== nextKey) {
+      target.placements = distinctPlacements;
+      changed = true;
+    }
+  }
+
+  if (preferSource) {
+    const nextCategory = source.listingCategory ?? resolveListingCategory(source);
+    if (target.listingCategory && target.listingCategory !== nextCategory) {
+      target.listingCategory = nextCategory;
+      changed = true;
+    }
+  } else if (!target.listingCategory && source.listingCategory) {
+    // Keep primary card category if target was already a primary search result,
+    // while recording the widget's sectionLabel for context
+    if (!target.sectionLabel && source.sectionLabel) {
+      target.sectionLabel = source.sectionLabel;
+      changed = true;
+    }
+  }
+
+  if (!target.sectionLabel && source.sectionLabel) {
+    target.sectionLabel = source.sectionLabel;
     changed = true;
   }
 

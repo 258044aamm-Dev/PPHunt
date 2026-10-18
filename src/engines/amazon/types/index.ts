@@ -1,4 +1,5 @@
 import type {
+  AmazonListingCategory,
   AmazonProduct,
   Product,
   ProductSource,
@@ -7,6 +8,7 @@ import type {
 } from './product';
 
 export type {
+  AmazonListingCategory,
   AmazonProduct,
   Product,
   ProductSource,
@@ -164,6 +166,7 @@ export interface AmazonSettings {
   exportImages: ExcelImageBudgetMode;
   includeBOM: boolean;
   notifications: boolean;
+  separateCategorySections?: boolean;
   enabledFields: EnabledFieldsConfig;
 }
 export type Settings = AmazonSettings;

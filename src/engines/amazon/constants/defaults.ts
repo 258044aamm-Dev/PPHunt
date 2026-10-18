@@ -88,6 +88,7 @@ export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   exportImages: 'auto',
   includeBOM: true,
   notifications: true,
+  separateCategorySections: false,
   enabledFields: { ...DEFAULT_ENABLED_FIELDS },
 };
 

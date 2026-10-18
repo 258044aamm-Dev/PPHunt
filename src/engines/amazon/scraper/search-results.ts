@@ -14,6 +14,7 @@ import {
   extractCardImageWithTier,
   extractCardIsPrime,
   extractCardIsSponsored,
+  extractCardListingCategoryAndSection,
   extractCardPastMonthSales,
   extractCardPricingAndDiscounts,
   extractCardRatingAndReviewsWithTier,
@@ -89,6 +90,8 @@ export function parseAmazonSearchCard(
     const isPrime = extractCardIsPrime(card, delivery);
     const isSponsored = extractCardIsSponsored(card);
     const bestSellersRank = extractInlineCardBsr(card);
+    const { listingCategory, sectionLabel } =
+      extractCardListingCategoryAndSection(card, isSponsored);
 
     const fieldTiers: Partial<
       Record<AmazonTrackedField, typeof asinResult.tier>
@@ -147,6 +150,12 @@ export function parseAmazonSearchCard(
     if (delivery !== undefined) {
       candidate.delivery = delivery;
     }
+    if (listingCategory !== undefined) {
+      candidate.listingCategory = listingCategory;
+    }
+    if (sectionLabel !== undefined) {
+      candidate.sectionLabel = sectionLabel;
+    }
 
     return validateAndNormalizeScrapedProduct(candidate, pageUrl);
   } catch (err) {
@@ -160,7 +169,10 @@ export const parseSearchCard = parseAmazonSearchCard;
 const MAIN_SLOT_WIDGET_CARD_SELECTORS: readonly string[] = [
   '.s-result-item[data-asin]:not([data-asin=""])',
   '[data-type="productContainer"][data-asin]:not([data-asin=""])',
+  '.a-carousel-card[data-asin]:not([data-asin=""])',
   '.a-carousel-card [data-asin]:not([data-asin=""])',
+  '.s-widget [data-asin]:not([data-asin=""])',
+  '[data-p13n-asin-metadata]',
   '[data-asinadattributesprops]',
   '[data-component-type="sbv-video-single-product"]',
 ];
