@@ -154,7 +154,25 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           }
         }
         if (status) {
-          setStatus(status);
+          const storeState = useCollectionStore.getState();
+          const isStaleCollectingAfterCompletion =
+            status === 'collecting' &&
+            storeState.status === 'completed' &&
+            storeState.collectionTabId === null &&
+            useUIStore.getState().completionDialogOpen;
+
+          if (
+            status === 'completed' ||
+            status === 'stopped' ||
+            status === 'idle'
+          ) {
+            storeState.setCollectionTab(null, null);
+          }
+
+          if (!isStaleCollectingAfterCompletion) {
+            setStatus(status);
+          }
+
           if (status === 'completed' && !error) {
             const resolvedSessionKey =
               sessionKey ?? useCollectionStore.getState().currentSessionKey;

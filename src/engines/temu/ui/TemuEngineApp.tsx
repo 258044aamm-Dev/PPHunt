@@ -70,14 +70,29 @@ export function TemuEngineApp() {
           const { totalCollected, sessionId } = msg.payload;
           setCurrentSessionId(sessionId);
           setCollectedCount(totalCollected);
-          setStatus('collecting');
+          const storeState = useTemuCollectionStore.getState();
+          const isStaleAfterCompletion =
+            storeState.status === 'completed' &&
+            storeState.collectionTabId === null &&
+            useTemuUIStore.getState().completionDialogOpen;
+          if (!isStaleAfterCompletion) {
+            setStatus('collecting');
+          }
           break;
         }
 
         case 'TEMU_COLLECTION_PROGRESS': {
           const { collectedCount, status } = msg.payload;
           setCollectedCount(collectedCount);
-          setStatus(status);
+          const storeState = useTemuCollectionStore.getState();
+          const isStaleCollectingAfterCompletion =
+            status === 'collecting' &&
+            storeState.status === 'completed' &&
+            storeState.collectionTabId === null &&
+            useTemuUIStore.getState().completionDialogOpen;
+          if (!isStaleCollectingAfterCompletion) {
+            setStatus(status);
+          }
           break;
         }
 
@@ -85,6 +100,13 @@ export function TemuEngineApp() {
           const { status, collectedCount, sessionId } = msg.payload;
           if (sessionId) setCurrentSessionId(sessionId);
           setCollectedCount(collectedCount);
+          if (
+            status === 'completed' ||
+            status === 'stopped' ||
+            status === 'idle'
+          ) {
+            useTemuCollectionStore.getState().setCollectionTab(null, null);
+          }
           setStatus(status);
           if (status === 'completed') {
             const resolvedSessionId =
