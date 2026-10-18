@@ -124,12 +124,6 @@ export function AmazonCollectionControls() {
     store.setCollectionTab(tabId, url);
     store.setCurrentSessionKey(resolvedSessionKey);
     store.setError(null);
-    store.setStatus('collecting');
-
-    await updateSessionStatus(resolvedSessionKey, 'collecting', {
-      collected: store.collectedCount,
-      target: effectiveTarget,
-    }).catch(() => {});
 
     browser.runtime.sendMessage({
       type: 'START_COLLECTION',
@@ -140,6 +134,12 @@ export function AmazonCollectionControls() {
         sessionKey: resolvedSessionKey,
       },
     });
+    store.setStatus('collecting');
+
+    await updateSessionStatus(resolvedSessionKey, 'collecting', {
+      collected: store.collectedCount,
+      target: effectiveTarget,
+    }).catch(() => {});
   };
 
   const handleOpenPreview = () => {

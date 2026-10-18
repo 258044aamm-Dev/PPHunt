@@ -142,12 +142,6 @@ export function TemuCollectTab() {
     store.setCollectionTab(tabId, url);
     store.setCurrentSessionId(resolvedSessionId);
     store.setError(null);
-    store.setStatus('collecting');
-
-    await updateTemuSessionStatus(resolvedSessionId, 'collecting', {
-      collected: store.collectedCount,
-      target: effectiveTarget,
-    }).catch(() => {});
 
     browser.runtime
       .sendMessage({
@@ -160,6 +154,12 @@ export function TemuCollectTab() {
         },
       })
       .catch(() => {});
+    store.setStatus('collecting');
+
+    await updateTemuSessionStatus(resolvedSessionId, 'collecting', {
+      collected: store.collectedCount,
+      target: effectiveTarget,
+    }).catch(() => {});
   };
 
   const handleOpenPreview = () => {
