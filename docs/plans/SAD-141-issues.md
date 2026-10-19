@@ -90,11 +90,13 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P2.3 `SAD-284` | In Review | `1fcc22d` | tsc clean · 584/62 · build 1.79 MB · 14 layer tests, dedupe + unlock |
 | P3.1 `SAD-285` | In Review | `c56d22b` | tsc clean · 595/62 · 11 resolution tests (reuse, new, ask, no-join) |
 | P3.2 `SAD-286` | In Review | `8a8cdda` + `315f1c0` | tsc clean · 605/62 · 6 UI tests + 5 helper tests |
+| P3.3 `SAD-287` | In Review | `a0866f3` | tsc clean · 637/67 · build 1.80 MB · 32 tests (move, answer, dialog) |
 
-Baseline has moved 385/48 → **605/62** (+220 tests, +16 files). The behaviour is selectable in the
-panel, the current collection is visible and editable in History, and both entry points write through
-one pipeline into a history-only collection that cannot adopt a full-page run. **P3.3 (`SAD-287`) is
-next**: the Ask dialog and the cross-collection move. No issue is marked Done: the acceptance criteria that need a browser are deferred to
+Baseline has moved 385/48 → **637/67** (+252 tests, +19 files). The behaviour is selectable in the
+panel, the current collection is visible and editable in History, the Ask dialog can move a saved row
+between collections without losing its snapshots, and both entry points write through one pipeline
+into a history-only collection that cannot adopt a full-page run. **P4.1 (`SAD-295`) is next**: the
+offscreen document that later phases fetch and export through. No issue is marked Done: the acceptance criteria that need a browser are deferred to
 `SAD-293`, and every completion comment says so explicitly.
 
 ## Ticket hygiene
