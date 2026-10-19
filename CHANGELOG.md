@@ -5,6 +5,52 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — One-click product saving (SAD-141)
+
+Save a single Amazon product into History without leaving the page.
+
+### Added
+- **Right-click → "Save Product Details"** on any Amazon listing or product page.
+  The item is registered from one shared marketplace list, is re-registered on
+  install/startup, and never removes the native menu items.
+- **A per-card save button** (idle → queued → extracting → enriching →
+  completed, or failed with retry), mounted through a single `IntersectionObserver`
+  so a virtualised or re-rendered listing cannot produce duplicate buttons, and
+  clicks never activate the card's link.
+- **One shared pipeline** for both entries: identity → job → listing extract →
+  background PDP enrichment (no tab is opened or switched to) → History →
+  collection behaviour → CSV/XLSX → notification.
+- **Right-Click Save Behavior** setting: *Add to Current* (default), *New
+  Collection per product*, *Ask Every Time*. Cancelling the dialog keeps the
+  product in the collection it was already saved to.
+- **A `snapshots` store** (database v2) recording each observed price/availability
+  with its source (`listing` / `detail`) and job id, so history is never rewritten.
+- **Background PDP enrichment** with a bounded concurrency of 2, a per-marketplace
+  circuit breaker and a typed outcome (`complete` / `partial` / `failed` / `skipped`).
+- **MV3 worker recovery**: jobs are mirrored into `storage.session` and resumed at
+  most once after a suspension; a job that dies twice is reported `interrupted`
+  rather than leaving a card spinning.
+- **CSV/XLSX export** of a one-click collection, built in the offscreen document
+  through the same writers the panel uses, plus a **Download** action on the
+  completion toast and an opt-in `quickSaveAutoDownload` setting (default off).
+
+### Fixed
+- `amazon.co.za` was missing from the content-script match patterns, so the
+  extension did not load there at all.
+- 12 supported marketplaces had no `host_permissions` entry (the manifest only
+  covered 10), which broke background fetches on those domains. Both lists are
+  now derived from `AMAZON_MARKETPLACE_DOMAINS`.
+
+### Notes
+- **Browser verification for SAD-141 is still pending** (tracked as SAD-293). The
+  behaviour above is covered by unit/integration tests, not by a real Chrome run.
+- Product fulfilment is not modelled (`delivery`, `seller` and `isPrime` are), so
+  no `fulfillment` export column is produced.
+- Clipboard export remains panel-only: an unfocused worker cannot write the
+  clipboard, so the quick-save path refuses that format explicitly.
+- The `downloads` permission adds Chrome's "Manage your downloads" install
+  warning; the no-permission alternative is not verified yet (D10).
+
 ## [Unreleased] — Remediation 2026-10 (Phases 0–10)
 
 Hardening & reliability pass over the whole extension (59 tracked issues, including phase parents).

@@ -167,13 +167,53 @@ src/
 | `sidePanel` | Chrome Side Panel API for the main UI |
 | `activeTab` | Access the current tab when the user clicks the icon |
 | `tabs` | Track tab events, detect Amazon pages, send messages |
-| `storage` | Persist user preferences (UI mode, overlay width) |
+| `storage` | Persist user preferences (UI mode, overlay width) and the one-click collection pointer |
 | `scripting` | Re-inject content script after tab reload for session recovery |
+| `contextMenus` | The right-click **Save Product Details** item |
+| `offscreen` | A hidden document that owns `DOMParser` and `URL.createObjectURL`, which an MV3 service worker does not have |
+| `downloads` | Delivering an exported CSV/XLSX without a user gesture, with `conflictAction: 'uniquify'` (shows Chrome's "Manage your downloads" install warning) |
+
+`downloads` is the deterministic path and is kept deliberately: the alternative
+(an `<a download>` click inside the offscreen document) is not verified in a real
+browser yet. `host_permissions` are derived from the same marketplace list the
+content script and the context menu use, so a marketplace cannot be half-added.
+
+## One-click saving
+
+A product can be saved from two places without leaving the page:
+
+- **Right-click → Save Product Details** anywhere on an Amazon listing or product page.
+- **The per-card button** in the corner of each product card (idle → queued →
+  extracting → enriching → completed, or failed with a retry).
+
+Both entries run one pipeline: the content script extracts the card, the
+background writes the product and a snapshot to IndexedDB, then fetches the
+product page in the background (no tab is opened or switched to) and upgrades the
+row with detail fields. **The price the user saw when saving is never replaced**
+by the product-page price; the detail value is kept in the snapshot instead.
+Fields the product page cannot provide stay empty — nothing is invented.
+
+Where the saved product lands is the **Right-Click Save Behavior** setting:
+
+| Behaviour | Result |
+|---|---|
+| **Add to Current** (default) | Every save joins the same one-click collection until you start a new one |
+| **New Collection per product** | Each save creates its own collection, named after the product |
+| **Ask Every Time** | A dialog offers the current collection, a new collection, or Cancel — cancelling keeps the product where it was already saved |
+
+One-click collections are history-only: they never adopt or join a full-page
+collection, and a full-page run never adopts them.
 
 ## Supported Sites
 
-- amazon.com, amazon.co.uk, amazon.de, amazon.fr, amazon.ca
-- amazon.co.jp, amazon.in, amazon.com.au, amazon.es, amazon.it
+23 Amazon marketplaces, all derived from one list
+(`src/engines/amazon/constants/match-patterns.ts`) that the content script,
+the context menu and `host_permissions` share:
+
+amazon.com, amazon.co.uk, amazon.de, amazon.fr, amazon.it, amazon.es,
+amazon.nl, amazon.se, amazon.pl, amazon.com.be, amazon.ca, amazon.com.mx,
+amazon.com.br, amazon.co.jp, amazon.in, amazon.com.au, amazon.sg, amazon.ae,
+amazon.sa, amazon.eg, amazon.com.tr, amazon.co.za, amazon.cn
 
 ## Design System
 

@@ -69,6 +69,43 @@ PPHunt is a Chrome Extension (Manifest V3) with five entrypoints:
    c. Counter and progress bar update
 ```
 
+### One-click Save Pipeline (SAD-141)
+
+One pipeline serves both entry points — the context menu and the per-card button:
+
+```
+1. Content script resolves the product for the gesture
+   (contextmenu/mousedown capture, or the card the button lives in)
+       │
+2. SAVE_PRODUCT { jobId, product, context } → Background
+       │
+3. Background:
+   a. job-store.begin() mirrors the job into storage.session
+   b. resolves the collection (current / new / ask) and writes the product
+      row + a listing snapshot in ONE Dexie transaction
+   c. reports "completed" the moment the row exists — enrichment is an upgrade
+       │
+4. Background enrichment (no tab is opened):
+   a. fetchPdpHtml() with credentials: 'omit', one retry, circuit breaker
+   b. offscreen document parses the HTML (DOMParser lives there)
+   c. merge into the existing row: descriptive fields fill, the price family
+      is fill-only, nulls never erase, listing context is untouched
+   d. a detail snapshot records the observation
+       │
+5. Background emits SAVE_JOB_UPDATE (state, enrichmentStatus, warning) to the
+   originating tab and the panel; the card leaves its spinner
+       │
+6. If the worker was suspended mid-job, the next start rehydrates
+   storage.session, drops jobs older than 15 minutes and resumes each job at
+   most once; a second death reports enrichmentStatus: 'interrupted'
+```
+
+Export is a separate, on-demand step: `EXPORT_SAVED_PRODUCT` (toast action or
+`quickSaveAutoDownload`) → `buildCollectionExport()` → offscreen builds
+CSV/XLSX bytes → `downloadBlob()` → `downloads.download({ conflictAction:
+'uniquify' })` → the blob URL is revoked on `complete`/`interrupted` (60 s
+backstop).
+
 ### Automatic Mode (Additional Steps)
 
 ```
@@ -133,7 +170,7 @@ every UI listener validates incoming messages. The union has 14 message types.
 
 ## Database Schema
 
-PPHunt uses [Dexie.js](https://dexie.org) (IndexedDB wrapper) with 4 tables.
+PPHunt uses [Dexie.js](https://dexie.org) (IndexedDB wrapper) with 5 tables.
 
 The following files are authoritative; avoid copying partial interfaces into
 this document as if they were complete schemas:
@@ -144,9 +181,13 @@ this document as if they were complete schemas:
 | sessions | `id, tabId, status, startedAt` | [`SessionState`](src/types/session.ts) |
 | settings | `id` | [`SettingsSchema`](src/lib/schemas/settings.ts) |
 | history | `++id, sessionKey, startedAt` | [`CollectionHistory`](src/types/session.ts) |
+| snapshots | `++id, asin, sessionKey, capturedAt, [asin+capturedAt]` | [`ProductSnapshot`](src/engines/amazon/types/index.ts) |
 
 [`database.ts`](src/lib/db/database.ts) keeps v1 for existing-install upgrades;
-v2 removes the unused compound product index. Product fields include optional
+v2 adds the `snapshots` store and removes the unused compound product index.
+A snapshot is one observation of a product — `source: 'listing' | 'detail'`,
+the price/availability at that moment, and the job that produced it — so a
+re-save or a delayed enrichment can never rewrite history. Product fields include optional
 metadata such as list price, discounts, delivery and page URL. Session status
 includes `interrupted`. Settings use 23 boolean field toggles, target bounds
 1–1000, in-panel toast notifications, and `exportImages: auto / always / never`.
@@ -301,6 +342,9 @@ No line counts on purpose: they are wrong the moment anyone edits a file
 | `src/lib/schemas/` | Zod schemas (product, settings, messages, validation entry point) |
 | `src/lib/scraper/` | Page detection, centralized selectors, per-page-type parsers, field parsers, dedup engine, parse cache, scroll controller, CAPTCHA detector, mutation debounce |
 | `src/lib/export/` | CSV, Excel (SheetJS 0.20.3 patched, CFB image injection with budgets), clipboard engines, column mapping |
+| `src/engines/amazon/background/` | Save pipeline (`save-job.ts`), job store + recovery (`job-store.ts`, `save-job-recovery.ts`), PDP enrichment (`enrichment-fetch.ts`, `enrich-saved-product.ts`), export service (`export-service.ts`, `export-collection.ts`), offscreen client, collection resolution |
+| `src/engines/amazon/offscreen/` | Offscreen protocol, request dispatcher, PDP parser, export builder (the only context with `DOMParser` and `URL.createObjectURL`) |
+| `src/engines/amazon/content/` | Card action layer/button, save-target capture, collection-choice dialog, save toast |
 | `src/lib/overlay/` | Overlay host (iframe in closed shadow root) + open/allow logic |
 | `src/lib/ui/` | Theme + opening-mode preferences |
 | `src/lib/diagnostics/` | Error diagnosis (categories, recovery actions, clipboard report) |

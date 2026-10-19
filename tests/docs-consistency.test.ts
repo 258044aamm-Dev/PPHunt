@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { TARGET_QUICK_SELECT, TARGET_MIN, TARGET_MAX } from '@/constants/defaults';
+import { AMAZON_MARKETPLACE_DOMAINS } from '@/engines/amazon/utils/amazon-url';
 
 const root = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -27,6 +28,28 @@ describe('docs consistency (SAD-152 / L-7)', () => {
     // The stale chip list must never come back.
     expect(README).not.toContain('10/50/100/250/500');
     expect(CHANGELOG).not.toContain('10/50/100/250/500');
+  });
+
+  it('README documents every permission the manifest requests (SAD-292)', () => {
+    const block = wxtConfig.slice(
+      wxtConfig.indexOf('permissions: ['),
+      wxtConfig.indexOf(']', wxtConfig.indexOf('permissions: [')),
+    );
+    // Only array entries: comments inside the block also contain quoted words
+    // (e.g. `conflictAction: 'uniquify'`).
+    const permissions = [...block.matchAll(/^\s*'([A-Za-z]+)',\s*$/gm)].map(
+      (m) => m[1]!,
+    );
+    expect(permissions.length).toBeGreaterThan(0);
+    for (const permission of permissions) {
+      expect(README).toContain(`\`${permission}\``);
+    }
+  });
+
+  it('README lists every supported marketplace (SAD-292)', () => {
+    for (const domain of AMAZON_MARKETPLACE_DOMAINS) {
+      expect(README).toContain(domain);
+    }
   });
 
   it("README's target range matches TARGET_MIN/TARGET_MAX", () => {
