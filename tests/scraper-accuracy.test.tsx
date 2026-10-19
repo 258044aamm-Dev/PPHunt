@@ -30,6 +30,7 @@ import {
   DEFAULT_VISIBLE_COLUMNS,
   getExportColumnsFromSettings,
 } from '@/lib/export/types';
+import { buildCSVContent } from '@/lib/export/csv';
 import { columns, getColumnsForSettings } from '@/entrypoints/sidepanel/table/columns';
 
 function createDoc(html: string): Document {
@@ -526,6 +527,58 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
     expect(getColumnsForSettings(bothOff)).toHaveLength(24);
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Description');
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Features');
+  });
+
+  it('honours the Best Sellers Rank and Monthly Sales toggles in exports (SAD-345)', () => {
+    const defaults = SettingsSchema.parse({});
+    const bothOff = {
+      ...defaults.enabledFields,
+      bestSellersRank: false,
+      pastMonthSales: false,
+    };
+
+    const columns = getExportColumnsFromSettings(bothOff);
+    expect(columns).not.toContain('Best Sellers Rank');
+    expect(columns).not.toContain('Monthly Sales');
+    // Only those two leave; the always-present columns and the neighbours stay.
+    expect(columns).toEqual(
+      DEFAULT_VISIBLE_COLUMNS.filter(
+        (column) => column !== 'Best Sellers Rank' && column !== 'Monthly Sales'
+      )
+    );
+    expect(columns).toContain('Reviews');
+    expect(columns).toContain('Coupon');
+    expect(columns[0]).toBe('ASIN');
+    expect(columns.slice(-1)).toEqual(['Collected At']);
+
+    // ...and the CSV writer really drops the header cells.
+    const csv = buildCSVContent(
+      [
+        {
+          asin: 'B08N5WRWNW',
+          url: 'https://www.amazon.com/dp/B08N5WRWNW',
+          title: 'Anker 65W Charger',
+          price: 19.99,
+          currency: 'USD',
+          bestSellersRank: '#5 in Electronics',
+          pastMonthSales: '10K+ bought in past month',
+          source: 'search',
+          collectedAt: '2026-10-19T00:00:00.000Z',
+        },
+      ] as never,
+      columns,
+      false
+    );
+    const header = csv.split('\n')[0]!;
+    expect(header).not.toContain('Best Sellers Rank');
+    expect(header).not.toContain('Monthly Sales');
+    expect(csv).not.toContain('#5 in Electronics');
+    expect(csv).not.toContain('10K+ bought in past month');
+
+    // Defaults are untouched: the same order as before the change.
+    expect(getExportColumnsFromSettings(defaults.enabledFields)).toEqual(
+      DEFAULT_VISIBLE_COLUMNS
+    );
   });
 
   it('detects search, product-detail, bestsellers, and category page types accurately', () => {

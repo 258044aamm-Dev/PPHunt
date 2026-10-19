@@ -192,7 +192,10 @@ export function getExportColumnsFromSettings(
   columns.push('Currency');
   if (enabledFields.rating !== false) columns.push('Rating');
   if (enabledFields.reviewCount !== false) columns.push('Reviews');
-  columns.push('Best Sellers Rank', 'Monthly Sales');
+  // SAD-345: these two used to be pushed unconditionally, so the settings
+  // toggles worked in the table but not in an export. Same guard as the rest.
+  if (enabledFields.bestSellersRank !== false) columns.push('Best Sellers Rank');
+  if (enabledFields.pastMonthSales !== false) columns.push('Monthly Sales');
   if (enabledFields.coupon !== false) columns.push('Coupon');
   if (enabledFields.badge !== false) columns.push('Badge');
   if (enabledFields.delivery !== false) columns.push('Delivery');
