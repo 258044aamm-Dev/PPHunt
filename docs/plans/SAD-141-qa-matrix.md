@@ -165,10 +165,11 @@ they are recorded here rather than left `TODO`:
 
 ### Observations that are not failures of these rows
 
-- **The card save control never receives the stored theme.** `data-theme` was
-  `null` on every mounted control, which is exactly what **SAD-331** describes:
-  the layer accepts a `theme` option that `amazon.content.ts` never passes. Not
-  re-filed — SAD-331 is already open.
+- **The card save control never received the stored theme** — until SAD-331.
+  In the first run `data-theme` was `null` on every mounted control, exactly as
+  described. After the fix the same run gives `auto` with nothing stored, `dark`
+  when PPHunt is set to dark while the OS stays light, `light` on the next
+  change, and back to `auto` when the key is removed — all without a reload.
 - **The degraded-save signal on a card lasts about 2.2 s** and then the control
   resets to idle, while the row stays in History permanently. A user who is not
   watching that card misses it. This is a UX observation, not a failure of a

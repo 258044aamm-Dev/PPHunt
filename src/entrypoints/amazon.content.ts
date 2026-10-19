@@ -12,6 +12,7 @@ import {
 import { createCollectionChoiceQueue } from '@/engines/amazon/content/collection-choice-dialog';
 import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/content/save-target';
 import { removeSaveToast, showSaveToast } from '@/engines/amazon/content/toast';
+import { syncCardActionTheme } from '@/engines/amazon/content/card-action-theme';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -140,6 +141,8 @@ export default defineContentScript({
     const parseCache = new AmazonParseCache();
     let scrollController: ScrollController | null = null;
     let mutationObserver: MutationObserver | null = null;
+    /** SAD-331: removes the theme listener; null on product-detail pages. */
+    let stopCardActionThemeSync: (() => void) | null = null;
     let lastKnownUrl = window.location.href;
     let lastSaveCapture: CapturedSaveTarget | null = null;
     let pendingSaveJobId: string | null = null;
@@ -625,6 +628,9 @@ export default defineContentScript({
           });
         },
       });
+      // SAD-331: the control has its own shadow palette, so it follows the
+      // stored theme rather than the page or the OS.
+      stopCardActionThemeSync = syncCardActionTheme(cardActionLayer);
       cardActionLayer.start();
     }
 
@@ -656,6 +662,8 @@ export default defineContentScript({
       });
       removeSaveToast();
       collectionChoiceQueue.close();
+      stopCardActionThemeSync?.();
+      stopCardActionThemeSync = null;
       cardActionLayer?.stop();
       cardActionLayer = null;
       window.removeEventListener('pphunt:command', domBridgeListener);

@@ -211,14 +211,48 @@ async function scrollThrough(page) {
 
   /* ------------------------------------------- theme attribute (SAD-331) */
 
-  const themeAttr = await page.evaluate(() => {
-    const host = document.querySelector('[data-pphunt-save-host]');
-    return host ? host.getAttribute('data-theme') : null;
+  // SAD-331: the control must follow PPHunt's stored theme while the OS stays
+  // light, and must change without reloading the page.
+  const themePage = await context.newPage();
+  await themePage.goto(`chrome-extension://${extensionId}/popup.html`, {
+    waitUntil: 'domcontentloaded',
   });
+  const writeTheme = (value) =>
+    themePage.evaluate(
+      (stored) =>
+        stored === null
+          ? chrome.storage.local.remove('pphuntTheme')
+          : chrome.storage.local.set({ pphuntTheme: stored }),
+      value,
+    );
+  const readControlTheme = () =>
+    page.evaluate(() => {
+      const host = document.querySelector('[data-pphunt-save-host]');
+      return host ? host.getAttribute('data-theme') : null;
+    });
+
+  await writeTheme(null);
+  await page.waitForTimeout(500);
+  const themeDefault = await readControlTheme();
+
+  await writeTheme('dark');
+  await page.waitForTimeout(600);
+  const themeDark = await readControlTheme();
+
+  await writeTheme('light');
+  await page.waitForTimeout(600);
+  const themeLight = await readControlTheme();
+
+  await writeTheme(null);
+  await page.waitForTimeout(600);
+  const themeReset = await readControlTheme();
+
   record(
-    'bonus-theme-attribute',
-    themeAttr === null ? 'observed' : 'observed',
-    `first control's data-theme = ${JSON.stringify(themeAttr)} (SAD-331 says the stored theme should be forwarded; null here is the bug it describes)`,
+    'theme-follows-setting',
+    themeDefault === 'auto' && themeDark === 'dark' && themeLight === 'light' && themeReset === 'auto'
+      ? 'pass'
+      : 'fail',
+    `OS light throughout — nothing stored → ${JSON.stringify(themeDefault)}, stored dark → ${JSON.stringify(themeDark)}, stored light → ${JSON.stringify(themeLight)}, key removed → ${JSON.stringify(themeReset)}`,
   );
 
   /* ------------------------------------------------- keyboard reachability */

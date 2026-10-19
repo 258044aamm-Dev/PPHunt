@@ -54,6 +54,11 @@ export interface CardActionLayerOptions {
 export interface CardActionLayer {
   start: () => void;
   stop: () => void;
+  /**
+   * SAD-331: the control lives in a shadow root and does not inherit the page's
+   * theme, so the caller pushes the user's choice down to every mounted handle.
+   */
+  setTheme: (theme: 'light' | 'dark' | 'auto') => void;
   mountCard: (card: Element) => CardActionButtonHandle | null;
   applyJobUpdate: (update: CardActionJobUpdate) => boolean;
   getButton: (asin: string) => CardActionButtonHandle | null;
@@ -117,6 +122,13 @@ export function createCardActionLayer(options: CardActionLayerOptions): CardActi
     },
   });
 
+  /**
+   * SAD-331: mounted controls get the theme at mount time, and `setTheme`
+   * updates the existing ones. New mounts must use the latest value, so it is
+   * held here rather than read once from `options`.
+   */
+  let currentTheme = options.theme;
+
   function titleFor(card: Element): string | null {
     const text = card.textContent?.replace(/\s+/g, ' ').trim();
     return text ? text.slice(0, 120) : null;
@@ -134,7 +146,7 @@ export function createCardActionLayer(options: CardActionLayerOptions): CardActi
     const handle = mountCardActionButton(card, {
       doc,
       title,
-      theme: options.theme,
+      theme: currentTheme,
       onActivate: ({ asin: activatedAsin, retry }) => {
         activate(card, activatedAsin, retry, title);
       },
@@ -198,6 +210,13 @@ export function createCardActionLayer(options: CardActionLayerOptions): CardActi
     return true;
   }
 
+  function setTheme(theme: 'light' | 'dark' | 'auto'): void {
+    currentTheme = theme;
+    for (const handle of handles.values()) {
+      handle.setTheme(theme);
+    }
+  }
+
   return {
     start: () => observer.start(),
     stop: () => {
@@ -209,6 +228,7 @@ export function createCardActionLayer(options: CardActionLayerOptions): CardActi
     },
     mountCard,
     applyJobUpdate,
+    setTheme,
     getButton: (asin) => handles.get(asin) ?? null,
     getState: (asin) => states.get(asin) ?? null,
   };
