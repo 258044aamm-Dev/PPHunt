@@ -31,3 +31,7 @@ npm-debug.log*
 
 # Testing
 coverage/pphunt-extension.zip
+
+# SAD-338: raw spike runs. The numbers live in the plan document; the JSON is
+# evidence and is attached to the ticket, not committed as build noise.
+docs/plans/measurements/

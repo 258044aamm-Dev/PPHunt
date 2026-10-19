@@ -15,7 +15,8 @@
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "wxt prepare",
-    "check:dead-exports": "node scripts/check-dead-exports.mjs"
+    "check:dead-exports": "node scripts/check-dead-exports.mjs",
+    "spike:enrichment": "vite-node scripts/enrichment-spike.ts"
   },
   "dependencies": {
     "@tanstack/react-table": "^9.3.1",
