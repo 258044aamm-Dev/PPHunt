@@ -91,7 +91,7 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P3.1 `SAD-285` | In Review | `c56d22b` | tsc clean · 595/62 · 11 resolution tests (reuse, new, ask, no-join) |
 | P3.2 `SAD-286` | In Review | `8a8cdda` + `315f1c0` | tsc clean · 605/62 · 6 UI tests + 5 helper tests |
 | P3.3 `SAD-287` | In Review | `a0866f3` | tsc clean · 637/67 · build 1.80 MB · 32 tests (move, answer, dialog) |
-| P4.1 `SAD-295` | In Review | see below | tsc clean · 675/69 · build 1.83 MB · 36 tests (parse, blob, create race) |
+| P4.1 `SAD-295` | In Review | `adbdac2` | tsc clean · 675/69 · build 1.83 MB · 36 tests (parse, blob, create race) |
 
 Baseline has moved 385/48 → **675/69** (+290 tests, +21 files). The behaviour is selectable in the
 panel, the current collection is visible and editable in History, the Ask dialog can move a saved row
