@@ -110,6 +110,38 @@ function savedMessage(label: string, count: number): string {
 }
 
 /**
+ * SAD-335: a save must never look cleaner than it was.
+ *
+ * Every enrichment outcome except `complete` means the row may be missing
+ * product-page fields, so each one carries a user-facing warning. Before this,
+ * only `partial` warned: a `failed` or `skipped` enrichment left the toast
+ * saying "Saved to …" and the card rendering a normal tick, which made blank
+ * Brand / Seller / BSR / Availability cells look like a data-loss bug.
+ *
+ * The product row is already committed before this runs — the warning explains
+ * what is missing, it never reclassifies the save as a failure.
+ */
+export function enrichmentWarningFor(
+  status: SaveEnrichmentStatus | undefined,
+  errorCode?: SaveErrorCode,
+): string | undefined {
+  switch (status) {
+    case 'partial':
+      return 'Saved, but the product page had no complete details';
+    case 'skipped':
+      return 'Saved, but the product page was not fetched — details may be incomplete';
+    case 'failed':
+      return errorCode === 'ENRICH_PARSE_FAILED'
+        ? 'Saved, but the product page could not be read — details may be incomplete'
+        : 'Saved, but the product details could not be fetched — details may be incomplete';
+    case 'interrupted':
+      return 'Saved, but the product details were interrupted — details may be incomplete';
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Writes one product plus its snapshot, refreshes the collection count from the
  * database and reports each transition. Any failure reports `failed` - never a
  * completed state for a transaction that did not commit.
@@ -230,13 +262,14 @@ export async function handleSaveProduct(
         });
         enrichmentStatus = enriched?.status;
         enrichmentErrorCode = enriched?.errorCode;
-
-        if (enriched?.status === 'partial') {
-          enrichmentWarning =
-            'Saved, but the product page had no complete details';
-        }
+        // SAD-335: partial, failed and skipped all warn; only `complete` is silent.
+        enrichmentWarning = enrichmentWarningFor(
+          enrichmentStatus,
+          enrichmentErrorCode,
+        );
       } catch {
         enrichmentStatus = 'failed';
+        enrichmentWarning = enrichmentWarningFor('failed');
       }
     }
 

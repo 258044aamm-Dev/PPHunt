@@ -105,6 +105,8 @@ describe('with an enrichment step', () => {
 
     expect(result.state).toBe('completed');
     expect(result.enrichmentStatus).toBe('failed');
+    // SAD-335: a thrown enrichment is still a completed save, but it must say so.
+    expect(result.warning).toBeTruthy();
     expect(await db.products.count()).toBe(1);
   });
 
@@ -129,15 +131,45 @@ describe('with an enrichment step', () => {
     expect(result.state).toBe('completed');
     expect(result.enrichmentStatus).toBe('failed');
     expect(result.errorCode).toBe('ENRICH_FETCH_FAILED');
-    expect(result.warning).toBeUndefined();
+    // SAD-335: a failed fetch is reported, not hidden behind a clean "Saved to …".
+    expect(result.warning).toBe(
+      'Saved, but the product details could not be fetched — details may be incomplete',
+    );
   });
 
-  it('passes a skipped status through without a warning', async () => {
+  it('names the parse failure when the page could not be read', async () => {
+    const result = await handleSaveProduct(payload(), {
+      enrich: async () => ({
+        status: 'failed' as const,
+        errorCode: 'ENRICH_PARSE_FAILED' as const,
+      }),
+    });
+
+    expect(result.state).toBe('completed');
+    expect(result.warning).toBe(
+      'Saved, but the product page could not be read — details may be incomplete',
+    );
+  });
+
+  it('warns when enrichment is skipped', async () => {
     const result = await handleSaveProduct(payload(), {
       enrich: async () => ({ status: 'skipped' as const }),
     });
 
     expect(result.enrichmentStatus).toBe('skipped');
+    // SAD-335: "the guard fired, nothing was attempted" still means the row is
+    // missing product-page fields, so the user must be told.
+    expect(result.warning).toBe(
+      'Saved, but the product page was not fetched — details may be incomplete',
+    );
+  });
+
+  it('stays silent when enrichment is complete', async () => {
+    const result = await handleSaveProduct(payload(), {
+      enrich: async () => ({ status: 'complete' as const }),
+    });
+
+    expect(result.enrichmentStatus).toBe('complete');
     expect(result.warning).toBeUndefined();
   });
 
