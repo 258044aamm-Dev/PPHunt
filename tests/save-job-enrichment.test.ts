@@ -108,12 +108,37 @@ describe('with an enrichment step', () => {
     expect(await db.products.count()).toBe(1);
   });
 
-  it('keeps a partial status as partial', async () => {
+  it('keeps a partial status as partial and warns', async () => {
     const result = await handleSaveProduct(payload(), {
       enrich: async () => ({ status: 'partial' as const }),
     });
 
     expect(result.enrichmentStatus).toBe('partial');
+    expect(result.warning).toBeTruthy();
+    expect(result.state).toBe('completed');
+  });
+
+  it('carries the enrichment error code on a completed save', async () => {
+    const result = await handleSaveProduct(payload(), {
+      enrich: async () => ({
+        status: 'failed' as const,
+        errorCode: 'ENRICH_FETCH_FAILED' as const,
+      }),
+    });
+
+    expect(result.state).toBe('completed');
+    expect(result.enrichmentStatus).toBe('failed');
+    expect(result.errorCode).toBe('ENRICH_FETCH_FAILED');
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('passes a skipped status through without a warning', async () => {
+    const result = await handleSaveProduct(payload(), {
+      enrich: async () => ({ status: 'skipped' as const }),
+    });
+
+    expect(result.enrichmentStatus).toBe('skipped');
+    expect(result.warning).toBeUndefined();
   });
 
   it('does not ask for a collection choice on the enriching update', async () => {

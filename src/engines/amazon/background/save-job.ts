@@ -28,6 +28,7 @@ export interface SaveJobUpdate {
   collectionLabel?: string;
   requiresCollectionChoice?: boolean;
   defaultCollectionKey?: string;
+  warning?: string;
   /** Product name for the Ask-every-time dialog; never fabricated, omitted when null. */
   productTitle?: string;
   message?: string;
@@ -49,7 +50,9 @@ export interface EnrichmentStepInput {
 }
 
 export interface EnrichmentStepResult {
-  status: Extract<SaveEnrichmentStatus, 'complete' | 'partial' | 'failed'>;
+  status: Extract<SaveEnrichmentStatus, 'complete' | 'partial' | 'failed' | 'skipped'>;
+  /** Set when the step says why (partial / failed). */
+  errorCode?: SaveErrorCode;
 }
 
 export interface SaveJobDeps {
@@ -190,6 +193,8 @@ export async function handleSaveProduct(
     }
 
     let enrichmentStatus: SaveJobUpdate['enrichmentStatus'];
+    let enrichmentErrorCode: SaveJobUpdate['errorCode'];
+    let enrichmentWarning: string | undefined;
     if (deps.enrich) {
       try {
         const enriched = await deps.enrich({
@@ -199,6 +204,12 @@ export async function handleSaveProduct(
           sessionKey: collection.sessionKey,
         });
         enrichmentStatus = enriched?.status;
+        enrichmentErrorCode = enriched?.errorCode;
+
+        if (enriched?.status === 'partial') {
+          enrichmentWarning =
+            'Saved, but the product page had no complete details';
+        }
       } catch {
         enrichmentStatus = 'failed';
       }
@@ -222,6 +233,8 @@ export async function handleSaveProduct(
       collectionLabel: collection.label,
       message: savedMessage(collection.label, count),
       ...(enrichmentStatus ? { enrichmentStatus } : {}),
+      ...(enrichmentWarning ? { warning: enrichmentWarning } : {}),
+      ...(enrichmentErrorCode ? { errorCode: enrichmentErrorCode } : {}),
       ...(payload.product?.title ? { productTitle: payload.product.title } : {}),
       ...(collection.requiresChoice
         ? {

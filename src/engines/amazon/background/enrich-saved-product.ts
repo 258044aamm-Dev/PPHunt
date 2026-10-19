@@ -46,12 +46,20 @@ const DETAIL_FIELDS = [
   'badge',
 ] as const;
 
-const PRICE_FAMILY = new Set<string>([
+/**
+ * SAD-296: the listing values the user actually saw when they saved win over
+ * the PDP. A re-save from a search card must not silently change the price the
+ * row was saved with; the detail observation is kept in the snapshot instead.
+ */
+const FILL_ONLY_FIELDS = new Set<string>([
   'price',
   'listPrice',
   'discountPercentage',
+  'availability',
   'currency',
 ]);
+
+export const PRICE_FAMILY = FILL_ONLY_FIELDS;
 
 export interface EnrichSavedProductInput {
   jobId: string;
@@ -61,7 +69,12 @@ export interface EnrichSavedProductInput {
   now?: Date;
 }
 
-export type EnrichmentStatus = 'complete' | 'partial' | 'failed';
+export type EnrichmentStatus = 'complete' | 'partial' | 'failed' | 'skipped';
+
+export type EnrichmentErrorCode =
+  | 'ENRICH_FETCH_FAILED'
+  | 'ENRICH_PARSE_FAILED'
+  | 'DB_WRITE_FAILED';
 
 export interface EnrichSavedProductResult {
   status: EnrichmentStatus;
@@ -70,6 +83,8 @@ export interface EnrichSavedProductResult {
   snapshotCreated: boolean;
   /** Why enrichment did not produce a complete product (fetch/parse status). */
   reason?: string;
+  /** Set only when `status` is `failed`. */
+  errorCode?: EnrichmentErrorCode;
   currencyMismatch: boolean;
 }
 
@@ -109,13 +124,13 @@ export function mergeDetailIntoStored(
     const current = stored[field];
     if (current === next) continue;
 
+    // Fill-only fields keep whatever the user's save already recorded.
+    if (FILL_ONLY_FIELDS.has(field) && current !== null && current !== undefined) {
+      continue;
+    }
+
     (patch as Record<string, unknown>)[field] = next;
     changed.push(field);
-  }
-
-  if (!skipPrice && detail.currency && stored.currency !== detail.currency) {
-    patch.currency = detail.currency;
-    changed.push('currency');
   }
 
   const detailFeatures = detail.features;
@@ -159,17 +174,18 @@ export function resetEnrichmentConcurrencyForTests(): void {
   waiting.length = 0;
 }
 
-function failed(
+function stop(
+  status: 'failed' | 'skipped',
   reason: string,
-  extra: Partial<EnrichSavedProductResult> = {},
+  errorCode?: EnrichmentErrorCode,
 ): EnrichSavedProductResult {
   return {
-    status: 'failed',
+    status,
     fieldsChanged: [],
     snapshotCreated: false,
     reason,
+    ...(errorCode ? { errorCode } : {}),
     currencyMismatch: false,
-    ...extra,
   };
 }
 
@@ -193,13 +209,19 @@ export async function enrichSavedProduct(
       ...deps.fetchOptions,
     });
 
+    if (fetched.status === 'skipped') {
+      // A guard fired (no permission, not Amazon, breaker open): nothing was
+      // attempted, so this is a skip rather than a failure.
+      return stop('skipped', `skipped:${fetched.reason}`);
+    }
+
     if (fetched.status !== 'ok') {
-      return failed(fetched.status === 'skipped' ? `skipped:${fetched.reason}` : fetched.status);
+      return stop('failed', fetched.status, 'ENRICH_FETCH_FAILED');
     }
 
     const parsed = await parse(fetched.html, input.productUrl, input.asin);
     if (!parsed.ok) {
-      return failed(parsed.code.toLowerCase());
+      return stop('failed', parsed.code.toLowerCase(), 'ENRICH_PARSE_FAILED');
     }
 
     const detail = parsed.product;
@@ -212,7 +234,7 @@ export async function enrichSavedProduct(
     if (!stored || stored.id === undefined) {
       // Deleted while the enrichment was in flight (History delete, Clear all).
       // Re-creating it would resurrect a row the user removed.
-      return failed('row-missing');
+      return stop('failed', 'row-missing', 'DB_WRITE_FAILED');
     }
 
     const { patch, changedFields } = mergeDetailIntoStored(stored, detail);
@@ -246,8 +268,10 @@ export async function enrichSavedProduct(
       currencyMismatch,
     };
   } catch (error) {
-    return failed(
+    return stop(
+      'failed',
       error instanceof Error ? error.message : 'enrichment-failed',
+      'ENRICH_FETCH_FAILED',
     );
   } finally {
     releaseSlot();

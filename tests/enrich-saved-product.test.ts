@@ -86,14 +86,14 @@ afterEach(() => {
 });
 
 describe('mergeDetailIntoStored', () => {
-  it('takes non-null detail values and reports what changed', () => {
+  it('takes non-null detail values for descriptive fields', () => {
     const stored = storedRow();
     const { patch, changedFields } = mergeDetailIntoStored(stored, detail());
 
-    expect(patch.price).toBe(89.99);
     expect(patch.title).toBe('Anker 65W Charger');
+    expect(patch.rating).toBe(4.6);
     expect(changedFields).toEqual(
-      expect.arrayContaining(['price', 'title', 'rating', 'reviewCount']),
+      expect.arrayContaining(['title', 'rating', 'reviewCount']),
     );
   });
 
@@ -108,6 +108,14 @@ describe('mergeDetailIntoStored', () => {
     expect(patch.rating).toBeUndefined();
     expect(patch.reviewCount).toBeUndefined();
     expect(patch.title).toBeUndefined();
+  });
+
+  it('keeps the listing price even when the detail price differs', () => {
+    const stored = storedRow({ price: 19.99 });
+    const { patch, changedFields } = mergeDetailIntoStored(stored, detail({ price: 89.99 }));
+
+    expect(patch.price).toBeUndefined();
+    expect(changedFields).not.toContain('price');
   });
 
   it('freezes the price family when the currencies disagree', () => {
@@ -150,7 +158,7 @@ describe('enrichSavedProduct', () => {
     await db.products.add(storedRow());
   }
 
-  it('updates the row and appends a detail snapshot', async () => {
+  it('fills the row and appends a detail snapshot', async () => {
     await seed();
 
     const result = await enrichSavedProduct(
@@ -165,11 +173,15 @@ describe('enrichSavedProduct', () => {
     );
 
     expect(result.status).toBe('complete');
-    expect(result.fieldsChanged).toContain('price');
+    expect(result.fieldsChanged).toContain('rating');
     expect(result.snapshotCreated).toBe(true);
 
     const row = await db.products.where('[sessionKey+asin]').equals([SESSION, ASIN]).first();
-    expect(row?.price).toBe(89.99);
+    // The listing price the user saved with wins; the PDP observation lives in
+    // the snapshot.
+    expect(row?.price).toBe(19.99);
+    expect(row?.rating).toBe(4.6);
+    expect(row?.reviewCount).toBe(1204);
     expect(row?.listingCategory).toBe('organic');
 
     const snapshots = await db.snapshots.toArray();
@@ -215,6 +227,7 @@ describe('enrichSavedProduct', () => {
 
     expect(result.status).toBe('failed');
     expect(result.reason).toBe('not-found');
+    expect(result.errorCode).toBe('ENRICH_FETCH_FAILED');
     expect(parse).not.toHaveBeenCalled();
 
     const row = await db.products.where('[sessionKey+asin]').equals([SESSION, ASIN]).first();
@@ -238,6 +251,7 @@ describe('enrichSavedProduct', () => {
 
     expect(result.status).toBe('failed');
     expect(result.reason).toBe('parse_failed');
+    expect(result.errorCode).toBe('ENRICH_PARSE_FAILED');
 
     const row = await db.products.where('[sessionKey+asin]').equals([SESSION, ASIN]).first();
     expect(row?.price).toBe(19.99);
@@ -263,6 +277,7 @@ describe('enrichSavedProduct', () => {
 
     expect(result.status).toBe('failed');
     expect(result.reason).toBe('row-missing');
+    expect(result.errorCode).toBe('DB_WRITE_FAILED');
     expect(await db.products.count()).toBe(0);
     expect(await db.snapshots.count()).toBe(0);
   });
@@ -330,8 +345,47 @@ describe('enrichSavedProduct', () => {
       },
     );
 
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('skipped');
     expect(result.reason).toBe('skipped:no-permission');
+  });
+
+  it('isolates one failing job from its siblings', async () => {
+    await seed();
+    const products = [
+      detail({ asin: ASIN }),
+      null,
+      detail({ asin: ASIN }),
+    ];
+
+    const results = await Promise.all(
+      products.map((product, index) =>
+        enrichSavedProduct(
+          {
+            jobId: `job-iso-${index}`,
+            asin: ASIN,
+            productUrl: PRODUCT_URL,
+            sessionKey: SESSION,
+            now: NOW,
+          },
+          {
+            fetchOptions: {
+              fetchImpl: vi.fn(async () => htmlResponse()) as unknown as typeof fetch,
+              hasHostPermission: async () => true,
+            },
+            parse: parseReturning(product),
+          },
+        ),
+      ),
+    );
+
+    expect(results.map((result) => result.status)).toEqual([
+      'complete',
+      'failed',
+      'complete',
+    ]);
+    // Two successes, one failure -> two snapshots (attempts and observations are
+    // not the same thing).
+    expect(await db.snapshots.count()).toBe(2);
   });
 
   it('never runs more than two enrichments at once', async () => {
