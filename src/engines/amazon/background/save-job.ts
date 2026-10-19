@@ -49,9 +49,17 @@ export interface SaveJobDeps {
 
 /** Jobs currently writing. A repeated `SAVE_PRODUCT` with the same id is ignored. */
 const inFlightJobs = new Set<string>();
+/**
+ * asin -> jobId for jobs still writing. A second save of the same product while
+ * the first is running returns the running job instead of starting a rival one
+ * (plan 8.4). Keyed by ASIN rather than by collection: the collection is not
+ * known until it resolves, and one product can only be heading to one place.
+ */
+const inFlightByAsin = new Map<string, string>();
 
 export function resetSaveJobsForTests(): void {
   inFlightJobs.clear();
+  inFlightByAsin.clear();
 }
 
 export interface ResolvedCollection {
@@ -145,6 +153,22 @@ export async function handleSaveProduct(
 
     report({ state: 'extracting' });
 
+    const runningJobId = inFlightByAsin.get(asin);
+    if (runningJobId) {
+      // Report against the running job, not the duplicate, so a client that
+      // tracks job ids cannot mistake this for a new job.
+      const duplicate: SaveJobUpdate = {
+        jobId: runningJobId,
+        asin,
+        state: 'extracting',
+        message: 'Already saving',
+        updatedAt: timestamp(),
+      };
+      deps.emit?.(duplicate);
+      return duplicate;
+    }
+    inFlightByAsin.set(asin, jobId);
+
     const collection = await resolveOneClickCollection(
       payload.context?.pageUrl ?? '',
       payload.product,
@@ -181,6 +205,9 @@ export async function handleSaveProduct(
     });
   } finally {
     inFlightJobs.delete(jobId);
+    if (inFlightByAsin.get(asin) === jobId) {
+      inFlightByAsin.delete(asin);
+    }
   }
 }
 

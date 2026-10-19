@@ -1,5 +1,13 @@
 import { AMAZON_MATCH_PATTERNS } from '@/engines/amazon/constants/match-patterns';
-import { resolveSaveCandidate } from '@/engines/amazon/content/save-product';
+import {
+  createCardActionLayer,
+  type CardActionJobUpdate,
+} from '@/engines/amazon/content/card-action-layer';
+import {
+  buildSaveContext,
+  extractProductFromCard,
+  resolveSaveCandidate,
+} from '@/engines/amazon/content/save-product';
 import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/content/save-target';
 import { removeSaveToast, showSaveToast } from '@/engines/amazon/content/toast';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
@@ -133,6 +141,7 @@ export default defineContentScript({
     let lastKnownUrl = window.location.href;
     let lastSaveCapture: CapturedSaveTarget | null = null;
     let pendingSaveJobId: string | null = null;
+    let cardActionLayer: ReturnType<typeof createCardActionLayer> | null = null;
 
     /**
      * SAD-281: the background cannot see the page (no element in
@@ -161,11 +170,10 @@ export default defineContentScript({
       showSaveToast({ state: 'queued', message: 'Saving product…' });
     };
 
-    const handleSaveJobUpdate = (payload: {
-      jobId: string;
-      state: string;
-      message?: string;
-    }) => {
+    const handleSaveJobUpdate = (payload: CardActionJobUpdate) => {
+      // Card buttons route by ASIN; the menu path below tracks its own job id.
+      cardActionLayer?.applyJobUpdate(payload);
+
       if (!pendingSaveJobId || payload.jobId !== pendingSaveJobId) return;
 
       if (payload.state === 'completed') {
@@ -536,6 +544,37 @@ export default defineContentScript({
       passive: true,
     });
 
+    // Per-card control: listing pages only - a product-detail page has no card,
+    // and the right-click entry covers that page.
+    if (detectAmazonPageType(window.location.href, document) !== 'product-detail') {
+      cardActionLayer = createCardActionLayer({
+        onSave: ({ card, asin, jobId }) => {
+          const pageUrl = window.location.href;
+          const product = extractProductFromCard(card, pageUrl);
+
+          if (!product) {
+            cardActionLayer?.applyJobUpdate({
+              jobId,
+              asin,
+              state: 'failed',
+              message: 'No product found here',
+            });
+            return;
+          }
+
+          sendRuntimeMessageSafe({
+            type: 'SAVE_PRODUCT',
+            payload: {
+              jobId,
+              product,
+              context: buildSaveContext(card, pageUrl, 'card-button'),
+            },
+          });
+        },
+      });
+      cardActionLayer.start();
+    }
+
     browser.runtime.onMessage.addListener(runtimeListener);
     window.addEventListener('pphunt:command', domBridgeListener);
     window.addEventListener('popstate', handleNavigationChange);
@@ -563,6 +602,8 @@ export default defineContentScript({
         capture: true,
       });
       removeSaveToast();
+      cardActionLayer?.stop();
+      cardActionLayer = null;
       window.removeEventListener('pphunt:command', domBridgeListener);
       window.removeEventListener('popstate', handleNavigationChange);
       window.removeEventListener('hashchange', handleNavigationChange);

@@ -185,6 +185,30 @@ describe('handleSaveProduct', () => {
     expect(await db.products.count()).toBe(0);
   });
 
+  it('returns the running job for a duplicate save of the same product', async () => {
+    const first = handleSaveProduct(payload('job-1'));
+    const duplicate = await handleSaveProduct(payload('job-2'));
+
+    expect(duplicate.jobId).toBe('job-1');
+    expect(duplicate.message).toBe('Already saving');
+
+    const firstResult = await first;
+    expect(firstResult.state).toBe('completed');
+    expect(await db.products.count()).toBe(1);
+    expect(await db.snapshots.count()).toBe(1);
+    expect(await getHistoryEntries()).toHaveLength(1);
+  });
+
+  it('allows a new extraction after the previous one finished', async () => {
+    await handleSaveProduct(payload('job-1'));
+    const second = await handleSaveProduct(payload('job-2', { price: 21.5 }));
+
+    expect(second.jobId).toBe('job-2');
+    expect(second.state).toBe('completed');
+    expect(await db.products.count()).toBe(1);
+    expect(await db.snapshots.count()).toBe(2);
+  });
+
   it('ignores a second job with the same id while the first is running', async () => {
     const first = handleSaveProduct(payload('job-1'));
     const second = await handleSaveProduct(payload('job-1'));
