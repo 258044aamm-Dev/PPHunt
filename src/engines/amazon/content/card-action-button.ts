@@ -152,45 +152,61 @@ const STYLE_TEXT = `
     padding: 0;
     margin: 0;
     cursor: pointer;
-    color: var(--pph-ink-muted);
-    background: var(--pph-surface);
-    border: 1px solid var(--pph-hairline-soft);
-    border-radius: 0 0 8px 8px;
+    /* SAD-329: filled clay controls read as PPHunt at rest instead of as a
+       grey chip. The fill is its own boundary, so no border is needed. */
+    color: var(--pph-clay-ink);
+    background: var(--pph-clay);
+    border: 0;
+    border-radius: 8px;
     box-shadow: none;
     font: inherit;
     line-height: 0;
-    transition: color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 120ms ease;
   }
 
-  button:hover {
-    color: var(--pph-clay);
-    border-color: var(--pph-clay);
-  }
+  /* Scoped to idle so hovering a completed or failed control never repaints
+     it back to clay. */
+  button[data-state="idle"]:hover { background: var(--pph-clay-active); }
 
+  /* SAD-329: the ring has to live *inside* the fill. An outer clay ring on a
+     clay control is 1:1; cream-on-clay is 5.0:1 and ink-on-clay-dark 5.9:1. */
   button:focus-visible {
-    outline: 2px solid var(--pph-clay);
-    outline-offset: 2px;
+    outline: 2px solid var(--pph-clay-ink);
+    outline-offset: -4px;
   }
 
   button[data-state="queued"],
   button[data-state="extracting"],
   button[data-state="enriching"] {
-    cursor: default;
-    color: var(--pph-clay);
-    border-color: var(--pph-clay);
+    cursor: progress;
   }
 
-  button[data-state="queued"] { opacity: 0.72; }
-  button[data-state="completed"] { color: var(--pph-moss); border-color: var(--pph-moss); }
-  button[data-state="failed"] { color: var(--pph-crimson); border-color: var(--pph-crimson); }
+  /* SAD-329: dimming a coloured fill drops the glyph to 2.98:1, so the
+     queued state keeps an opaque fill; the static ring and aria-busy carry
+     the state instead. */
+  button[data-state="queued"] { cursor: default; }
 
+  button[data-state="completed"] {
+    background: var(--pph-moss);
+    color: var(--pph-moss-ink);
+  }
+
+  button[data-state="failed"] {
+    background: var(--pph-crimson);
+    color: var(--pph-crimson-ink);
+  }
+
+  /* SAD-329: 18px at a 2px stroke on the 24 grid is 1.5 CSS px on screen.
+     The previous 15px at 1.8 was 1.125 px, which anti-aliased to ~3.85:1. */
   svg {
     display: none;
-    width: 15px;
-    height: 15px;
+    width: 18px;
+    height: 18px;
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.8;
+    stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
@@ -205,8 +221,10 @@ const STYLE_TEXT = `
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    border: 1.6px solid var(--pph-hairline-soft);
-    border-top-color: var(--pph-clay);
+    /* currentColor tracks the state ink, so the ring is always legible on
+       whatever fill the state uses. */
+    border: 1.6px solid currentColor;
+    border-right-color: transparent;
     animation: pph-spin 800ms linear infinite;
   }
 
@@ -223,8 +241,12 @@ const STYLE_TEXT = `
     right: 3px;
     width: 6px;
     height: 6px;
+    box-sizing: border-box;
     border-radius: 50%;
+    /* SAD-329: golden on a clay fill is 1.06:1, i.e. invisible. The halo
+       restores 5.3:1 around the badge and 5.0:1 against the fill. */
     background: var(--pph-golden);
+    border: 1.5px solid var(--pph-badge-halo);
   }
 
   :host([data-partial="true"]) .dot { display: block; }
@@ -232,7 +254,7 @@ const STYLE_TEXT = `
   .pulse {
     position: absolute;
     inset: 0;
-    border-radius: 0 0 8px 8px;
+    border-radius: 8px;
     box-shadow: 0 0 0 0 var(--pph-clay);
     opacity: 0;
     pointer-events: none;

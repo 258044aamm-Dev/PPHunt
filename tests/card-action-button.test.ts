@@ -341,7 +341,8 @@ describe('theme and accessibility contract', () => {
     expect(css).toContain('prefers-color-scheme: dark');
     expect(css).toContain('prefers-reduced-motion: reduce');
     expect(css).toContain(':focus-visible');
-    expect(css).toContain('border-radius: 0 0 8px 8px');
+    // SAD-329: a filled floating control is rounded on all four corners.
+    expect(css).toContain('border-radius: 8px');
   });
 
   it('keeps a 28px native button target reachable by keyboard', () => {
