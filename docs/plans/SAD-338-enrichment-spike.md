@@ -22,9 +22,18 @@ than a measurement: `scripts/enrichment-spike.ts`, run through
 `npm run spike:enrichment`. It reuses the **production** classifier, so its
 `challenge` label means exactly what it means in the extension.
 
-One confirmed datapoint, from this sandbox (datacenter, `n = 1`, variant A):
-`HTTP 500`, 2 340 bytes, no challenge phrase. It corroborates the audit's
-"datacenter cannot measure this" and is recorded here only as that.
+Two confirmed datapoints from this sandbox, both datacenter:
+
+- **Node, `n = 1`, variant A:** `HTTP 500`, 2 340 bytes.
+- **A real Chromium 131.0.0.0** (Playwright, no request rewriting) opening
+  `https://www.amazon.com/dp/B08N5WRWNW`: `HTTP 404` with a 2 327-byte body that
+  matches the challenge phrases. So the block is not an artefact of Node's TLS
+  fingerprint or its missing client hints — a real browser with real headers is
+  refused too. That rules out an in-sandbox browser as a way to take this
+  measurement, and it explains the audit's `404`/`503` sightings.
+
+Both are recorded here only as that: they are evidence about the *block*, not
+the measurement the ticket asks for.
 
 ---
 
