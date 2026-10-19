@@ -93,9 +93,9 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P3.3 `SAD-287` | In Review | `a0866f3` | tsc clean · 637/67 · build 1.80 MB · 32 tests (move, answer, dialog) |
 | P4.1 `SAD-295` | In Review | `adbdac2` | tsc clean · 675/69 · build 1.83 MB · 36 tests (parse, blob, create race) |
 | P4.2 `SAD-288` | In Review | `4e89cb0` | tsc clean · 699/70 · 24 fetch tests (outcomes, retry, breaker) |
-| P4.3 `SAD-296` | In Review | `fdfa553` | tsc clean · 719/72 · build 1.87 MB · 20 merge/seam tests |
+| P4.3 `SAD-296` | In Review | `fdfa553` + `05fba84` | tsc clean · 723/72 · build 1.87 MB · 24 merge/seam tests |
 
-Baseline has moved 385/48 → **719/72** (+334 tests, +24 files). The behaviour is selectable in the
+Baseline has moved 385/48 → **723/72** (+338 tests, +24 files). The behaviour is selectable in the
 panel, the current collection is visible and editable in History, the Ask dialog can move a saved row
 between collections without losing its snapshots, and both entry points write through one pipeline
 into a history-only collection that cannot adopt a full-page run. The offscreen document exists and is
