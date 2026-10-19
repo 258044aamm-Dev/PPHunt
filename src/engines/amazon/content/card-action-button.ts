@@ -164,6 +164,8 @@ const STYLE_TEXT = `
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     transition: background-color 120ms ease;
+    /* Anchors the state mark below without adding a DOM node. */
+    position: relative;
   }
 
   /* Scoped to idle so hovering a completed or failed control never repaints
@@ -233,6 +235,21 @@ const STYLE_TEXT = `
   button[data-state="enriching"] .ring { display: block; }
 
   button[data-state="queued"] .ring { animation: none; opacity: 0.55; }
+
+  /* SAD-329 (plan 8.2): enriching is "ring with a small +". Drawn as two
+     gradients in currentColor so no extra element enters the shadow root. */
+  button[data-state="enriching"]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 5px;
+    height: 5px;
+    pointer-events: none;
+    background:
+      linear-gradient(currentColor, currentColor) center / 100% 1.5px no-repeat,
+      linear-gradient(currentColor, currentColor) center / 1.5px 100% no-repeat;
+  }
 
   .dot {
     display: none;
