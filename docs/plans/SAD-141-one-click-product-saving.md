@@ -677,7 +677,7 @@ browser.runtime.onMessage.addListener((msg, _sender, respond) => {
 - Bounded queue length (e.g. 50). When full, saves still complete with listing data and `partial` enrichment.
 - Each job is wrapped in `try/catch`; one failure never terminates the queue.
 - Tab closes mid-job: the save is already owned by the background — fetch, merge, and persistence continue and the row appears in History. The terminal `SAVE_JOB_UPDATE` has no receiver and is dropped; an Option C dialog cannot be shown, so the product stays in the collection it was first persisted to (never lost).
-- Service-worker suspension: job state is mirrored to `chrome.storage.session` on every transition. After a wake, any non-terminal job older than 90 s is marked `failed` — or `completed` with `enrichmentStatus: 'partial'` if a listing snapshot exists — and the tab is notified when it is still open. Completed rows are already durable in IndexedDB.
+- Service-worker suspension: job state is mirrored to `chrome.storage.session` on every transition. **Shipped rule (SAD-289; supersedes this section's original 90-second sketch):** after a wake, jobs older than **15 minutes** are dropped; each remaining job is re-run **at most once**, skipped when a detail snapshot already exists, and reported `completed` with `enrichmentStatus: 'interrupted'` when a second attempt would be needed. Every branch notifies the tab, so no card is left on its spinner. A job with no listing snapshot never reached IndexedDB and is reported `failed` rather than replayed.
 
 ---
 
@@ -699,11 +699,17 @@ Filename:
 ### 11.2 Building and downloading
 
 ```ts
-// background
-const { objectUrl, filename, mime } = await offscreen.buildExport({ format, products, columns, includeBOM, embedImages });
-const downloadId = await chrome.downloads.download({ url: objectUrl, filename: `${filename}.${ext}`, saveAs: false });
-// on downloads.onChanged state === 'complete' | 'interrupted' → offscreen.revoke(objectUrl) and report
+// background — as shipped in SAD-290/291
+const built = await buildExportViaOffscreen({ format, products, columns, filename, includeBOM, embedImages });
+const { url } = await createBlobUrlViaOffscreen(built.mimeType, built.base64);
+const downloadId = await chrome.downloads.download({
+  url, filename: built.filename, saveAs: false, conflictAction: 'uniquify',
+});
+// on downloads.onChanged state === 'complete' | 'interrupted' → revoke(url);
+// a 60 s timeout backstop does the same when the event is missed.
 ```
+
+Two details differ from the sketch above, both deliberate: the build returns **bytes**, not a blob URL, so a build that nobody downloads never mints one; and the download uses `conflictAction: 'uniquify'` because `buildCollectionExportFilename()` is deterministic (the same collection exported twice must not overwrite the first file).
 
 - CSV: `buildAmazonCSVContent()` → `Blob(text/csv;charset=utf-8)`.
 - XLSX: `buildExcelWorkbookBuffer()` with existing image budgets; `Blob(application/vnd…sheet)`.
