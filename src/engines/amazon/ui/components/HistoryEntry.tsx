@@ -8,6 +8,9 @@ interface HistoryEntryProps {
   onPreview: (sessionKey: string) => void;
   onExport: (sessionKey: string) => void;
   onDelete: (id: number) => void;
+  /** SAD-286: true when new quick saves land in this collection. */
+  isCurrent?: boolean;
+  onMakeCurrent?: () => void;
 }
 
 const STATUS_COLORS: Record<CollectionStatus, string> = {
@@ -24,6 +27,8 @@ export function AmazonHistoryEntry({
   onPreview,
   onExport,
   onDelete,
+  isCurrent = false,
+  onMakeCurrent,
 }: HistoryEntryProps) {
   const statusColor = STATUS_COLORS[entry.status];
 
@@ -37,6 +42,10 @@ export function AmazonHistoryEntry({
 
   const effectiveCount = Math.max(entry.collectedCount, liveSessionCount ?? 0);
   const hasProducts = effectiveCount > 0;
+  // Only one-click collections can be made current; a full-page run is never a
+  // quick-save target, so its rows are left exactly as they were.
+  const isOneClick =
+    entry.origin === 'one-click' || entry.sessionKey.startsWith('oc_');
 
   const formatDate = (iso: string) => {
     try {
@@ -65,6 +74,14 @@ export function AmazonHistoryEntry({
           <span className="font-mono text-xs text-ink-muted tabular-nums">
             {effectiveCount} / {entry.targetCount}
           </span>
+          {isCurrent && (
+            <span
+              data-testid={`history-current-${entry.sessionKey}`}
+              className="px-1.5 py-0.5 bg-clay/15 text-clay font-sans text-[10px] font-semibold uppercase tracking-wide rounded-sm"
+            >
+              Current
+            </span>
+          )}
         </div>
         <span className="font-sans text-xs text-ink-muted shrink-0">
           {formatDate(entry.startedAt)}
@@ -86,6 +103,18 @@ export function AmazonHistoryEntry({
         </div>
 
         <div className="flex items-center gap-2">
+          {!isCurrent && isOneClick && onMakeCurrent && (
+            <button
+              type="button"
+              data-testid={`history-make-current-${entry.sessionKey}`}
+              onClick={onMakeCurrent}
+              aria-label={`Make ${entry.name ?? entry.sessionKey} the current collection`}
+              className="px-2 py-1 font-sans text-xs font-medium rounded-sm border border-hairline text-ink-muted hover:text-ink hover:bg-surface-soft transition-colors cursor-pointer"
+            >
+              Make current
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onPreview(entry.sessionKey)}

@@ -6,6 +6,7 @@ import { db } from '../../db/database';
 import { clearAllHistory, deleteHistory } from '../../db/history';
 import { pruneOldSessions } from '../../db/sessions';
 import { useAmazonUIStore } from '../store/uiStore';
+import { useCurrentCollection } from '../hooks/useCurrentCollection';
 import { AmazonHistoryEntry } from './HistoryEntry';
 
 /**
@@ -15,6 +16,7 @@ export function AmazonHistoryTab() {
   const openPreviewOverlay = useAmazonUIStore((s) => s.openPreviewOverlay);
   const openExportModal = useAmazonUIStore((s) => s.openExportModal);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+  const { current, makeCurrent } = useCurrentCollection();
 
   const history = useLiveQuery(
     () => db.history.orderBy('startedAt').reverse().toArray(),
@@ -123,6 +125,10 @@ export function AmazonHistoryTab() {
             onPreview={handlePreview}
             onExport={handleExport}
             onDelete={handleDelete}
+            isCurrent={current?.sessionKey === entry.sessionKey}
+            onMakeCurrent={() => {
+              void makeCurrent(entry.sessionKey, entry.name ?? 'Collection');
+            }}
           />
         ))}
       </div>

@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+
+import { db } from '../../db/database';
 
 import {
   makeCollectionCurrent,
@@ -28,9 +31,13 @@ export function useCurrentCollection() {
     setIsLoading(false);
   }, []);
 
+  // Re-read when a history row is added or deleted, so a deleted collection
+  // stops being "current" without waiting for the next save.
+  const historyVersion = useLiveQuery(() => db.history.count(), []);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, historyVersion]);
 
   useEffect(() => {
     const g = globalThis as unknown as { browser?: { storage?: StorageChangeArea } };

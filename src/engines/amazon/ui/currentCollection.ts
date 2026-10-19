@@ -1,3 +1,4 @@
+import { getHistoryBySessionKey } from '../db/history';
 import {
   readOneClickCollection,
   writeOneClickCollection,
@@ -17,7 +18,14 @@ export interface CurrentCollection {
 
 export async function readCurrentCollection(): Promise<CurrentCollection | null> {
   const pointer = await readOneClickCollection();
-  return pointer ? { sessionKey: pointer.sessionKey, name: pointer.name } : null;
+  if (!pointer) return null;
+
+  // A pointer whose collection was deleted is not "current": nothing would
+  // receive the next save, and the badge must disappear with the row.
+  const row = await getHistoryBySessionKey(pointer.sessionKey);
+  if (!row) return null;
+
+  return { sessionKey: pointer.sessionKey, name: pointer.name };
 }
 
 /** Points new saves at an existing collection ("Make current"). */
