@@ -6,6 +6,10 @@ SAD-141 comments claims otherwise. This file exists so that SAD-293 can be fille
 in line by line — the rule is that every row ends with an explicit result, never
 a silent omission.
 
+The **SAD-330 detail visibility** section near the bottom was added by SAD-339
+and is also entirely unrun — it is scaffolding with the steps and expected
+results written down, so the run records facts rather than impressions.
+
 Legend
 
 - **Auto** — the behaviour is covered by an automated test (file named); that is
@@ -111,6 +115,41 @@ regression signal, not evidence about long tasks:
 SAD-293 still needs the real trace: **no long task over 50 ms** while scrolling,
 and memory returning to baseline after five navigations. Neither can be produced
 outside a browser.
+
+## SAD-330 detail visibility
+
+Added for SAD-339. These rows check the *outcome* of the SAD-330 sub-issues
+(default-on Description/Features, the settings migration, the enrichment
+warning, and the panel toast). Record a result as
+`pass (Chrome <version>)` / `fail (Chrome <version>)` / `not run` — and if a row
+fails, file it as its own issue instead of leaving it in the table.
+
+Build with `npm run build`, load `dist/chrome-mv3` unpacked, and have the side
+panel open on Preview unless a row says otherwise.
+
+| Check | Steps and expected result | Status | Closest automated evidence |
+|---|---|---|---|
+| Right-click a card on a search page → Preview shows Description and Features | Open a search-results page, right-click a card image → *Save Product Details*. Expected: the row appears in Preview with **Description** and **Features** columns present; populated when the listing card carries them, empty cells otherwise — but never a missing column. | TODO | `tests/table-v9-contract.test.tsx` (default column set), `tests/save-product.test.ts` |
+| Right-click on a product-detail page → same | Open `/dp/<ASIN>`, right-click anywhere → *Save Product Details*. Expected: same columns; the PDP path fills both with the page's bullet points and prose. | TODO | `tests/save-job-enrichment.test.ts`, `tests/save-product.test.ts` (PDP branch) |
+| Enrichment blocked → the warning toast shows and the row survives | Open the service worker's DevTools (`chrome://extensions` → *service worker*), set Network to **Offline**, then save a card. Expected: toast reads *"Saved, but the product details could not be fetched — details may be incomplete"*, the row is in History, and Preview shows it. Nothing is rolled back. | TODO | `tests/save-job-enrichment.test.ts` (network-error path), `tests/save-job-panel-feedback.test.tsx` (the panel toast) |
+| Breaker open → the save is skipped with a warning, not a failure | Pick a marketplace that challenges the connection (e.g. `amazon.cn` from outside the region), save three products, then a fourth. Expected: the fourth reports `skipped / circuit-open` with the toast *"Saved, but the product page was not fetched — details may be incomplete"*, and the row still exists. | TODO | `tests/enrichment-fetch.test.ts` (threshold → `circuit-open`) |
+| A second launch does not re-migrate settings | After one save (`settingsVersion` = 1), turn **Description** off in Settings → Data fields. Close the browser, reopen, reopen the panel. Expected: Description stays off, `settingsVersion` is still 1, and nothing is flipped back on. | TODO | `tests/settings-migration.test.ts` (idempotence, `>= 1` untouched) |
+| Preview shows the columns in the Sidebar and the Overview | Compare the narrow sidebar view and the wide overview (Settings → Opening mode), then `/preview.html`. Expected: all three show the same default column set, including Description and Features. | TODO | `tests/table-v9-contract.test.tsx` (`getColumnsForSettings` identity) |
+| A disabled field is absent from a real CSV and XLSX export | Settings → Data fields: turn **Best Sellers Rank** and **Monthly Sales** off, save a product, export CSV and XLSX. Expected: neither header and neither value appears in either file; `ASIN`, `Currency`, `URL`, `Source`, `Collected At` are still there. | TODO | `tests/scraper-accuracy.test.tsx` (SAD-345), `tests/export-builder.test.ts` |
+| Right-click inside an embedded frame reports the frame, not a miss | On a page with a sponsored/deal iframe, right-click a product inside it → *Save Product Details*. Expected: *"This product is inside an embedded frame. Open the product page to save it."* — **not** *"No product found here"*. | TODO | `tests/context-menu-registration.test.ts` (SAD-344), `tests/save-product.test.ts` |
+| Right-click, wait 30 s, then click Save | Open the menu, leave it for 30 s, then click *Save Product Details*. Expected: the product saves. Then navigate to a different page and repeat → nothing is saved and the same-page guard holds. | TODO | `tests/save-target-resolver.test.ts` (SAD-341) |
+
+### What could not be run, and why
+
+**Every row above**, for one stated reason: the environment that wrote this
+section has no browser — no Chrome, no Edge, no Playwright/Puppeteer runtime — so
+"load the unpacked build and click it" was not available. Nothing here is
+blocked by the code; all of it is blocked by the absence of a machine with a
+browser on it.
+
+That is recorded rather than omitted, per the rule at the top of this file. The
+closest automated evidence is named per row and is exactly that — the nearest
+thing to browser evidence, not a substitute for it.
 
 ## Not covered anywhere yet
 
