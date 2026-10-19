@@ -1,9 +1,8 @@
 # SAD-141 — One-Click Product Saving (Right-Click Menu + Card Button)
 
 **Status:** revision 2 approved; **implementation under way** — P0.1–P0.4 and P1.1–P1.4 are merged on `main`
-(`0226e7f`…`94e7642`, ten issues In Review, suite 385/48 → 568/60). A right-click on a supported Amazon
-marketplace now parses one product and writes it to a one-click collection in History, with a toast and no
-enrichment yet. Live tracker: `docs/plans/SAD-141-issues.md`.
+(`0226e7f`…`1fcc22d`, eleven issues In Review, suite 385/48 → 584/62). A right-click, or the per-card
+button, now parses one product and writes it to a one-click collection in History — no enrichment yet. Live tracker: `docs/plans/SAD-141-issues.md`.
 **Revision 2 (2026-10-19):** compared line by line against the independently revised plan in the same Linear thread (`8fdc9555…` / `62daab08…`). Eight items adopted, three rejected, nine retained; full rationale and evidence in the companion document `docs/plans/SAD-141-comparison.md`. The changes are listed in §17.
 **Issue:** [SAD-141](https://linear.app/sad-mod/issue/SAD-141/feature-request-one-click-product-saving-via-right-click-context-menu) (project PPHunt, team Sad_mod)
 **Repository:** `MakeTheNewHistory/PPHunt`, branch `main`, commit `0441fdc`
