@@ -236,11 +236,30 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
   useEffect(() => {
     const MAX_ANNOUNCED_JOBS = 50;
 
-    const handleSaveJobUpdate = (payload: {
+    /**
+     * SAD-343: true when `tabId` is the tab the user is actually looking at —
+     * i.e. the Amazon page is on screen and its content script is already
+     * showing the save toast. Unknown counts as "not visible", because a
+     * duplicate is better than silently dropping the only feedback.
+     */
+    const isWatchedTab = async (tabId: number): Promise<boolean> => {
+      try {
+        const tabs = await browser?.tabs?.query?.({
+          active: true,
+          currentWindow: true,
+        });
+        return Array.isArray(tabs) && tabs[0]?.id === tabId;
+      } catch {
+        return false;
+      }
+    };
+
+    const handleSaveJobUpdate = async (payload: {
       jobId?: unknown;
       state?: unknown;
       warning?: unknown;
       productTitle?: unknown;
+      tabId?: unknown;
     }) => {
       // Card states (extracting / enriching / failed) are the card's job; the
       // panel only reports the terminal, user-meaningful one.
@@ -258,6 +277,16 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
           const oldest = announced.values().next().value;
           if (oldest !== undefined) announced.delete(oldest);
         }
+      }
+
+      // SAD-343: never duplicate the page toast. When the saving tab is the
+      // active tab of this window, that page is on screen and already showed
+      // the save — stay quiet. In every other case (panel on another tab or in
+      // another window) the panel is the only place the result is visible.
+      const savingTabId =
+        typeof payload.tabId === 'number' ? payload.tabId : undefined;
+      if (savingTabId !== undefined && (await isWatchedTab(savingTabId))) {
+        return;
       }
 
       // Exactly one toast per save: the warning, when present, *is* the toast
@@ -279,12 +308,13 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
       const msg = message as { type?: string; payload?: unknown };
       if (msg?.type !== 'SAVE_JOB_UPDATE' || !msg.payload) return;
       if (typeof msg.payload !== 'object') return;
-      handleSaveJobUpdate(
+      void handleSaveJobUpdate(
         msg.payload as {
           jobId?: unknown;
           state?: unknown;
           warning?: unknown;
           productTitle?: unknown;
+          tabId?: unknown;
         },
       );
     };

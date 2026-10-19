@@ -229,6 +229,8 @@ export const SaveJobUpdateMessageSchema = z.object({
     defaultCollectionKey: z.string().min(1).optional(),
     productTitle: z.string().optional(),
     downloadReady: z.boolean().optional(),
+    // SAD-343: optional so every message written before it still validates.
+    tabId: z.number().int().nonnegative().optional(),
     updatedAt: z.string().min(1),
   }),
 });

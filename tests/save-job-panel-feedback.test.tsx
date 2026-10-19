@@ -233,6 +233,77 @@ describe('SAD-343: panel feedback for a quick save', () => {
     expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 
+  it('stays quiet when the saving tab is the active tab (the page toast is on screen)', async () => {
+    // The stub reports tab 7 as the active tab: this save came from it.
+    await renderPanel();
+
+    dispatch(
+      saveUpdate({
+        jobId: 'job-same-tab',
+        asin: 'B08N5WRWNW',
+        state: 'completed',
+        productTitle: 'Anker 65W Charger',
+        tabId: 7,
+        updatedAt: '2026-10-19T00:00:01.000Z',
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+  });
+
+  it('speaks up when the save came from another tab', async () => {
+    await renderPanel();
+
+    dispatch(
+      saveUpdate({
+        jobId: 'job-other-tab',
+        asin: 'B08N5WRWNW',
+        state: 'completed',
+        productTitle: 'Anker 65W Charger',
+        tabId: 99,
+        updatedAt: '2026-10-19T00:00:01.000Z',
+      }),
+    );
+
+    await waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+    expect(useToastStore.getState().toasts[0]?.message).toBe('Saved to History');
+  });
+
+  it('still reports a warning when it came from another tab', async () => {
+    await renderPanel();
+
+    dispatch(
+      saveUpdate({
+        jobId: 'job-other-tab-warn',
+        asin: 'B08N5WRWNW',
+        state: 'completed',
+        warning: 'Saved, but the product page was not fetched — details may be incomplete',
+        tabId: 99,
+        updatedAt: '2026-10-19T00:00:01.000Z',
+      }),
+    );
+
+    await waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+    expect(useToastStore.getState().toasts[0]?.type).toBe('attention');
+  });
+
+  it('treats a message with no tabId as "not visible" and shows the toast', async () => {
+    await renderPanel();
+
+    dispatch(
+      saveUpdate({
+        jobId: 'job-no-tab',
+        asin: 'B08N5WRWNW',
+        state: 'completed',
+        productTitle: 'Anker 65W Charger',
+        updatedAt: '2026-10-19T00:00:01.000Z',
+      }),
+    );
+
+    await waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+  });
+
   it('removes its listener on unmount', async () => {
     await renderPanel();
     cleanup();

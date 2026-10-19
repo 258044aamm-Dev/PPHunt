@@ -160,6 +160,9 @@ export async function handleSaveProduct(
       jobId,
       asin,
       updatedAt: timestamp(),
+      // SAD-343: carried on every transition so the panel can tell whether the
+      // page that will show its own toast is the one the user is looking at.
+      ...(deps.tabId !== undefined ? { tabId: deps.tabId } : {}),
       ...update,
     };
     // One place mirrors every transition: the store can never disagree with the

@@ -390,6 +390,12 @@ export type AmazonExtensionMessage =
         defaultCollectionKey?: string;
         productTitle?: string;
         downloadReady?: boolean;
+        /**
+         * SAD-343: the tab that asked for the save. Lets the side panel stay
+         * quiet when that tab is the active one — the page is already showing
+         * its own toast, so a second one would be a duplicate.
+         */
+        tabId?: number;
         updatedAt: string;
       };
     }
