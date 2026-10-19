@@ -33,6 +33,7 @@ import type {
 import { isAmazonUrl } from '../utils/amazon-url';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
+import { handleExportSavedProduct, maybeAutoExportOnSave } from './export-service';
 import { saveJobStore } from './job-store';
 import { handleSaveProduct } from './save-job';
 
@@ -813,8 +814,31 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
           ...(typeof sender?.tab?.id === 'number'
             ? { tabId: sender.tab.id }
             : {}),
+        }).then((update) => {
+          // SAD-291: opt-in (`quickSaveAutoDownload`, default false), and it
+          // reuses the same export service the toast button calls.
+          void maybeAutoExportOnSave(update).catch(() => {
+            // An export that cannot start must never surface as a save failure.
+          });
         });
         break;
+
+      case 'EXPORT_SAVED_PRODUCT':
+        // The answer is the download result, so the channel stays open until the
+        // file exists or the reason it does not is known.
+        void handleExportSavedProduct(validated.payload)
+          .then((result) => sendResponse?.(result))
+          .catch((error: unknown) =>
+            sendResponse?.({
+              ok: false,
+              code: 'EXPORT_FAILED',
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'Could not export this collection',
+            }),
+          );
+        return true;
 
       case 'ASSIGN_SAVED_PRODUCT':
         sendResponse?.({ ok: true });

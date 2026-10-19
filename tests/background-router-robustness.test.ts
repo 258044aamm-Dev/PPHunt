@@ -188,7 +188,7 @@ describe('H-3: background router discards malformed messages without throwing', 
     }
   });
 
-  it('EXPORT_SAVED_PRODUCT accepts an empty payload and is ignored by the background switch', async () => {
+  it('EXPORT_SAVED_PRODUCT is handled and answers once the result is known', async () => {
     const { onMessage } = await startBackground();
     const { result, sendResponse, thrown } = drive(onMessage, {
       type: 'EXPORT_SAVED_PRODUCT',
@@ -196,10 +196,15 @@ describe('H-3: background router discards malformed messages without throwing', 
     });
 
     expect(thrown).toBeNull();
-    expect(result).toBe(false);
-    // Every field is optional (export the current collection), so the message is
-    // schema-valid but has no background case yet -> default: return false.
-    expect(sendResponse).not.toHaveBeenCalled();
+    // SAD-291: the listener keeps the channel open (returns true) so the answer
+    // can carry the download id or the reason there is no file.
+    expect(result).toBe(true);
+    await waitFor(() => expect(sendResponse).toHaveBeenCalledTimes(1));
+    // No collection can be resolved in a bare test environment.
+    expect(sendResponse.mock.calls[0]?.[0]).toMatchObject({
+      ok: false,
+      code: 'EXPORT_INVALID',
+    });
   });
 
   it('a valid PRODUCTS_COLLECTED with one product still persists end-to-end', async () => {

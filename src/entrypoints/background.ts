@@ -1,6 +1,7 @@
 import { initSaveProductContextMenu } from '@/engines/amazon/background/context-menu';
 import { createAmazonBackgroundController } from '@/engines/amazon/background/handler';
 import { saveJobStore } from '@/engines/amazon/background/job-store';
+import { handleDownloadChanged } from '@/engines/amazon/background/export-service';
 import { recoverAmazonSaveJobs } from '@/engines/amazon/background/save-job-recovery';
 import { registerTemuBackgroundHandlers } from '@/engines/temu/background/handler';
 import { openOverlayForTab } from '@/lib/overlay/openOverlay';
@@ -151,6 +152,18 @@ export default defineBackground(() => {
       );
     },
   );
+
+  // SAD-291: a finished download is the only signal that its blob URL can be
+  // released; the service also keeps a timeout backstop for the event we miss.
+  try {
+    browser.downloads?.onChanged?.addListener?.((delta: unknown) => {
+      handleDownloadChanged(
+        delta as { id?: number; state?: { current?: string } },
+      );
+    });
+  } catch {
+    // Ignore downloads listener registration error
+  }
 
   try {
     browser.tabs?.onUpdated?.addListener?.(

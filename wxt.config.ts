@@ -31,6 +31,10 @@ export default defineConfig({
       // SAD-295: DOMParser and URL.createObjectURL only exist in an offscreen
       // document, so fetched-PDP parsing and blob minting need this permission.
       'offscreen',
+      // SAD-291 (D10): the export is delivered by `chrome.downloads.download`,
+      // which is the only path that works without a user gesture and supports
+      // `conflictAction: 'uniquify'`. Costs one install-time permission warning.
+      'downloads',
     ],
     // SAD-278: the Amazon half is derived from AMAZON_MARKETPLACE_DOMAINS, so a
     // marketplace cannot be added to the content script without its permission.

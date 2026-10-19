@@ -61,6 +61,13 @@ describe('content script and manifest wiring', () => {
     expect(configSource).toMatch(/'contextMenus',/);
   });
 
+  it('requests downloads for the SAD-291 export seam', () => {
+    // D10: `downloads.download` is the path that works without a user gesture
+    // and supports `conflictAction: 'uniquify'`; the anchor alternative has not
+    // been verified in a browser yet (SAD-293).
+    expect(configSource).toMatch(/'downloads',/);
+  });
+
   it('keeps the non-Amazon host permissions that the engines rely on', () => {
     for (const pattern of [
       '*://*.media-amazon.com/*',
