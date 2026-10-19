@@ -125,6 +125,19 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     notificationsRef.current = settings?.notifications !== false;
   }, [settings?.notifications]);
 
+  // SAD-343: a save notification only makes sense for the engine whose History
+  // the user is looking at. Mirrored into a ref so the message listener below
+  // does not have to re-register every time the engine toggles.
+  const activeEngineRef = useRef<MarketplaceEngineId>('amazon');
+  useEffect(() => {
+    activeEngineRef.current = activeEngine;
+  }, [activeEngine]);
+
+  // SAD-343: one toast per save job. `completed` is emitted once per job, but a
+  // resumed worker or a reopened panel could replay it; this keeps the panel
+  // from stacking duplicates. Bounded so a long session cannot grow it forever.
+  const announcedSaveJobsRef = useRef<Set<string>>(new Set());
+
   // Session recovery — check for interrupted sessions on mount
   const { notice, dismissNotice, startFresh, keepAndResume } =
     useSessionRecovery();
@@ -215,6 +228,70 @@ export default function App({ onClose }: { onClose?: () => void } = {}) {
     browser.runtime.onMessage.addListener(handler);
     return () => browser.runtime.onMessage.removeListener(handler);
   }, [setCollectedCount, setStatus, setError, setCurrentSessionKey]);
+
+  // SAD-343: quick saves were invisible in the panel — the background already
+  // broadcasts SAVE_JOB_UPDATE, nothing listened. This renders panel-only
+  // feedback for a finished save; it never re-broadcasts to the page, which
+  // keeps showing its own toast from the content script.
+  useEffect(() => {
+    const MAX_ANNOUNCED_JOBS = 50;
+
+    const handleSaveJobUpdate = (payload: {
+      jobId?: unknown;
+      state?: unknown;
+      warning?: unknown;
+      productTitle?: unknown;
+    }) => {
+      // Card states (extracting / enriching / failed) are the card's job; the
+      // panel only reports the terminal, user-meaningful one.
+      if (payload.state !== 'completed') return;
+      if (activeEngineRef.current !== 'amazon') return;
+      // Same gate as every other in-panel toast (SAD-167 scope decision).
+      if (!notificationsRef.current) return;
+
+      const jobId = typeof payload.jobId === 'string' ? payload.jobId : null;
+      if (jobId) {
+        const announced = announcedSaveJobsRef.current;
+        if (announced.has(jobId)) return;
+        announced.add(jobId);
+        if (announced.size > MAX_ANNOUNCED_JOBS) {
+          const oldest = announced.values().next().value;
+          if (oldest !== undefined) announced.delete(oldest);
+        }
+      }
+
+      // Exactly one toast per save: the warning, when present, *is* the toast
+      // rather than a second one on top of a success.
+      const warning = typeof payload.warning === 'string' ? payload.warning : '';
+      if (warning) {
+        showToast('attention', 'Saved, but the product details are incomplete', warning);
+        return;
+      }
+
+      const title =
+        typeof payload.productTitle === 'string' && payload.productTitle
+          ? payload.productTitle
+          : undefined;
+      showToast('success', 'Saved to History', title);
+    };
+
+    const handler = (message: unknown) => {
+      const msg = message as { type?: string; payload?: unknown };
+      if (msg?.type !== 'SAVE_JOB_UPDATE' || !msg.payload) return;
+      if (typeof msg.payload !== 'object') return;
+      handleSaveJobUpdate(
+        msg.payload as {
+          jobId?: unknown;
+          state?: unknown;
+          warning?: unknown;
+          productTitle?: unknown;
+        },
+      );
+    };
+
+    browser.runtime.onMessage.addListener(handler);
+    return () => browser.runtime.onMessage.removeListener(handler);
+  }, []);
 
   const handleEngineChange = useCallback((engine: MarketplaceEngineId) => {
     setActiveEngine(engine);
