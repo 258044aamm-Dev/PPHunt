@@ -88,11 +88,11 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P2.1 `SAD-282` | In Review | `2c2b41d` | tsc clean · 548/59 · 15 observer tests (churn, IO, teardown) |
 | P2.2 `SAD-283` | In Review | `94e7642` | tsc clean · 568/60 · 20 button tests (states, a11y, cleanup) |
 | P2.3 `SAD-284` | In Review | `1fcc22d` | tsc clean · 584/62 · build 1.79 MB · 14 layer tests, dedupe + unlock |
+| P3.1 `SAD-285` | In Review | `c56d22b` | tsc clean · 595/62 · 11 resolution tests (reuse, new, ask, no-join) |
 
-Baseline has moved 385/48 → **584/62** (+199 tests, +14 files). The card button is now mounted on
-listing pages and drives one job per card with three independent guards (button, layer, background).
-**P3.1 (`SAD-285`) is next**: collection resolution with a dedicated pointer, labels and the no-join
-guard. No issue is marked Done: the acceptance criteria that need a browser are deferred to
+Baseline has moved 385/48 → **595/62** (+210 tests, +14 files). Both entry points write through one
+pipeline into a history-only collection whose pointer cannot adopt a full-page run. **P3.2 (`SAD-286`)
+is next**: the settings UI and the Current badge. No issue is marked Done: the acceptance criteria that need a browser are deferred to
 `SAD-293`, and every completion comment says so explicitly.
 
 ## Ticket hygiene
