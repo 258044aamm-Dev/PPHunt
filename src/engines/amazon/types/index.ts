@@ -181,11 +181,21 @@ export interface AmazonHistoryEntry {
   sessionKey: string;
   url: string;
   mode: CollectionMode;
+  /**
+   * `0` marks a target-less one-click collection (plan 7.3). Full-page runs always
+   * carry the user's requested count.
+   */
   targetCount: number;
   collectedCount: number;
   startedAt: string;
   completedAt: string;
   status: AmazonCollectionStatus;
+  /** Display label (SAD-277). Absent on rows written before one-click existed. */
+  name?: string;
+  /** Who created the collection. Absent means a pre-existing full-page run. */
+  origin?: 'full-page' | 'one-click';
+  /** Last write to the row (count bump, rename, move). */
+  updatedAt?: string;
 }
 export type HistoryEntry = AmazonHistoryEntry;
 export type CollectionHistory = AmazonHistoryEntry;
