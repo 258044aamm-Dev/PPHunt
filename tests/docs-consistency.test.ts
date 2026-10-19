@@ -118,6 +118,62 @@ describe('docs consistency (SAD-152 / L-7)', () => {
     expect(spec11).toContain('1–1000');
   });
 
+  it('ARCHITECTURE\'s store table matches the indexes database.ts declares (SAD-340)', () => {
+    const databaseTs = read('src/engines/amazon/db/database.ts');
+
+    // Every `store: 'indexes'` literal in the Dexie schema, in declaration order.
+    const declared = [...databaseTs.matchAll(/^\s{6}(\w+):\s*'([^']+)',$/gm)].map(
+      (m) => ({ store: m[1]!, indexes: m[2]! }),
+    );
+    expect(declared.length).toBeGreaterThanOrEqual(4);
+
+    for (const { store, indexes } of declared) {
+      const row = ARCHITECTURE.split('\n').find(
+        (line) => line.startsWith(`| ${store} |`),
+      );
+      expect(row, `ARCHITECTURE has no row for the ${store} store`).toBeDefined();
+      for (const index of indexes.split(',').map((part) => part.trim())) {
+        expect(row, `ARCHITECTURE's ${store} row is missing \`${index}\``).toContain(
+          index,
+        );
+      }
+    }
+  });
+
+  it('no doc claims v2 removed the compound product index (SAD-340)', () => {
+    // The claim that broke trust in the first place. It must not come back.
+    const forbidden = /removes? the unused compound/i;
+    for (const [name, text] of [
+      ['ARCHITECTURE.md', ARCHITECTURE],
+      ['CHANGELOG.md', CHANGELOG],
+      ['README.md', README],
+    ] as const) {
+      expect(text, `${name} claims the compound index was removed`).not.toMatch(
+        forbidden,
+      );
+    }
+    // ...and the doc must state the index is load-bearing.
+    expect(ARCHITECTURE).toContain('[sessionKey+asin]');
+    expect(ARCHITECTURE).toContain('load-bearing');
+  });
+
+  it('no doc claims the product table renders on the Collect tab (SAD-340)', () => {
+    const forbidden =
+      /(?:virtuali[sz]ed|product) table[^.\n]*\bon the Collect tab/i;
+    for (const [name, text] of [
+      ['README.md', README],
+      ['CHANGELOG.md', CHANGELOG],
+      ['ARCHITECTURE.md', ARCHITECTURE],
+    ] as const) {
+      expect(text, `${name} places the table on the Collect tab`).not.toMatch(
+        forbidden,
+      );
+    }
+    // The real homes, so the corrected sentence cannot silently rot either.
+    expect(CHANGELOG).toContain('FullWidthPreviewModal');
+    expect(README).toContain('/preview.html');
+  });
+
   it('documented file paths still exist', () => {
     // Spot-check paths the docs point readers at (stale-path guard).
     const paths = [

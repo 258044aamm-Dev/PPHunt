@@ -156,7 +156,7 @@ User-visible changes:
 
 #### Phase 3: Side Panel UI — Collection Interface
 - Header with logo and settings gear
-- Navigation tabs (Collect | History) with clay active underline — a dedicated Preview tab was removed pre-release (SAD-136); the virtualized table lives on the Collect tab and History entries carry per-session Preview/Export
+- Navigation tabs (Collect | History) with clay active underline — a dedicated Preview tab was removed pre-release (SAD-136); the virtualized table lives in the full-width Preview overlay (`FullWidthPreviewModal`) and on `/preview.html`, the Collect tab holds the collection controls only, and History entries carry per-session Preview/Export
 - Collection mode toggle (Manual / Automatic)
 - Target selector with quick-select chips (50/100/200/300) and custom input (1–1000)
 - Status bar with animated color dots (5 states)

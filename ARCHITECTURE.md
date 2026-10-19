@@ -177,14 +177,23 @@ this document as if they were complete schemas:
 
 | Store | Indexes (database v2) | Data contract |
 |---|---|---|
-| products | `++id, asin, url, sessionKey, collectedAt` | [`Product`](src/types/product.ts), [`ProductSchema`](src/lib/schemas/product.ts) |
-| sessions | `id, tabId, status, startedAt` | [`SessionState`](src/types/session.ts) |
+| products | `++id, asin, sessionKey, collectedAt, [sessionKey+asin]` | [`Product`](src/types/product.ts), [`ProductSchema`](src/lib/schemas/product.ts) |
+| sessions | `id, tabId, status, startedAt, updatedAt` | [`SessionState`](src/types/session.ts) |
 | settings | `id` | [`SettingsSchema`](src/lib/schemas/settings.ts) |
-| history | `++id, sessionKey, startedAt` | [`CollectionHistory`](src/types/session.ts) |
+| history | `++id, sessionKey, startedAt, completedAt, status` | [`CollectionHistory`](src/types/session.ts) |
 | snapshots | `++id, asin, sessionKey, capturedAt, [asin+capturedAt]` | [`ProductSnapshot`](src/engines/amazon/types/index.ts) |
 
-[`database.ts`](src/lib/db/database.ts) keeps v1 for existing-install upgrades;
-v2 adds the `snapshots` store and removes the unused compound product index.
+[`database.ts`](src/engines/amazon/db/database.ts) keeps v1 for existing-install
+upgrades; **v2 adds the `snapshots` store and nothing else** — the v1 stores are
+inherited untouched and no row is rewritten on upgrade.
+
+> **The `[sessionKey+asin]` compound index on `products` was not removed and must
+> not be removed.** It is declared in v1 and is load-bearing:
+> `quick-save.ts`, `assignment.ts`, `product-assignment.ts` and
+> `enrich-saved-product.ts` all look a row up with
+> `db.products.where('[sessionKey+asin]').equals([sessionKey, asin])`, and a
+> missing compound index makes that query throw — i.e. every one-click save
+> would fail.
 A snapshot is one observation of a product — `source: 'listing' | 'detail'`,
 the price/availability at that moment, and the job that produced it — so a
 re-save or a delayed enrichment can never rewrite history. Product fields include optional

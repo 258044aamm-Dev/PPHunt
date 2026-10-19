@@ -69,7 +69,7 @@ npx wxt dev
 4. **Set your target** — quick-select chips (50/100/200/300) or custom input (1–1000)
 5. **Choose mode** — Manual (scroll yourself) or Automatic (auto-scroll)
 6. **Click Start** — products are collected as they appear on the page
-7. **Preview** — collected products appear in the virtualized table on the Collect tab (History keeps past sessions, each with its own Preview/Export)
+7. **Preview** — collected products appear in the virtualized Preview overlay (or the full-page `/preview.html`); the Collect tab holds the collection controls only, and History keeps past sessions, each with its own Preview/Export
 8. **Export** — click Export to download as CSV, Excel, or copy to clipboard
 
 ## Architecture
