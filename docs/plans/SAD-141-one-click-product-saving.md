@@ -528,12 +528,12 @@ One host element per card:
 
 | State | Visual | Interaction |
 |---|---|---|
-| `idle` | Clay-on-surface bookmark icon, 28×28 px, 1 px hairline, 8 px bottom-only radius (repo rule) | Click → save |
-| `queued` | Icon dimmed + thin progress ring at 15 % | Ignored (no duplicate jobs) |
+| `idle` | Solid clay `#b04e30` fill, cream bookmark glyph (18 px at a 2 px stroke on the 24 grid), 28×28 px, 8 px radius on all corners **(revised by SAD-329)** | Click → save |
+| `queued` | Same clay fill (no dimming — `opacity` on a coloured fill drops the glyph to 2.98:1) + static ring | Ignored (no duplicate jobs) |
 | `extracting` | Ring spinning (CSS, `prefers-reduced-motion` → static) | Ignored |
-| `enriching` | Ring with a small "+" dot; tooltip "Fetching product details…" | Ignored |
-| `completed` | Moss check, tooltip "Saved to <collection>" | Click re-saves (new extraction event); auto-reverts to idle after 2.5 s |
-| `failed` | Crimson retry arrow, tooltip with reason | Click retries |
+| `enriching` | Spinning ring with a small "+" mark; tooltip "Fetching product details…" | Ignored |
+| `completed` | Moss `#455e2d` fill with a cream check, tooltip "Saved to <collection>" | Click re-saves (new extraction event); auto-reverts to idle after 2.5 s |
+| `failed` | Crimson `#a3302d` fill with a cream retry arrow, tooltip with reason | Click retries |
 
 `completed` covers both full and partial enrichment: when details were unavailable the same check icon carries a small warning dot, the tooltip reads "Saved — details unavailable", and the toast offers Retry. The job never reports `failed` after the product row was persisted.
 
@@ -544,7 +544,7 @@ Placement rules:
 - Never mount inside an `<a>` (would nest interactive content) — if the only candidate is an anchor, mount on the card itself.
 - `pointerdown`, `mousedown`, `click` handlers call `stopPropagation()`; `click` also calls `preventDefault()`. This prevents navigation / add-to-cart on all card layouts.
 - `draggable="false"`; `user-select: none`; `aria-label` includes the product title.
-- Dark mode: `:host([data-theme="dark"])` variables + `@media (prefers-color-scheme: dark)` fallback. Read `pphuntTheme` from `storage.local` and subscribe to `storage.onChanged`.
+- Dark mode: `:host([data-theme="dark"])` variables + `@media (prefers-color-scheme: dark)` fallback. Read `pphuntTheme` from `storage.local` and subscribe to `storage.onChanged`. **SAD-329 note:** the fill is now coloured, so dark mode uses ink-on-clay (`--pph-clay-ink`, 5.90:1) rather than cream-on-clay (2.96:1). The `theme` option is accepted by `createCardActionLayer` but not yet passed by `amazon.content.ts` — tracked as SAD-331.
 - Button is **not** injected on `product-detail` pages (there is no card); right-click and the extension UI cover that page.
 
 ### 8.3 Dynamic content, dedupe, cleanup

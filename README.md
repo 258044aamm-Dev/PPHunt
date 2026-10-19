@@ -235,7 +235,7 @@ Light theme (a dark theme ships too — both palettes live in `src/entrypoints/s
 
 **Typography:** Lora (serif) for headings and body, Poppins (sans) for UI chrome, JetBrains Mono for code/metadata.
 
-**Rules:** No box-shadow. No pure white. 8px bottom-only button radius. 1px hairline borders. Flat surfaces only.
+**Rules:** No box-shadow. No pure white. 8px bottom-only button radius for in-panel buttons; floating page controls (the per-card save button) use 8px on all corners. 1px hairline borders. Flat surfaces only.
 
 ## Known limitations
 

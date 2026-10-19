@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Save a single Amazon product into History without leaving the page.
 
+### Changed
+- **The per-card save button now reads as PPHunt at rest** (SAD-329). It was a
+  near-white chip with a 1.125 px grey stroke, a 1.51:1 hairline border and no
+  brand colour until hover — on a listing page it read as a small dark smudge.
+  It is now a solid clay control with a cream 18 px glyph at a 2 px stroke
+  (1.5 CSS px), a fill per state (clay → moss → crimson), an inset focus ring
+  that stays visible on the fill, and a haloed badge for partial enrichment.
+  Every glyph/state pair passes WCAG AA (5.01:1 to 7.26:1). Behaviour is
+  unchanged: same six states, click-safety, mounting, tooltips and labels.
+
 ### Added
 - **Right-click → "Save Product Details"** on any Amazon listing or product page.
   The item is registered from one shared marketplace list, is re-registered on
