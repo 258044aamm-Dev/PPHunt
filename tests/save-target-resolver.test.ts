@@ -151,6 +151,25 @@ describe('captureSaveTarget', () => {
     expect(isCaptureFresh(capture, 1_000 + CONTEXT_CAPTURE_TTL_MS + 1)).toBe(false);
     expect(isCaptureFresh(null)).toBe(false);
   });
+
+  it('gives a capture long enough to survive a human reading the menu (SAD-341)', () => {
+    // The old budget was 5 s, which a normal right-click-then-click can exceed.
+    expect(CONTEXT_CAPTURE_TTL_MS).toBeGreaterThanOrEqual(10 * 60 * 1_000);
+
+    const capture = captureSaveTarget({ target: byId('price-a') } as unknown as Event, 1_000);
+    expect(isCaptureFresh(capture, 1_000 + 30_000)).toBe(true);
+    expect(isCaptureFresh(capture, 1_000 + 60_000)).toBe(true);
+  });
+
+  it('rejects a malformed capture instead of treating it as brand new', () => {
+    const malformed = {
+      element: byId('price-a'),
+      capturedAt: Number.NaN,
+      pageUrl: location.href,
+    };
+
+    expect(isCaptureFresh(malformed)).toBe(false);
+  });
 });
 
 describe('resolveCapturedCard', () => {
@@ -166,6 +185,14 @@ describe('resolveCapturedCard', () => {
     expect(resolveCapturedCard(capture, 5_000 + CONTEXT_CAPTURE_TTL_MS + 1)).toBeNull();
   });
 
+  it('still resolves a capture that is a minute old on the same page (SAD-341)', () => {
+    const capture = captureSaveTarget({ target: byId('img-b') } as unknown as Event, 5_000);
+
+    // Open the menu, read it, wait, then click Save.
+    expect(resolveCapturedCard(capture, 5_000 + 30_000)?.id).toBe('card-b');
+    expect(resolveCapturedCard(capture, 5_000 + 60_000)?.id).toBe('card-b');
+  });
+
   it('refuses a capture taken on another page', () => {
     const capture = {
       element: byId('img-b'),
@@ -176,8 +203,23 @@ describe('resolveCapturedCard', () => {
     expect(resolveCapturedCard(capture)).toBeNull();
   });
 
-  it('returns null without a capture', () => {
+  it('refuses a cross-page capture however young it is', () => {
+    // The page check must not be a side effect of the age check: a capture is
+    // only meaningful for the document it was taken in.
+    const capturedAt = 10_000;
+    const capture = {
+      element: byId('img-b'),
+      capturedAt,
+      pageUrl: 'https://www.amazon.com/dp/B0AAAAAAAA',
+    };
+
+    expect(isCaptureFresh(capture, capturedAt)).toBe(true);
+    expect(resolveCapturedCard(capture, capturedAt)).toBeNull();
+  });
+
+  it('never resolves a cleared capture', () => {
     expect(resolveCapturedCard(null)).toBeNull();
+    expect(resolveCapturedCard(undefined)).toBeNull();
   });
 });
 

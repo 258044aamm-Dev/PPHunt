@@ -13,8 +13,26 @@ import { extractASIN } from '../utils/amazon-url';
  * here, on demand, when the background asks for a save.
  */
 
-/** A capture older than this is treated as stale (different click, new page). */
-export const CONTEXT_CAPTURE_TTL_MS = 5_000;
+/**
+ * How long a captured element stays usable, as a backstop.
+ *
+ * SAD-341: this used to be 5 s — shorter than a human takes to read a context
+ * menu. Opening the menu, thinking for a moment and then clicking "Save
+ * product" failed with "No product found here" even though the capture was
+ * still perfectly valid.
+ *
+ * The TTL is no longer what keeps a capture honest. Two cheaper checks do:
+ *
+ * 1. every `contextmenu`/`mousedown` overwrites the previous capture, so a
+ *    capture can never outlive the click that produced it;
+ * 2. `resolveCapturedCard` refuses any capture whose `pageUrl` differs from
+ *    `location.href`, so it cannot be carried across a navigation.
+ *
+ * Ten minutes is long enough that nobody can outwait it in the normal flow and
+ * short enough that a capture abandoned on an idle tab cannot be reused much
+ * later. Note that a *newer* capture always wins regardless of age.
+ */
+export const CONTEXT_CAPTURE_TTL_MS = 10 * 60 * 1_000;
 
 /**
  * Card containers the collectors already understand. Kept as one list so the
@@ -72,11 +90,17 @@ export function captureSaveTarget(
   return { element, capturedAt: now, pageUrl: currentPageUrl() };
 }
 
+/**
+ * True when a capture is young enough to be used at all. This is the cheap
+ * backstop — the *page* check lives in `resolveCapturedCard` and is the one
+ * that actually prevents a wrong product from being saved.
+ */
 export function isCaptureFresh(
   capture: CapturedSaveTarget | null | undefined,
   now: number = Date.now(),
 ): boolean {
   if (!capture) return false;
+  if (!Number.isFinite(capture.capturedAt)) return false;
   const age = now - capture.capturedAt;
   return age >= 0 && age <= CONTEXT_CAPTURE_TTL_MS;
 }
@@ -154,6 +178,10 @@ function narrowToSingleProduct(candidate: Element, element: Element): Element | 
 /**
  * Resolves the card for a previously captured target, refusing a stale capture
  * or one taken on a different page.
+ *
+ * Both refusals are independent, and the page check is deliberate rather than a
+ * side effect of the age check: a capture is only meaningful for the document
+ * it was taken in.
  */
 export function resolveCapturedCard(
   capture: CapturedSaveTarget | null | undefined,
