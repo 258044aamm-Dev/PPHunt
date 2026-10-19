@@ -54,6 +54,13 @@ export const DEFAULT_ENABLED_FIELDS: EnabledFieldsConfig = {
   features: true,
 };
 
+/**
+ * SAD-334: the settings-row schema version. A row written before the field
+ * existed has no `settingsVersion` and is treated as version 0; the one-time
+ * migration in `db/settings.ts` upgrades it exactly once.
+ */
+export const CURRENT_SETTINGS_VERSION = 1;
+
 export const DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR: QuickSaveCollectionBehavior =
   'current';
 export const DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD = false;
@@ -90,6 +97,10 @@ export const DEFAULT_VISIBLE_COLUMNS = [...AMAZON_DEFAULT_VISIBLE_COLUMNS];
 
 export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   id: 'default',
+  // SAD-334: factory defaults are already current, so a fresh install (or a
+  // reset) is never treated as pre-migration and a later deliberate toggle-off
+  // can never be flipped back on.
+  settingsVersion: CURRENT_SETTINGS_VERSION,
   defaultMode: 'manual',
   defaultTargetCount: DEFAULT_TARGET_COUNT,
   scrollSpeed: 800,

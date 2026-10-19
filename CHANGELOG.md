@@ -43,6 +43,21 @@ Save a single Amazon product into History without leaving the page.
 - **CSV/XLSX export** of a one-click collection, built in the offscreen document
   through the same writers the panel uses, plus a **Download** action on the
   completion toast and an opt-in `quickSaveAutoDownload` setting (default off).
+- **Description and Features are visible by default** (SAD-333). Both fields can
+  only ever come from the product page, so hiding them made a right-click save
+  look like data loss. They remain ordinary per-field toggles under
+  Settings → Data Fields.
+
+### Migrated
+- **Existing installs pick up the two new default columns once (SAD-334).** A
+  stored row written before this build has no `settingsVersion`, so the first
+  read upgrades it: when both `description` and `features` were off, both are
+  turned on and the row is stamped `settingsVersion: 1`. The upgrade runs
+  exactly once — a second launch never rewrites the row — and touches nothing
+  else in the stored settings. Turning either column back off afterwards sticks.
+  **Trade-off:** the migration cannot tell an untouched old default from a
+  deliberate "both off" choice, because older builds did not record one. It runs
+  once, and both toggles remain reversible in Settings.
 
 ### Fixed
 - `amazon.co.za` was missing from the content-script match patterns, so the

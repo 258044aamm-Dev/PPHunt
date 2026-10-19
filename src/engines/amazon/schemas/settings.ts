@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CURRENT_SETTINGS_VERSION,
   DEFAULT_ENABLED_FIELDS,
   DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
   DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR,
@@ -50,6 +51,15 @@ const ExportFormatSchema = z.preprocess(
 
 export const AmazonSettingsSchema = z.object({
   id: z.string().default('default'),
+  // SAD-334: defaults to the current version so a row that is parsed without
+  // the field (fresh install, reset, degraded fallback) is never migrated.
+  // A genuinely pre-migration row is detected on the raw record, where the key
+  // is absent, and is treated as version 0.
+  settingsVersion: z
+    .number()
+    .int()
+    .min(0)
+    .default(CURRENT_SETTINGS_VERSION),
   defaultMode: z.enum(['manual', 'automatic']).default('manual'),
   defaultTargetCount: z
     .number()
@@ -93,6 +103,7 @@ export const AmazonSettingsSchema = z.object({
 
 export const PartialAmazonSettingsSchema = z.object({
   id: z.string().optional(),
+  settingsVersion: z.number().int().min(0).optional(),
   defaultMode: z.enum(['manual', 'automatic']).optional(),
   defaultTargetCount: z
     .number()

@@ -155,6 +155,11 @@ export type ExcelImageBudgetMode = 'auto' | 'always' | 'never';
 
 export interface AmazonSettings {
   id?: string;
+  /**
+   * SAD-334: schema version of the stored row. Rows written before this field
+   * existed parse as 0 and are upgraded once by `db/settings.ts`.
+   */
+  settingsVersion: number;
   defaultMode: CollectionMode;
   defaultTargetCount: number;
   scrollSpeed: number;
