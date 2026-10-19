@@ -227,6 +227,7 @@ export const SaveJobUpdateMessageSchema = z.object({
     collectionLabel: z.string().optional(),
     requiresCollectionChoice: z.boolean().optional(),
     defaultCollectionKey: z.string().min(1).optional(),
+    productTitle: z.string().optional(),
     downloadReady: z.boolean().optional(),
     updatedAt: z.string().min(1),
   }),

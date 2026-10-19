@@ -3,6 +3,7 @@ import {
   refreshCollectionCounts,
 } from '../db/collections';
 import { saveQuickProduct } from '../db/quick-save';
+import { rememberPendingAssignment } from './assignment';
 import { resolveCollectionTarget } from './collections';
 import type {
   SaveEnrichmentStatus,
@@ -27,6 +28,8 @@ export interface SaveJobUpdate {
   collectionLabel?: string;
   requiresCollectionChoice?: boolean;
   defaultCollectionKey?: string;
+  /** Product name for the Ask-every-time dialog; never fabricated, omitted when null. */
+  productTitle?: string;
   message?: string;
   errorCode?: SaveErrorCode;
   updatedAt: string;
@@ -160,11 +163,24 @@ export async function handleSaveProduct(
 
     const count = await refreshCollectionCounts(collection.sessionKey, now());
 
+    if (collection.requiresChoice) {
+      // Registered before the update is emitted: the dialog can be answered the
+      // moment the content script receives it, so the entry must already exist.
+      rememberPendingAssignment({
+        jobId,
+        asin,
+        sessionKey: collection.sessionKey,
+        label: collection.label,
+        createdAt: timestamp(),
+      });
+    }
+
     return report({
       state: 'completed',
       collectionKey: collection.sessionKey,
       collectionLabel: collection.label,
       message: savedMessage(collection.label, count),
+      ...(payload.product?.title ? { productTitle: payload.product.title } : {}),
       ...(collection.requiresChoice
         ? {
             requiresCollectionChoice: true,

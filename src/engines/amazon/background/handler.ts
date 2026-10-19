@@ -31,6 +31,7 @@ import type {
   ScrollRuntimeSettingsPayload,
 } from '../types';
 import { isAmazonUrl } from '../utils/amazon-url';
+import { handleAssignSavedProduct } from './assignment';
 import { handleSaveProduct } from './save-job';
 
 interface ActiveCollectionRuntimeState {
@@ -796,6 +797,19 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       case 'SAVE_PRODUCT':
         sendResponse?.({ ok: true });
         void handleSaveProduct(validated.payload, {
+          emit: (update) => {
+            const message = { type: 'SAVE_JOB_UPDATE', payload: update };
+            if (typeof sender?.tab?.id === 'number') {
+              void dispatchToAmazonTab(sender.tab.id, message);
+            }
+            broadcastRuntimeMessage(message);
+          },
+        });
+        break;
+
+      case 'ASSIGN_SAVED_PRODUCT':
+        sendResponse?.({ ok: true });
+        void handleAssignSavedProduct(validated.payload, {
           emit: (update) => {
             const message = { type: 'SAVE_JOB_UPDATE', payload: update };
             if (typeof sender?.tab?.id === 'number') {

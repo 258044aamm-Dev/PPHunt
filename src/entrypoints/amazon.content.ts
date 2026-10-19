@@ -8,6 +8,7 @@ import {
   extractProductFromCard,
   resolveSaveCandidate,
 } from '@/engines/amazon/content/save-product';
+import { createCollectionChoiceQueue } from '@/engines/amazon/content/collection-choice-dialog';
 import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/content/save-target';
 import { removeSaveToast, showSaveToast } from '@/engines/amazon/content/toast';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
@@ -144,6 +145,21 @@ export default defineContentScript({
     let cardActionLayer: ReturnType<typeof createCardActionLayer> | null = null;
 
     /**
+     * SAD-287: the save already happened, so cancelling (or the 30 s timeout)
+     * sends nothing and the row stays where it was written. Only an explicit
+     * "Create new collection" reaches the background.
+     */
+    const collectionChoiceQueue = createCollectionChoiceQueue({
+      onChoice: (jobId, choice) => {
+        if (choice === 'cancel') return;
+        sendRuntimeMessageSafe({
+          type: 'ASSIGN_SAVED_PRODUCT',
+          payload: { jobId, choice },
+        });
+      },
+    });
+
+    /**
      * SAD-281: the background cannot see the page (no element in
      * `contextMenus.OnClickData`), so it asks and this resolves the product that
      * was under the pointer when the menu opened.
@@ -173,6 +189,21 @@ export default defineContentScript({
     const handleSaveJobUpdate = (payload: CardActionJobUpdate) => {
       // Card buttons route by ASIN; the menu path below tracks its own job id.
       cardActionLayer?.applyJobUpdate(payload);
+
+      // The dialog is independent of which entry point started the save, and the
+      // queue drops duplicate deliveries of the same job id.
+      if (
+        payload.state === 'completed' &&
+        payload.requiresCollectionChoice &&
+        typeof payload.jobId === 'string' &&
+        payload.jobId.length > 0
+      ) {
+        collectionChoiceQueue.enqueue({
+          jobId: payload.jobId,
+          ...(payload.productTitle ? { productTitle: payload.productTitle } : {}),
+          collectionLabel: payload.collectionLabel ?? 'this collection',
+        });
+      }
 
       if (!pendingSaveJobId || payload.jobId !== pendingSaveJobId) return;
 
@@ -602,6 +633,7 @@ export default defineContentScript({
         capture: true,
       });
       removeSaveToast();
+      collectionChoiceQueue.close();
       cardActionLayer?.stop();
       cardActionLayer = null;
       window.removeEventListener('pphunt:command', domBridgeListener);

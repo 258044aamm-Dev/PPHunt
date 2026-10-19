@@ -383,6 +383,7 @@ export type AmazonExtensionMessage =
         collectionLabel?: string;
         requiresCollectionChoice?: boolean;
         defaultCollectionKey?: string;
+        productTitle?: string;
         downloadReady?: boolean;
         updatedAt: string;
       };

@@ -34,6 +34,12 @@ export interface CardActionJobUpdate {
   enrichmentStatus?: string;
   warning?: string;
   message?: string;
+  /* SAD-287: carried through so the content script can open the Ask dialog. */
+  collectionKey?: string;
+  collectionLabel?: string;
+  requiresCollectionChoice?: boolean;
+  defaultCollectionKey?: string;
+  productTitle?: string;
 }
 
 export interface CardActionLayerOptions {
