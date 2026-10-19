@@ -7,6 +7,7 @@ import {
   buildSaveContext,
   extractProductFromCard,
   resolveSaveCandidate,
+  saveMissMessage,
 } from '@/engines/amazon/content/save-product';
 import { createCollectionChoiceQueue } from '@/engines/amazon/content/collection-choice-dialog';
 import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/content/save-target';
@@ -164,7 +165,7 @@ export default defineContentScript({
      * `contextMenus.OnClickData`), so it asks and this resolves the product that
      * was under the pointer when the menu opened.
      */
-    const handleSaveContextProduct = () => {
+    const handleSaveContextProduct = (options: { fromSubframe?: boolean } = {}) => {
       const pageUrl = window.location.href;
       const candidate = resolveSaveCandidate({
         capture: lastSaveCapture,
@@ -173,7 +174,10 @@ export default defineContentScript({
       });
 
       if (!candidate) {
-        showSaveToast({ state: 'failed', message: 'No product found here' });
+        showSaveToast({
+          state: 'failed',
+          message: saveMissMessage({ fromSubframe: options.fromSubframe }),
+        });
         return;
       }
 
@@ -519,7 +523,9 @@ export default defineContentScript({
 
         case 'SAVE_CONTEXT_PRODUCT':
           sendResponse?.({ ok: true });
-          handleSaveContextProduct();
+          handleSaveContextProduct({
+            fromSubframe: validMsg.payload.fromSubframe === true,
+          });
           break;
 
         case 'SAVE_JOB_UPDATE':

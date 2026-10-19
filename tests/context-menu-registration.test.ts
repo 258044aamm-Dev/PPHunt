@@ -161,6 +161,52 @@ describe('handleSaveProductContextMenuClick', () => {
     expect(Date.parse(message.payload.requestedAt)).not.toBeNaN();
   });
 
+  it('does not flag a top-frame click as a sub-frame click (SAD-344)', async () => {
+    vi.stubGlobal('browser', {});
+
+    await handleSaveProductContextMenuClick(
+      { menuItemId: SAVE_PRODUCT_MENU_ID, frameId: 0 },
+      { id: 7, url: 'https://www.amazon.com/s?k=charger' },
+    );
+
+    const [, message] = dispatchToAmazonTab.mock.calls[0] as [
+      number,
+      { payload: Record<string, unknown> },
+    ];
+    expect(message.payload).not.toHaveProperty('fromSubframe');
+  });
+
+  it('flags a click that happened inside an iframe (SAD-344)', async () => {
+    vi.stubGlobal('browser', {});
+
+    await handleSaveProductContextMenuClick(
+      { menuItemId: SAVE_PRODUCT_MENU_ID, frameId: 3 },
+      { id: 7, url: 'https://www.amazon.com/s?k=charger' },
+    );
+
+    const [, message] = dispatchToAmazonTab.mock.calls[0] as [
+      number,
+      { type: string; payload: { fromSubframe?: boolean } },
+    ];
+    expect(message.type).toBe('SAVE_CONTEXT_PRODUCT');
+    expect(message.payload.fromSubframe).toBe(true);
+  });
+
+  it('treats a browser that reports no frameId as the top frame (SAD-344)', async () => {
+    vi.stubGlobal('browser', {});
+
+    await handleSaveProductContextMenuClick(
+      { menuItemId: SAVE_PRODUCT_MENU_ID },
+      { id: 7, url: 'https://www.amazon.com/s?k=charger' },
+    );
+
+    const [, message] = dispatchToAmazonTab.mock.calls[0] as [
+      number,
+      { payload: Record<string, unknown> },
+    ];
+    expect(message.payload).not.toHaveProperty('fromSubframe');
+  });
+
   it('ignores other menu items', async () => {
     vi.stubGlobal('browser', {});
 

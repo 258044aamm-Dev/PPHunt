@@ -372,7 +372,15 @@ export type AmazonExtensionMessage =
     }
   | {
       type: 'SAVE_CONTEXT_PRODUCT';
-      payload: { requestedAt: string };
+      payload: {
+        requestedAt: string;
+        /**
+         * SAD-344: true when the menu click happened inside a sub-frame. The
+         * content script only ever runs in the top frame, so it can resolve
+         * nothing there and should say why instead of "No product found here".
+         */
+        fromSubframe?: boolean;
+      };
     }
   | {
       type: 'SAVE_JOB_UPDATE';

@@ -7,7 +7,11 @@ import {
   buildSaveContext,
   extractProductFromCard,
   resolveSaveCandidate,
+  SAVE_MISS_MESSAGE,
+  saveMissMessage,
+  SUBFRAME_SAVE_MISS_MESSAGE,
 } from '@/engines/amazon/content/save-product';
+import { SaveContextProductMessageSchema } from '@/engines/amazon/schemas/messages';
 import { captureSaveTarget } from '@/engines/amazon/content/save-target';
 import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
 
@@ -167,5 +171,37 @@ describe('resolveSaveCandidate', () => {
     });
 
     expect(result?.product.asin).toBe(direct?.asin);
+  });
+});
+
+describe('SAD-344 — explaining a miss instead of implying one', () => {
+  it('keeps the existing wording for a normal miss', () => {
+    expect(saveMissMessage()).toBe(SAVE_MISS_MESSAGE);
+    expect(saveMissMessage({})).toBe(SAVE_MISS_MESSAGE);
+    expect(saveMissMessage({ fromSubframe: false })).toBe(SAVE_MISS_MESSAGE);
+    expect(SAVE_MISS_MESSAGE).toBe('No product found here');
+  });
+
+  it('names the real cause when the click happened inside a sub-frame', () => {
+    expect(saveMissMessage({ fromSubframe: true })).toBe(
+      SUBFRAME_SAVE_MISS_MESSAGE,
+    );
+    // The explanation has to be different, or it is not an explanation.
+    expect(SUBFRAME_SAVE_MISS_MESSAGE).not.toBe(SAVE_MISS_MESSAGE);
+    expect(SUBFRAME_SAVE_MISS_MESSAGE).toMatch(/embedded frame/i);
+  });
+
+  it('still validates a payload from an older background without the flag', () => {
+    const legacy = SaveContextProductMessageSchema.safeParse({
+      type: 'SAVE_CONTEXT_PRODUCT',
+      payload: { requestedAt: new Date().toISOString() },
+    });
+    expect(legacy.success).toBe(true);
+
+    const subframe = SaveContextProductMessageSchema.safeParse({
+      type: 'SAVE_CONTEXT_PRODUCT',
+      payload: { requestedAt: new Date().toISOString(), fromSubframe: true },
+    });
+    expect(subframe.success).toBe(true);
   });
 });

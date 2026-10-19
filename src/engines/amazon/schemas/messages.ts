@@ -210,6 +210,8 @@ export const SaveContextProductMessageSchema = z.object({
   type: z.literal('SAVE_CONTEXT_PRODUCT'),
   payload: z.object({
     requestedAt: z.string().min(1),
+    // SAD-344: optional, so a message from an older background still validates.
+    fromSubframe: z.boolean().optional(),
   }),
 });
 

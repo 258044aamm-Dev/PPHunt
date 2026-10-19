@@ -121,9 +121,19 @@ export async function handleSaveProductContextMenuClick(
   // after the tab navigated away.
   if (tab?.url && !isAmazonUrl(tab.url)) return false;
 
+  // SAD-344: the content script is top-frame only, so a click inside an
+  // `<iframe>` arrives with a non-zero `frameId` and nothing captured in the
+  // frame that will answer. Pass that on so the top frame can explain the
+  // situation rather than reporting a miss. `frameId` is 0 for the top frame
+  // and absent on browsers that do not report it — both mean "not a subframe".
+  const fromSubframe = typeof info.frameId === 'number' && info.frameId !== 0;
+
   return dispatchToAmazonTab(tabId, {
     type: 'SAVE_CONTEXT_PRODUCT',
-    payload: { requestedAt: new Date().toISOString() },
+    payload: {
+      requestedAt: new Date().toISOString(),
+      ...(fromSubframe ? { fromSubframe: true } : {}),
+    },
   });
 }
 

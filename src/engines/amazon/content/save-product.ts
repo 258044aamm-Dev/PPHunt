@@ -70,6 +70,24 @@ export interface ResolveSaveCandidateInput {
 }
 
 /**
+ * SAD-344: what to tell the user when a menu click produced no product.
+ *
+ * The content script runs in the top frame only. A right-click inside an
+ * `<iframe>` never reaches the top document's `contextmenu` listener, so there
+ * is no capture to resolve — the honest answer is "this part of the page is
+ * embedded", not "no product found here", which reads as "you missed".
+ */
+export const SAVE_MISS_MESSAGE = 'No product found here';
+export const SUBFRAME_SAVE_MISS_MESSAGE =
+  'This product is inside an embedded frame. Open the product page to save it.';
+
+export function saveMissMessage(options: { fromSubframe?: boolean } = {}): string {
+  return options.fromSubframe === true
+    ? SUBFRAME_SAVE_MISS_MESSAGE
+    : SAVE_MISS_MESSAGE;
+}
+
+/**
  * Product-detail pages have no card: the whole document is the product.
  * Everywhere else the captured element is resolved to exactly one card, or the
  * answer is "no product".
