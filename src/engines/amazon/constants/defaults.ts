@@ -1,4 +1,8 @@
-import type { AmazonSettings, EnabledFieldsConfig } from '../types';
+import type {
+  AmazonSettings,
+  EnabledFieldsConfig,
+  QuickSaveCollectionBehavior,
+} from '../types';
 
 export const TARGET_MIN = 1;
 export const TARGET_MAX = 1000;
@@ -47,6 +51,10 @@ export const DEFAULT_ENABLED_FIELDS: EnabledFieldsConfig = {
   features: false,
 };
 
+export const DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR: QuickSaveCollectionBehavior =
+  'current';
+export const DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD = false;
+
 export const AMAZON_DEFAULT_VISIBLE_COLUMNS = [
   'ASIN',
   'Title',
@@ -90,6 +98,8 @@ export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   notifications: true,
   separateCategorySections: false,
   enabledFields: { ...DEFAULT_ENABLED_FIELDS },
+  quickSaveCollectionBehavior: DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR,
+  quickSaveAutoDownload: DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
 };
 
 export const DEFAULT_SETTINGS: AmazonSettings = DEFAULT_AMAZON_SETTINGS;

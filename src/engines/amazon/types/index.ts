@@ -168,6 +168,10 @@ export interface AmazonSettings {
   notifications: boolean;
   separateCategorySections?: boolean;
   enabledFields: EnabledFieldsConfig;
+  /** SAD-276: where a one-click save lands. */
+  quickSaveCollectionBehavior: QuickSaveCollectionBehavior;
+  /** SAD-276: build the configured export right after each save (default off). */
+  quickSaveAutoDownload: boolean;
 }
 export type Settings = AmazonSettings;
 export type AppSettings = AmazonSettings;

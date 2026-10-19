@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import {
   DEFAULT_ENABLED_FIELDS,
+  DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
+  DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR,
   DEFAULT_TARGET_COUNT,
   SCROLL_INTERVAL_MAX,
   SCROLL_INTERVAL_MIN,
@@ -82,6 +84,10 @@ export const AmazonSettingsSchema = z.object({
   enabledFields: EnabledFieldsSchema.default(() => ({
     ...DEFAULT_ENABLED_FIELDS,
   })),
+  quickSaveCollectionBehavior: z
+    .enum(['current', 'new', 'ask'])
+    .default(DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR),
+  quickSaveAutoDownload: z.boolean().default(DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD),
 });
 
 export const PartialAmazonSettingsSchema = z.object({
@@ -124,6 +130,8 @@ export const PartialAmazonSettingsSchema = z.object({
   notifications: z.boolean().optional(),
   separateCategorySections: z.boolean().optional(),
   enabledFields: EnabledFieldsSchema.partial().optional(),
+  quickSaveCollectionBehavior: z.enum(['current', 'new', 'ask']).optional(),
+  quickSaveAutoDownload: z.boolean().optional(),
 });
 
 export const SettingsSchema = AmazonSettingsSchema;
