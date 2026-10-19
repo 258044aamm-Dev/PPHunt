@@ -97,7 +97,7 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P4.4 `SAD-289` | In Review | `e25b705` | tsc clean · 749/75 · build 1.87 MB · 26 store/recovery tests |
 | P5.1 `SAD-290` | In Review | `3bf5e4a` | tsc clean · 784/78 · build 1.87 MB · 35 builder/filename/collection tests |
 | P5.2 `SAD-291` | In Review | `1ef3bcc` + `63d0d7e` | tsc clean · 805/79 · build 1.88 MB · 17 service tests + toast action + `downloads` |
-| P6.1 `SAD-292` | In Review | (this commit) | tsc clean · 807/79 · README permissions/one-click, ARCHITECTURE flow, CHANGELOG |
+| P6.1 `SAD-292` | In Review | `e83f59f` | tsc clean · 807/79 · README permissions/one-click, ARCHITECTURE flow, CHANGELOG |
 
 Baseline has moved 385/48 → **807/79** (+422 tests, +31 files). The behaviour is selectable in the
 panel, the current collection is visible and editable in History, the Ask dialog can move a saved row
