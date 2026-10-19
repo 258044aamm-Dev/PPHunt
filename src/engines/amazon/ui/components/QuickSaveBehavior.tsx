@@ -3,8 +3,12 @@ import { useAmazonSettings } from '../hooks/useAmazonSettings';
 import { useCurrentCollection } from '../hooks/useCurrentCollection';
 
 /**
- * SAD-286 (plan Appendix B): the "Right-Click Save Behavior" setting, rendered
- * inside the existing Collect tab. No new tab, panel or modal.
+ * SAD-286 (plan Appendix B): the "Right-Click Save Behavior" setting.
+ *
+ * SAD-332 moved it out of the Collect tab into Settings > Right-Click Save, so
+ * the component now renders its content only — the wrapping card belongs to
+ * whichever surface hosts it. The control itself is unchanged: same radio
+ * group, same values, same write through `updateSettings`.
  */
 
 interface BehaviorOption {
@@ -38,16 +42,8 @@ export function AmazonQuickSaveBehavior() {
   const value = settings?.quickSaveCollectionBehavior ?? 'current';
 
   return (
-    <section className="bg-surface-card border border-hairline-soft rounded-md p-4">
-      <h2 className="font-sans text-xs font-semibold text-ink">
-        Right-Click Save Behavior
-      </h2>
-
-      <div
-        role="radiogroup"
-        aria-label="Right-Click Save Behavior"
-        className="mt-2 space-y-2"
-      >
+    <div>
+      <div role="radiogroup" aria-label="Right-Click Save Behavior" className="space-y-2">
         {OPTIONS.map((option) => (
           <label key={option.value} className="flex items-start gap-2 cursor-pointer">
             <input
@@ -78,6 +74,6 @@ export function AmazonQuickSaveBehavior() {
           {current?.name ?? 'a new collection on the next save'}
         </span>
       </p>
-    </section>
+    </div>
   );
 }

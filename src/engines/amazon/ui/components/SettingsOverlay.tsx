@@ -29,6 +29,7 @@ import {
 import { db } from '../../db/database';
 import type { ValidatedSettings } from '../../schemas/settings';
 import { useAmazonSettings } from '../hooks/useAmazonSettings';
+import { AmazonQuickSaveBehavior } from './QuickSaveBehavior';
 import { useAmazonUIStore } from '../store/uiStore';
 
 export function AmazonSettingsOverlay() {
@@ -462,6 +463,12 @@ export function AmazonSettingsOverlay() {
                 onChange={(v) => updateSettings({ notifications: v })}
               />
             </div>
+          </SettingsSection>
+
+          {/* SAD-332: moved here from the Collect tab - it configures where a
+              right-click save lands, which is a setting, not a collection. */}
+          <SettingsSection title="RIGHT-CLICK SAVE">
+            <AmazonQuickSaveBehavior />
           </SettingsSection>
 
           <SettingsSection title="EXPORT DEFAULTS">
