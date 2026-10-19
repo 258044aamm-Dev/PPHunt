@@ -85,10 +85,13 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P1.2 `SAD-279` | In Review | `f6dff5f` | tsc clean · 485/54 · 16 registration tests |
 | P1.3 `SAD-280` | In Review | `0522884` | tsc clean · 502/55 · 17 resolver tests, incl. parser agreement |
 | P1.4 `SAD-281` | In Review | `0441fdc` | tsc clean · 533/58 · build 1.77 MB · 14 pipeline tests |
+| P2.1 `SAD-282` | In Review | `2c2b41d` | tsc clean · 548/59 · 15 observer tests (churn, IO, teardown) |
+| P2.2 `SAD-283` | In Review | `94e7642` | tsc clean · 568/60 · 20 button tests (states, a11y, cleanup) |
 
-Baseline has moved 385/48 → **533/58** (+148 tests, +10 files). **P2.1 (`SAD-282`, card observer) is
-next.** No issue is marked Done: the acceptance criteria that need a browser are deferred to `SAD-293`,
-and every completion comment says so explicitly.
+Baseline has moved 385/48 → **568/60** (+183 tests, +12 files). **P2.3 (`SAD-284`) is next**: it mounts
+the button from the observer and wires clicks to the save pipeline, which is when the card entry point
+becomes usable. No issue is marked Done: the acceptance criteria that need a browser are deferred to
+`SAD-293`, and every completion comment says so explicitly.
 
 ## Ticket hygiene
 
