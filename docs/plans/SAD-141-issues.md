@@ -95,9 +95,10 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P4.2 `SAD-288` | In Review | `4e89cb0` | tsc clean · 699/70 · 24 fetch tests (outcomes, retry, breaker) |
 | P4.3 `SAD-296` | In Review | `fdfa553` + `05fba84` | tsc clean · 723/72 · build 1.87 MB · 24 merge/seam tests |
 | P4.4 `SAD-289` | In Review | `e25b705` | tsc clean · 749/75 · build 1.87 MB · 26 store/recovery tests |
-| P5.1 `SAD-290` | Implemented (Linear comment blocked) | `3bf5e4a` | tsc clean · 784/78 · build 1.87 MB · 35 builder/filename/collection tests |
+| P5.1 `SAD-290` | In Review | `3bf5e4a` | tsc clean · 784/78 · build 1.87 MB · 35 builder/filename/collection tests |
+| P5.2 `SAD-291` | In Review | `1ef3bcc` | tsc clean · 802/79 · build 1.88 MB · 17 service tests + `downloads` permission |
 
-Baseline has moved 385/48 → **784/78** (+399 tests, +30 files). The behaviour is selectable in the
+Baseline has moved 385/48 → **802/79** (+417 tests, +31 files). The behaviour is selectable in the
 panel, the current collection is visible and editable in History, the Ask dialog can move a saved row
 between collections without losing its snapshots, and both entry points write through one pipeline
 into a history-only collection that cannot adopt a full-page run. The offscreen document exists and is
@@ -108,7 +109,9 @@ save now also mirrors its lifecycle into `storage.session`, so a worker suspende
 the job on the next start, resumes enrichment at most once, and reports `interrupted` rather than
 leaving a card spinning, and one collection can now be built into CSV or XLSX bytes in the offscreen
 document - through the same writers the panel uses, with a filename that is legal on Windows and
-macOS. **P5.2 (`SAD-291`) is next**: the download seam and the D10 permission gate. No issue is marked Done: the acceptance criteria that need a browser are deferred to
+macOS, and that file is delivered by one seam: build bytes, mint a blob URL, `downloads.download` with
+`uniquify`, then revoke the URL exactly once when the download finishes or times out. **P6.1 (`SAD-292`)
+is next**: the documentation pass. No issue is marked Done: the acceptance criteria that need a browser are deferred to
 `SAD-293`, and every completion comment says so explicitly.
 
 ## Ticket hygiene
