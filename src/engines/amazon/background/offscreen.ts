@@ -3,6 +3,8 @@ import {
   OFFSCREEN_TARGET,
   offscreenError,
   type OffscreenBlobResponse,
+  type OffscreenBuildExportRequest,
+  type OffscreenBuildExportResponse,
   type OffscreenParseResponse,
   type OffscreenRequest,
   type OffscreenRevokeResponse,
@@ -271,6 +273,22 @@ export async function createBlobUrlViaOffscreen(
     },
     { ...options, needsBlobs: true },
     offscreenError('BLOB_FAILED', 'The offscreen document did not answer'),
+  );
+}
+
+/**
+ * SAD-290: builds a CSV/XLSX in the offscreen document and returns the bytes.
+ * Blob minting is a separate call, so a build that nobody downloads costs
+ * nothing and a failed download does not re-build the file.
+ */
+export async function buildExportViaOffscreen(
+  request: Omit<OffscreenBuildExportRequest, 'target' | 'type'>,
+  options: EnsureOffscreenOptions = {},
+): Promise<OffscreenBuildExportResponse> {
+  return callOffscreen<OffscreenBuildExportResponse>(
+    { target: OFFSCREEN_TARGET, type: 'OFFSCREEN_BUILD_EXPORT', ...request },
+    { ...options, needsBlobs: true },
+    offscreenError('EXPORT_BUILD_FAILED', 'The offscreen document did not answer'),
   );
 }
 

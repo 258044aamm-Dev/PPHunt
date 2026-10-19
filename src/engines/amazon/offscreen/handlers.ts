@@ -7,6 +7,7 @@ import {
   type OffscreenResponse,
   type OffscreenRevokeResponse,
 } from './protocol';
+import { buildExportFile } from './export-build';
 import { parsePdpHtml } from './parse';
 
 /**
@@ -120,6 +121,10 @@ export async function handleOffscreenRequest(
 
     case 'OFFSCREEN_REVOKE_URL':
       return revokeBlobUrl(request.url);
+
+    case 'OFFSCREEN_BUILD_EXPORT':
+      // SAD-290: bytes only; the worker decides when a download starts.
+      return buildExportFile(request);
 
     default:
       return offscreenError('UNKNOWN_TYPE', 'Unsupported offscreen request');

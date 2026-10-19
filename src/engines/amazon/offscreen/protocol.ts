@@ -25,7 +25,16 @@ export const MAX_OFFSCREEN_BLOB_BYTES = 32 * 1024 * 1024;
 export type OffscreenRequestType =
   | 'OFFSCREEN_PARSE_PRODUCT'
   | 'OFFSCREEN_CREATE_BLOB_URL'
-  | 'OFFSCREEN_REVOKE_URL';
+  | 'OFFSCREEN_REVOKE_URL'
+  | 'OFFSCREEN_BUILD_EXPORT';
+
+/** Export formats the offscreen document can produce. */
+export type OffscreenExportFormat = 'csv' | 'xlsx';
+
+/** A runaway collection, not an export anyone will open. */
+export const MAX_EXPORT_ROWS = 5_000;
+export const MAX_EXPORT_COLUMNS = 60;
+export const MAX_EXPORT_FILENAME_LENGTH = 160;
 
 export interface OffscreenParseProductRequest {
   target: typeof OFFSCREEN_TARGET;
@@ -49,10 +58,24 @@ export interface OffscreenRevokeUrlRequest {
   url: string;
 }
 
+export interface OffscreenBuildExportRequest {
+  target: typeof OFFSCREEN_TARGET;
+  type: 'OFFSCREEN_BUILD_EXPORT';
+  format: OffscreenExportFormat;
+  /** Already-loaded rows: the service worker owns the database (plan 9.4). */
+  products: unknown[];
+  columns: string[];
+  /** Base name without extension, already sanitized by `buildCollectionExportFilename`. */
+  filename: string;
+  includeBOM: boolean;
+  embedImages: 'auto' | 'always' | 'never';
+}
+
 export type OffscreenRequest =
   | OffscreenParseProductRequest
   | OffscreenCreateBlobUrlRequest
-  | OffscreenRevokeUrlRequest;
+  | OffscreenRevokeUrlRequest
+  | OffscreenBuildExportRequest;
 
 export type OffscreenErrorCode =
   | 'INVALID_REQUEST'
@@ -62,7 +85,10 @@ export type OffscreenErrorCode =
   | 'PARSE_FAILED'
   | 'PARSER_REJECTED'
   | 'BLOB_TOO_LARGE'
-  | 'BLOB_FAILED';
+  | 'BLOB_FAILED'
+  | 'EXPORT_INVALID'
+  | 'EXPORT_TOO_LARGE'
+  | 'EXPORT_BUILD_FAILED';
 
 export interface OffscreenError {
   ok: false;
@@ -85,14 +111,29 @@ export interface OffscreenRevokeSuccess {
   ok: true;
 }
 
+export interface OffscreenBuildExportSuccess {
+  ok: true;
+  /** File bytes, so the worker never needs to touch the DOM. */
+  base64: string;
+  mimeType: string;
+  /** Base name including the format extension. */
+  filename: string;
+  byteLength: number;
+  count: number;
+}
+
 export type OffscreenParseResponse = OffscreenParseSuccess | OffscreenError;
 export type OffscreenBlobResponse = OffscreenBlobSuccess | OffscreenError;
 export type OffscreenRevokeResponse = OffscreenRevokeSuccess | OffscreenError;
+export type OffscreenBuildExportResponse =
+  | OffscreenBuildExportSuccess
+  | OffscreenError;
 
 export type OffscreenResponse =
   | OffscreenParseResponse
   | OffscreenBlobResponse
-  | OffscreenRevokeResponse;
+  | OffscreenRevokeResponse
+  | OffscreenBuildExportResponse;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -130,6 +171,25 @@ export function isOffscreenRequest(value: unknown): value is OffscreenRequest {
 
     case 'OFFSCREEN_REVOKE_URL':
       return typeof value.url === 'string' && value.url.startsWith('blob:');
+
+    case 'OFFSCREEN_BUILD_EXPORT': {
+      if (value.format !== 'csv' && value.format !== 'xlsx') return false;
+      if (typeof value.filename !== 'string') return false;
+      const filename = value.filename.trim();
+      if (!filename || filename.length > MAX_EXPORT_FILENAME_LENGTH) return false;
+      if (!Array.isArray(value.products)) return false;
+      if (value.products.length > MAX_EXPORT_ROWS) return false;
+      if (!value.products.every((row) => isRecord(row))) return false;
+      if (!Array.isArray(value.columns)) return false;
+      if (value.columns.length > MAX_EXPORT_COLUMNS) return false;
+      if (!value.columns.every((column) => typeof column === 'string')) return false;
+      if (typeof value.includeBOM !== 'boolean') return false;
+      return (
+        value.embedImages === 'auto' ||
+        value.embedImages === 'always' ||
+        value.embedImages === 'never'
+      );
+    }
 
     default:
       return false;

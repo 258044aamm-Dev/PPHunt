@@ -98,6 +98,16 @@ export const EXPORT_COLUMNS: Record<
     return baseSource;
   },
   'Collected At': 'collectedAt',
+  // SAD-290: derived from the snapshots table at export time, so the row shape
+  // carries them even though they are not product columns.
+  'Snapshot Count': (p) => {
+    const value = (p as { snapshotCount?: number | null }).snapshotCount;
+    return value == null ? '' : String(value);
+  },
+  'Last Snapshot': (p) => {
+    const value = (p as { lastSnapshotAt?: string | null }).lastSnapshotAt;
+    return value ?? '';
+  },
 };
 
 const FIELD_KEY_TO_HEADER: Record<string, string> = {
@@ -129,6 +139,8 @@ const FIELD_KEY_TO_HEADER: Record<string, string> = {
   sectionLabel: 'Section',
   source: 'Source',
   collectedAt: 'Collected At',
+  snapshotCount: 'Snapshot Count',
+  lastSnapshotAt: 'Last Snapshot',
 };
 
 export const DEFAULT_VISIBLE_COLUMNS = [
