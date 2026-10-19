@@ -78,6 +78,9 @@ const LIGHT_TOKENS = `
   --pph-moss: #455e2d;
   --pph-crimson: #a3302d;
   --pph-golden: #856214;
+  --pph-moss-ink: #faf9f5;
+  --pph-crimson-ink: #faf9f5;
+  --pph-badge-halo: #faf9f5;
 `;
 
 const DARK_TOKENS = `
@@ -92,6 +95,9 @@ const DARK_TOKENS = `
   --pph-moss: #91b370;
   --pph-crimson: #e87672;
   --pph-golden: #e0ba5c;
+  --pph-moss-ink: #141413;
+  --pph-crimson-ink: #141413;
+  --pph-badge-halo: #1d1c1a;
 `;
 
 const ICON_BOOKMARK = `
