@@ -186,6 +186,46 @@ export interface AmazonHistoryEntry {
 export type HistoryEntry = AmazonHistoryEntry;
 export type CollectionHistory = AmazonHistoryEntry;
 
+/** How a one-click save chooses its collection. */
+export type QuickSaveCollectionBehavior = 'current' | 'new' | 'ask';
+
+/** Lifecycle of a single one-click save job (card button / context menu). */
+export type SaveJobState =
+  | 'queued'
+  | 'extracting'
+  | 'enriching'
+  | 'completed'
+  | 'failed';
+
+/** Outcome of the background PDP enrichment step. */
+export type SaveEnrichmentStatus =
+  | 'complete'
+  | 'partial'
+  | 'failed'
+  | 'skipped'
+  | 'interrupted';
+
+/** Small, actionable error surface for one-click saves. */
+export type SaveErrorCode =
+  | 'NO_PRODUCT'
+  | 'PARSE_FAILED'
+  | 'DB_WRITE_FAILED'
+  | 'ENRICH_FETCH_FAILED'
+  | 'ENRICH_PARSE_FAILED'
+  | 'OFFSCREEN_UNAVAILABLE'
+  | 'EXPORT_FAILED';
+
+/** Where a save came from and what the page looked like when it happened. */
+export interface SaveExtractionContext {
+  pageType: AmazonPageType;
+  pageUrl: string;
+  triggeredBy: 'context-menu' | 'card-button';
+  searchPosition?: number;
+  pageNumber?: number;
+  listingCategory?: AmazonListingCategory;
+  sectionLabel?: string;
+}
+
 export interface ScrollRuntimeSettingsPayload {
   scrollAmount: number;
   scrollInterval: number;
@@ -280,6 +320,48 @@ export type AmazonExtensionMessage =
         isAmazon: boolean;
         pageType: AmazonPageType | null;
       };
+    }
+  | {
+      type: 'SAVE_PRODUCT';
+      payload: {
+        jobId: string;
+        product: ScrapedAmazonProduct;
+        context: SaveExtractionContext;
+      };
+    }
+  | {
+      type: 'SAVE_CONTEXT_PRODUCT';
+      payload: { requestedAt: string };
+    }
+  | {
+      type: 'SAVE_JOB_UPDATE';
+      payload: {
+        jobId: string;
+        asin: string;
+        state: SaveJobState;
+        enrichmentStatus?: SaveEnrichmentStatus;
+        warning?: string;
+        message?: string;
+        errorCode?: SaveErrorCode;
+        collectionKey?: string;
+        collectionLabel?: string;
+        requiresCollectionChoice?: boolean;
+        defaultCollectionKey?: string;
+        downloadReady?: boolean;
+        updatedAt: string;
+      };
+    }
+  | {
+      type: 'RETRY_SAVE_PRODUCT';
+      payload: { jobId: string };
+    }
+  | {
+      type: 'ASSIGN_SAVED_PRODUCT';
+      payload: { jobId: string; choice: 'current' | 'new' };
+    }
+  | {
+      type: 'EXPORT_SAVED_PRODUCT';
+      payload: { jobId?: string; collectionKey?: string };
     };
 
 export type ExtensionMessage = AmazonExtensionMessage;

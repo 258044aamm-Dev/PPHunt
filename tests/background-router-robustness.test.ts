@@ -82,7 +82,7 @@ function drive(onMessage: ReturnType<typeof event>, message: unknown) {
   return { result, sendResponse, thrown };
 }
 
-/** The 11 schema types whose payload is a required object. */
+/** The 16 schema types that require an object payload with mandatory keys. */
 const PAYLOAD_BEARING_TYPES = [
   'START_COLLECTION',
   'RELOAD_AND_RETRY_COLLECTION',
@@ -95,6 +95,11 @@ const PAYLOAD_BEARING_TYPES = [
   'CONTENT_ERROR',
   'UPDATE_PROGRESS',
   'TAB_STATUS_CHANGED',
+  'SAVE_PRODUCT',
+  'SAVE_CONTEXT_PRODUCT',
+  'SAVE_JOB_UPDATE',
+  'RETRY_SAVE_PRODUCT',
+  'ASSIGN_SAVED_PRODUCT',
 ] as const;
 
 /** The 3 schema types with no payload key (the H-3 undefined-payload path). */
@@ -181,6 +186,20 @@ describe('H-3: background router discards malformed messages without throwing', 
         expect(sendResponse).not.toHaveBeenCalled();
       }
     }
+  });
+
+  it('EXPORT_SAVED_PRODUCT accepts an empty payload and is ignored by the background switch', async () => {
+    const { onMessage } = await startBackground();
+    const { result, sendResponse, thrown } = drive(onMessage, {
+      type: 'EXPORT_SAVED_PRODUCT',
+      payload: {},
+    });
+
+    expect(thrown).toBeNull();
+    expect(result).toBe(false);
+    // Every field is optional (export the current collection), so the message is
+    // schema-valid but has no background case yet -> default: return false.
+    expect(sendResponse).not.toHaveBeenCalled();
   });
 
   it('a valid PRODUCTS_COLLECTED with one product still persists end-to-end', async () => {

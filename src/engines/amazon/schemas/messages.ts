@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TARGET_MAX, TARGET_MIN } from '../constants/defaults';
+import { AmazonAsinSchema, AmazonListingCategorySchema } from './product';
 import { AmazonScrapedProductSchema } from './scraped-product';
 
 export const CollectionModeSchema = z.enum(['manual', 'automatic']);
@@ -158,6 +159,102 @@ export const TabStatusChangedMessageSchema = z.object({
   }),
 });
 
+export const QuickSaveCollectionBehaviorSchema = z.enum(['current', 'new', 'ask']);
+
+export const SaveJobStateSchema = z.enum([
+  'queued',
+  'extracting',
+  'enriching',
+  'completed',
+  'failed',
+]);
+
+export const SaveEnrichmentStatusSchema = z.enum([
+  'complete',
+  'partial',
+  'failed',
+  'skipped',
+  'interrupted',
+]);
+
+export const SaveErrorCodeSchema = z.enum([
+  'NO_PRODUCT',
+  'PARSE_FAILED',
+  'DB_WRITE_FAILED',
+  'ENRICH_FETCH_FAILED',
+  'ENRICH_PARSE_FAILED',
+  'OFFSCREEN_UNAVAILABLE',
+  'EXPORT_FAILED',
+]);
+
+export const SaveExtractionContextSchema = z.object({
+  pageType: AmazonPageTypeSchema,
+  pageUrl: z.string().url(),
+  triggeredBy: z.enum(['context-menu', 'card-button']),
+  searchPosition: z.number().int().positive().optional(),
+  pageNumber: z.number().int().positive().optional(),
+  listingCategory: AmazonListingCategorySchema.optional(),
+  sectionLabel: z.string().optional(),
+});
+
+export const SaveProductMessageSchema = z.object({
+  type: z.literal('SAVE_PRODUCT'),
+  payload: z.object({
+    jobId: z.string().min(1),
+    product: AmazonScrapedProductSchema,
+    context: SaveExtractionContextSchema,
+  }),
+});
+
+export const SaveContextProductMessageSchema = z.object({
+  type: z.literal('SAVE_CONTEXT_PRODUCT'),
+  payload: z.object({
+    requestedAt: z.string().min(1),
+  }),
+});
+
+export const SaveJobUpdateMessageSchema = z.object({
+  type: z.literal('SAVE_JOB_UPDATE'),
+  payload: z.object({
+    jobId: z.string().min(1),
+    asin: AmazonAsinSchema,
+    state: SaveJobStateSchema,
+    enrichmentStatus: SaveEnrichmentStatusSchema.optional(),
+    warning: z.string().optional(),
+    message: z.string().optional(),
+    errorCode: SaveErrorCodeSchema.optional(),
+    collectionKey: z.string().min(1).optional(),
+    collectionLabel: z.string().optional(),
+    requiresCollectionChoice: z.boolean().optional(),
+    defaultCollectionKey: z.string().min(1).optional(),
+    downloadReady: z.boolean().optional(),
+    updatedAt: z.string().min(1),
+  }),
+});
+
+export const RetrySaveProductMessageSchema = z.object({
+  type: z.literal('RETRY_SAVE_PRODUCT'),
+  payload: z.object({
+    jobId: z.string().min(1),
+  }),
+});
+
+export const AssignSavedProductMessageSchema = z.object({
+  type: z.literal('ASSIGN_SAVED_PRODUCT'),
+  payload: z.object({
+    jobId: z.string().min(1),
+    choice: z.enum(['current', 'new']),
+  }),
+});
+
+export const ExportSavedProductMessageSchema = z.object({
+  type: z.literal('EXPORT_SAVED_PRODUCT'),
+  payload: z.object({
+    jobId: z.string().min(1).optional(),
+    collectionKey: z.string().min(1).optional(),
+  }),
+});
+
 export const AmazonExtensionMessageSchema = z.discriminatedUnion('type', [
   StartCollectionMessageSchema,
   ReloadAndRetryCollectionMessageSchema,
@@ -173,6 +270,12 @@ export const AmazonExtensionMessageSchema = z.discriminatedUnion('type', [
   ContentErrorMessageSchema,
   UpdateProgressMessageSchema,
   TabStatusChangedMessageSchema,
+  SaveProductMessageSchema,
+  SaveContextProductMessageSchema,
+  SaveJobUpdateMessageSchema,
+  RetrySaveProductMessageSchema,
+  AssignSavedProductMessageSchema,
+  ExportSavedProductMessageSchema,
 ]);
 
 export const ExtensionMessageSchema = AmazonExtensionMessageSchema;
