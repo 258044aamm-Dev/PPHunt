@@ -394,10 +394,6 @@ export type AmazonExtensionMessage =
       };
     }
   | {
-      type: 'RETRY_SAVE_PRODUCT';
-      payload: { jobId: string };
-    }
-  | {
       type: 'ASSIGN_SAVED_PRODUCT';
       payload: { jobId: string; choice: 'current' | 'new' };
     }

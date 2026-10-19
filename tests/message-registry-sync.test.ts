@@ -12,6 +12,8 @@
  * the moment the three lists drift apart.
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { z } from 'zod';
 
 import type { AmazonExtensionMessage } from '@/engines/amazon/types';
@@ -42,7 +44,6 @@ const NEW_TYPES = [
   'SAVE_PRODUCT',
   'SAVE_CONTEXT_PRODUCT',
   'SAVE_JOB_UPDATE',
-  'RETRY_SAVE_PRODUCT',
   'ASSIGN_SAVED_PRODUCT',
   'EXPORT_SAVED_PRODUCT',
 ] as const;
@@ -85,7 +86,6 @@ const VALID: Record<(typeof NEW_TYPES)[number], unknown> = {
       updatedAt: '2026-10-19T00:00:01.000Z',
     },
   },
-  RETRY_SAVE_PRODUCT: { type: 'RETRY_SAVE_PRODUCT', payload: { jobId: 'job-1' } },
   ASSIGN_SAVED_PRODUCT: {
     type: 'ASSIGN_SAVED_PRODUCT',
     payload: { jobId: 'job-1', choice: 'new' },
@@ -96,7 +96,42 @@ const VALID: Record<(typeof NEW_TYPES)[number], unknown> = {
   },
 };
 
+const SRC_DIR = join(__dirname, '..', 'src');
+
+/** The three registry files themselves — references there prove nothing. */
+const REGISTRY_FILES = new Set([
+  join(SRC_DIR, 'engines/amazon/types/index.ts'),
+  join(SRC_DIR, 'engines/amazon/schemas/messages.ts'),
+  join(SRC_DIR, 'engines/amazon/schemas/validate-message.ts'),
+]);
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(full);
+    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+  });
+}
+
 describe('message registry sync', () => {
+  /**
+   * SAD-342: `RETRY_SAVE_PRODUCT` sat in all three registries with no sender
+   * and no handler. This keeps the opposite true: a type may only be declared
+   * if some non-registry source file actually sends or handles it.
+   */
+  it('every registered type is used outside the three registries (SAD-342)', () => {
+    const usage = sourceFiles(SRC_DIR)
+      .filter((file) => !REGISTRY_FILES.has(file))
+      .map((file) => readFileSync(file, 'utf8'))
+      .join('\n');
+
+    for (const type of AMAZON_MESSAGE_TYPES) {
+      expect(usage, `${type} is declared but never sent or handled`).toContain(
+        `'${type}'`,
+      );
+    }
+  });
+
   it('AMAZON_MESSAGE_TYPES and the Zod union contain exactly the same types', () => {
     expect(new Set(AMAZON_MESSAGE_TYPES)).toEqual(new Set(schemaMessageTypes()));
   });
@@ -118,7 +153,6 @@ describe('message registry sync', () => {
     SAVE_PRODUCT: {},
     SAVE_CONTEXT_PRODUCT: {},
     SAVE_JOB_UPDATE: {},
-    RETRY_SAVE_PRODUCT: {},
     ASSIGN_SAVED_PRODUCT: {},
     EXPORT_SAVED_PRODUCT: { collectionKey: 42 },
   };

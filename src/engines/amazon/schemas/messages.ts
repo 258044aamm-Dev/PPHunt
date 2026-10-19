@@ -233,13 +233,6 @@ export const SaveJobUpdateMessageSchema = z.object({
   }),
 });
 
-export const RetrySaveProductMessageSchema = z.object({
-  type: z.literal('RETRY_SAVE_PRODUCT'),
-  payload: z.object({
-    jobId: z.string().min(1),
-  }),
-});
-
 export const AssignSavedProductMessageSchema = z.object({
   type: z.literal('ASSIGN_SAVED_PRODUCT'),
   payload: z.object({
@@ -274,7 +267,6 @@ export const AmazonExtensionMessageSchema = z.discriminatedUnion('type', [
   SaveProductMessageSchema,
   SaveContextProductMessageSchema,
   SaveJobUpdateMessageSchema,
-  RetrySaveProductMessageSchema,
   AssignSavedProductMessageSchema,
   ExportSavedProductMessageSchema,
 ]);

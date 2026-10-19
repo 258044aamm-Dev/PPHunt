@@ -20,7 +20,6 @@ export const AMAZON_MESSAGE_TYPES = new Set<AmazonExtensionMessage['type']>([
   'SAVE_PRODUCT',
   'SAVE_CONTEXT_PRODUCT',
   'SAVE_JOB_UPDATE',
-  'RETRY_SAVE_PRODUCT',
   'ASSIGN_SAVED_PRODUCT',
   'EXPORT_SAVED_PRODUCT',
 ]);

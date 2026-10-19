@@ -265,7 +265,7 @@ Full schemas in [Appendix A](#appendix-a--message-contract). Six new types:
 | `SAVE_CONTEXT_PRODUCT` | background → content | "The user chose Save Product Details in this tab" |
 | `SAVE_PRODUCT` | content → background | One normalized product + extraction context + `jobId` |
 | `SAVE_JOB_UPDATE` | background → content / panel | State machine updates, collection assignment, export readiness |
-| `RETRY_SAVE_PRODUCT` | content → background | Retry a failed job (re-parse + re-save) |
+| ~~`RETRY_SAVE_PRODUCT`~~ | — | **Removed (SAD-342).** Never implemented; retry re-sends `SAVE_PRODUCT` with a new job id. |
 | `ASSIGN_SAVED_PRODUCT` | content → background | Result of the Ask-every-time dialog |
 | `EXPORT_SAVED_PRODUCT` | content → background | Build/download the configured export for a job or collection |
 
@@ -1078,11 +1078,10 @@ export interface SaveJobUpdateMessage {
   };
 }
 
-// content -> background
-export interface RetrySaveProductMessage {
-  type: 'RETRY_SAVE_PRODUCT';
-  payload: { jobId: string };
-}
+// REMOVED (SAD-342): `RETRY_SAVE_PRODUCT` was planned here but never got a
+// sender or a handler. Retrying a failed save re-sends `SAVE_PRODUCT` with a
+// new job id, so the type was deleted from the union, the Zod schema and the
+// runtime allow-list rather than left as a contract nothing honours.
 
 export interface AssignSavedProductMessage {
   type: 'ASSIGN_SAVED_PRODUCT';
