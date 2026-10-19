@@ -28,6 +28,9 @@ export default defineConfig({
       'scripting',
       // SAD-278: the "Save Product Details" item needs the menu API.
       'contextMenus',
+      // SAD-295: DOMParser and URL.createObjectURL only exist in an offscreen
+      // document, so fetched-PDP parsing and blob minting need this permission.
+      'offscreen',
     ],
     // SAD-278: the Amazon half is derived from AMAZON_MARKETPLACE_DOMAINS, so a
     // marketplace cannot be added to the content script without its permission.

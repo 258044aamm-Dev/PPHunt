@@ -78,6 +78,12 @@ describe('content script and manifest wiring', () => {
 // in `npm run verify`), so it is skipped on a clean checkout instead of failing.
 const manifestPath = join(root, 'dist', 'chrome-mv3', 'manifest.json');
 
+describe('offscreen permission (SAD-295)', () => {
+  it('requests the offscreen permission in the manifest config', () => {
+    expect(configSource).toMatch(/'offscreen',/);
+  });
+});
+
 describe.skipIf(!existsSync(manifestPath))('built manifest', () => {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
     permissions: string[];
@@ -87,6 +93,11 @@ describe.skipIf(!existsSync(manifestPath))('built manifest', () => {
 
   it('requests contextMenus', () => {
     expect(manifest.permissions).toContain('contextMenus');
+  });
+
+  it('requests offscreen and ships offscreen.html', () => {
+    expect(manifest.permissions).toContain('offscreen');
+    expect(existsSync(join(root, 'dist', 'chrome-mv3', 'offscreen.html'))).toBe(true);
   });
 
   it('gives the content script exactly the Amazon host permissions', () => {
