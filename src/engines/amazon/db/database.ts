@@ -3,6 +3,7 @@ import type {
   AppSettings,
   HistoryEntry,
   Product,
+  ProductSnapshot,
   SessionState,
 } from '../types';
 
@@ -15,6 +16,7 @@ export class PPHuntDB extends Dexie {
   sessions!: Table<SessionState, string>;
   history!: Table<HistoryEntry, number>;
   settings!: Table<AppSettings, string>;
+  snapshots!: Table<ProductSnapshot, number>;
 
   constructor(name = 'PPHuntDB') {
     super(name);
@@ -24,6 +26,13 @@ export class PPHuntDB extends Dexie {
       sessions: 'id, tabId, status, startedAt, updatedAt',
       history: '++id, sessionKey, startedAt, completedAt, status',
       settings: 'id',
+    });
+
+    // v2 (SAD-275): one row per observation, so re-saving a product records the
+    // new price/rating/BSR instead of overwriting the only copy. Additive only:
+    // the v1 stores are inherited untouched and no row is rewritten on upgrade.
+    this.version(2).stores({
+      snapshots: '++id, asin, sessionKey, capturedAt, [asin+capturedAt]',
     });
   }
 }

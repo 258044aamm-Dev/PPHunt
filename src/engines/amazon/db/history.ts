@@ -49,7 +49,7 @@ export async function getHistoryBySessionKey(
 export async function deleteHistory(id: number): Promise<void> {
   await db.transaction(
     'rw',
-    [db.history, db.products, db.sessions],
+    [db.history, db.products, db.sessions, db.snapshots],
     async () => {
       const entry = await db.history.get(id);
       if (!entry) return;
@@ -59,7 +59,13 @@ export async function deleteHistory(id: number): Promise<void> {
           .where('sessionKey')
           .equals(entry.sessionKey)
           .delete();
+        // One-click collections have no sessions row; deleting a missing key is
+        // a no-op, so the same cascade serves both collection kinds.
         await db.sessions.delete(entry.sessionKey);
+        await db.snapshots
+          .where('sessionKey')
+          .equals(entry.sessionKey)
+          .delete();
       }
     },
   );
@@ -75,7 +81,7 @@ export const deleteHistoryEntry = deleteHistory;
 export async function clearAllHistory(): Promise<void> {
   await db.transaction(
     'rw',
-    [db.history, db.products, db.sessions],
+    [db.history, db.products, db.sessions, db.snapshots],
     async () => {
       const historyRows = await db.history.toArray();
       const sessionKeys = Array.from(
@@ -91,6 +97,7 @@ export async function clearAllHistory(): Promise<void> {
       for (const sessionKey of sessionKeys) {
         await db.products.where('sessionKey').equals(sessionKey).delete();
         await db.sessions.delete(sessionKey);
+        await db.snapshots.where('sessionKey').equals(sessionKey).delete();
       }
     },
   );

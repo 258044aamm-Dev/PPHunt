@@ -221,19 +221,29 @@ export async function pruneOldSessions(
 
   if (staleIds.length === 0) return 0;
 
-  await db.transaction('rw', [db.sessions, db.products], async () => {
-    for (const sessionKey of staleIds) {
-      await db.products.where('sessionKey').equals(sessionKey).delete();
-      await db.sessions.delete(sessionKey);
-    }
-  });
+  await db.transaction(
+    'rw',
+    [db.sessions, db.products, db.snapshots],
+    async () => {
+      for (const sessionKey of staleIds) {
+        await db.products.where('sessionKey').equals(sessionKey).delete();
+        await db.sessions.delete(sessionKey);
+        await db.snapshots.where('sessionKey').equals(sessionKey).delete();
+      }
+    },
+  );
 
   return staleIds.length;
 }
 
 export async function deleteSession(sessionKey: string): Promise<void> {
-  await db.transaction('rw', [db.sessions, db.products], async () => {
-    await db.products.where('sessionKey').equals(sessionKey).delete();
-    await db.sessions.delete(sessionKey);
-  });
+  await db.transaction(
+    'rw',
+    [db.sessions, db.products, db.snapshots],
+    async () => {
+      await db.products.where('sessionKey').equals(sessionKey).delete();
+      await db.sessions.delete(sessionKey);
+      await db.snapshots.where('sessionKey').equals(sessionKey).delete();
+    },
+  );
 }

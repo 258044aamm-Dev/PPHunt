@@ -215,6 +215,28 @@ export type SaveErrorCode =
   | 'OFFSCREEN_UNAVAILABLE'
   | 'EXPORT_FAILED';
 
+/** One observation of a product at a point in time (listing or detail page). */
+export interface ProductSnapshot {
+  id?: number;
+  asin: string;
+  sessionKey: string;
+  jobId: string;
+  source: 'listing' | 'detail';
+  capturedAt: string;
+  price: number | null;
+  listPrice?: number | null;
+  discountPercentage?: string | null;
+  currency: string | null;
+  rating: number | null;
+  reviewCount: number | null;
+  bestSellersRank?: string | null;
+  availability?: string | null;
+  coupon?: string | null;
+  dealBadge?: string | null;
+  delivery?: string | null;
+  context?: SaveExtractionContext;
+}
+
 /** Where a save came from and what the page looked like when it happened. */
 export interface SaveExtractionContext {
   pageType: AmazonPageType;
