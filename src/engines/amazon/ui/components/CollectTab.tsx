@@ -3,6 +3,7 @@ import { AmazonCollectionControls } from './CollectionControls';
 import { AmazonCollectionMode } from './CollectionMode';
 import { AmazonCounterDisplay } from './CounterDisplay';
 import { AmazonProgressBar } from './ProgressBar';
+import { AmazonQuickSaveBehavior } from './QuickSaveBehavior';
 import { AmazonStatusBar } from './StatusBar';
 import { AmazonTargetSelector } from './TargetSelector';
 
@@ -36,6 +37,8 @@ export function AmazonCollectTab() {
       </div>
 
       <AmazonCollectionControls />
+
+      <AmazonQuickSaveBehavior />
     </div>
   );
 }
