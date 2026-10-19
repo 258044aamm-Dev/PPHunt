@@ -1,14 +1,15 @@
 # SAD-141 — manual QA matrix
 
-**Status: not executed.** Every row below is a browser check. None of them has
-been run: the work in this epic was done without a browser, and nothing in the
-SAD-141 comments claims otherwise. This file exists so that SAD-293 can be filled
-in line by line — the rule is that every row ends with an explicit result, never
-a silent omission.
+**Status: partially executed.** The **SAD-330 detail visibility** section below
+has real results from a Chromium 131.0.0.0 run (Playwright driving the unpacked
+build against a local fixture). Every other table is still `TODO`: those rows
+need live Amazon or native browser UI that automation cannot reach.
 
-The **SAD-330 detail visibility** section near the bottom was added by SAD-339
-and is also entirely unrun — it is scaffolding with the steps and expected
-results written down, so the run records facts rather than impressions.
+The rule is unchanged — every row ends with an explicit result, never a silent
+omission.
+
+The **SAD-330 detail visibility** section near the bottom was added by SAD-339.
+Its rows that do not need native browser UI were executed; each one says how.
 
 Legend
 
@@ -120,36 +121,60 @@ outside a browser.
 
 Added for SAD-339. These rows check the *outcome* of the SAD-330 sub-issues
 (default-on Description/Features, the settings migration, the enrichment
-warning, and the panel toast). Record a result as
-`pass (Chrome <version>)` / `fail (Chrome <version>)` / `not run` — and if a row
-fails, file it as its own issue instead of leaving it in the table.
+warning, and the panel toast).
 
-Build with `npm run build`, load `dist/chrome-mv3` unpacked, and have the side
-panel open on Preview unless a row says otherwise.
+**How the executed rows were run.** Playwright 1.49.1 driving Chromium
+**131.0.0.0** (headless, `--load-extension=dist/chrome-mv3`, unpacked build of
+`main`). Amazon URLs were served from a **local fixture** — a synthetic
+search-results page with 60 cards, one card per ASIN — because this environment
+cannot reach live Amazon. Fixture results are therefore evidence about the
+extension's own behaviour, not about Amazon's markup. The runner **is** committed
+as `scripts/browser-qa/card-flow.cjs` so the run is repeatable; it needs
+Playwright, which is deliberately not a repository dependency (install with
+`npm i --no-save playwright && npx playwright install chromium`).
 
-| Check | Steps and expected result | Status | Closest automated evidence |
+Rows marked `not run` say what blocks them. `not run` is an explicit result, per
+the rule at the top of this file.
+
+| Check | Steps and expected result | Result | Closest automated evidence |
 |---|---|---|---|
-| Right-click a card on a search page → Preview shows Description and Features | Open a search-results page, right-click a card image → *Save Product Details*. Expected: the row appears in Preview with **Description** and **Features** columns present; populated when the listing card carries them, empty cells otherwise — but never a missing column. | TODO | `tests/table-v9-contract.test.tsx` (default column set), `tests/save-product.test.ts` |
-| Right-click on a product-detail page → same | Open `/dp/<ASIN>`, right-click anywhere → *Save Product Details*. Expected: same columns; the PDP path fills both with the page's bullet points and prose. | TODO | `tests/save-job-enrichment.test.ts`, `tests/save-product.test.ts` (PDP branch) |
-| Enrichment blocked → the warning toast shows and the row survives | Open the service worker's DevTools (`chrome://extensions` → *service worker*), set Network to **Offline**, then save a card. Expected: toast reads *"Saved, but the product details could not be fetched — details may be incomplete"*, the row is in History, and Preview shows it. Nothing is rolled back. | TODO | `tests/save-job-enrichment.test.ts` (network-error path), `tests/save-job-panel-feedback.test.tsx` (the panel toast) |
-| Breaker open → the save is skipped with a warning, not a failure | Pick a marketplace that challenges the connection (e.g. `amazon.cn` from outside the region), save three products, then a fourth. Expected: the fourth reports `skipped / circuit-open` with the toast *"Saved, but the product page was not fetched — details may be incomplete"*, and the row still exists. | TODO | `tests/enrichment-fetch.test.ts` (threshold → `circuit-open`) |
-| A second launch does not re-migrate settings | After one save (`settingsVersion` = 1), turn **Description** off in Settings → Data fields. Close the browser, reopen, reopen the panel. Expected: Description stays off, `settingsVersion` is still 1, and nothing is flipped back on. | TODO | `tests/settings-migration.test.ts` (idempotence, `>= 1` untouched) |
-| Preview shows the columns in the Sidebar and the Overview | Compare the narrow sidebar view and the wide overview (Settings → Opening mode), then `/preview.html`. Expected: all three show the same default column set, including Description and Features. | TODO | `tests/table-v9-contract.test.tsx` (`getColumnsForSettings` identity) |
-| A disabled field is absent from a real CSV and XLSX export | Settings → Data fields: turn **Best Sellers Rank** and **Monthly Sales** off, save a product, export CSV and XLSX. Expected: neither header and neither value appears in either file; `ASIN`, `Currency`, `URL`, `Source`, `Collected At` are still there. | TODO | `tests/scraper-accuracy.test.tsx` (SAD-345), `tests/export-builder.test.ts` |
-| Right-click inside an embedded frame reports the frame, not a miss | On a page with a sponsored/deal iframe, right-click a product inside it → *Save Product Details*. Expected: *"This product is inside an embedded frame. Open the product page to save it."* — **not** *"No product found here"*. | TODO | `tests/context-menu-registration.test.ts` (SAD-344), `tests/save-product.test.ts` |
-| Right-click, wait 30 s, then click Save | Open the menu, leave it for 30 s, then click *Save Product Details*. Expected: the product saves. Then navigate to a different page and repeat → nothing is saved and the same-page guard holds. | TODO | `tests/save-target-resolver.test.ts` (SAD-341) |
+| A card save lands in Preview with Description and Features present | Click the per-card save control on a fixture card, then open Preview. Expected: the row appears and the table renders **Description** and **Features** columns — populated when the source carries them, empty cells otherwise, but never a missing column. | **pass** (Chromium 131.0.0.0, fixture) — 25 headers rendered; order `… Sponsored → URL → Description → Features → Source`; 1 product row, 1 snapshot (`source: listing`) | `tests/table-v9-contract.test.tsx`, `tests/save-product.test.ts` |
+| Right-click a card on a search page → same result | Right-click a card image → *Save Product Details*. | **not run** (Chromium 131.0.0.0) — the context menu is native browser UI; Playwright cannot click it, and a synthetic `SAVE_CONTEXT_PRODUCT` message would not test the menu at all | `tests/save-product.test.ts` (resolution), `tests/context-menu-registration.test.ts` |
+| Right-click on a product-detail page → same result | Open `/dp/<ASIN>`, right-click → *Save Product Details*. Expected: both columns populated from the page. | **not run** (Chromium 131.0.0.0) — same native-menu limitation, and it needs live Amazon markup to be meaningful | `tests/save-job-enrichment.test.ts` |
+| Enrichment blocked → the save survives and says so | Set the network offline, then save a card. Expected: the row still exists, and the degraded state is shown. | **pass for the row, partial for the signal** (Chromium 131.0.0.0, fixture) — 1 product row and 1 snapshot written; the card control carried `data-partial="true"` from **1 ms** after the click until it reset at **2 227 ms**. The warning **toast** is not produced on the card path at all: `handleSaveJobUpdate` gates it on `pendingSaveJobId`, which only the right-click path sets. So the toast half of this row is **not run** and needs the native menu. | `tests/save-job-enrichment.test.ts`, `tests/save-job-panel-feedback.test.tsx` |
+| Breaker open → the save is skipped with a warning, not a failure | Pick a marketplace that challenges the connection, save three products, then a fourth. | **not run** (Chromium 131.0.0.0) — requires live Amazon to produce real challenge responses; the fixture cannot fabricate the breaker state without editing production code | `tests/enrichment-fetch.test.ts` (threshold → `circuit-open`) |
+| A second launch does not re-migrate settings | After one save (`settingsVersion` = 1), turn **Description** off, close and reopen, reopen the panel. Expected: Description stays off and nothing is flipped back on. | **not run** (Chromium 131.0.0.0) — the automated half is already covered by the migration test; the manual half needs the settings UI toggle and a real browser restart | `tests/settings-migration.test.ts` (idempotence, `>= 1` untouched) |
+| Preview shows the columns in the Sidebar and the Overview | Switch the Preview view mode between **Sidebar** and **Overview**. Expected: both keep the same default column set. | **pass** (Chromium 131.0.0.0, fixture) — Sidebar 26 headers, Overview 26 headers, both containing Description and Features | `tests/table-v9-contract.test.tsx` |
+| `/preview.html` shows the columns | Open the standalone preview page for the saved session. | **pass** (Chromium 131.0.0.0, fixture) — same 25 headers, same order | `tests/table-v9-contract.test.tsx` |
+| The side **panel** surface shows the columns | Open the real side panel from the toolbar. | **not run** (Chromium 131.0.0.0) — `chrome.sidePanel.open()` requires a user gesture; automation cannot open it | `tests/save-job-panel-feedback.test.tsx` |
+| A disabled field is absent from a real CSV and XLSX export | Turn **Best Sellers Rank** and **Monthly Sales** off, save a product, export CSV and XLSX. Expected: neither header nor value appears. | **not run** (Chromium 131.0.0.0) — the download path was not driven; the column derivation is pinned by the SAD-345 unit test | `tests/scraper-accuracy.test.tsx` (SAD-345), `tests/export-builder.test.ts` |
+| Right-click inside an embedded frame reports the frame, not a miss | Right-click a product inside a sponsored/deal iframe. | **not run** (Chromium 131.0.0.0) — needs the native menu and a real Amazon page with an iframe | `tests/context-menu-registration.test.ts` (SAD-344) |
+| Right-click, wait 30 s, then click Save | Open the menu, leave it 30 s, click *Save Product Details*; then navigate and repeat. | **not run** (Chromium 131.0.0.0) — native menu | `tests/save-target-resolver.test.ts` (SAD-341) |
 
-### What could not be run, and why
+### Card and accessibility rows that this run did cover
 
-**Every row above**, for one stated reason: the environment that wrote this
-section has no browser — no Chrome, no Edge, no Playwright/Puppeteer runtime — so
-"load the unpacked build and click it" was not available. Nothing here is
-blocked by the code; all of it is blocked by the absence of a machine with a
-browser on it.
+These belong to the SAD-141 tables above but were executed in the same run, so
+they are recorded here rather than left `TODO`:
 
-That is recorded rather than omitted, per the rule at the top of this file. The
-closest automated evidence is named per row and is exactly that — the nearest
-thing to browser evidence, not a substitute for it.
+| Check | Result |
+|---|---|
+| 60-card page: one button per card | **pass** (Chromium 131.0.0.0, fixture) — 60 controls, 60 distinct ASINs |
+| Infinite scroll ×3: no duplicates, new cards get buttons | **pass** (Chromium 131.0.0.0, fixture) — after +60 cards in three batches: 120 controls, 120 distinct ASINs, no duplicate hosts |
+| Keyboard-only: Tab reaches the save control | **pass** (Chromium 131.0.0.0, fixture) — focus lands on the control's shadow host |
+| No extension console errors on a listing page | **pass** (Chromium 131.0.0.0, fixture) — zero console errors once the fixture's own remote images were stubbed |
+
+### Observations that are not failures of these rows
+
+- **The card save control never receives the stored theme.** `data-theme` was
+  `null` on every mounted control, which is exactly what **SAD-331** describes:
+  the layer accepts a `theme` option that `amazon.content.ts` never passes. Not
+  re-filed — SAD-331 is already open.
+- **The degraded-save signal on a card lasts about 2.2 s** and then the control
+  resets to idle, while the row stays in History permanently. A user who is not
+  watching that card misses it. This is a UX observation, not a failure of a
+  SAD-330 acceptance criterion (the panel toast from SAD-343 covers the panel
+  surface); it is recorded here so the decision is explicit rather than
+  accidental.
 
 ## Not covered anywhere yet
 
