@@ -173,7 +173,7 @@ describe('Dexie v2 snapshots store', () => {
     expect(await db.products.count()).toBe(1);
     expect(await db.snapshots.count()).toBe(1);
     const remaining = await db.snapshots.toArray();
-    expect(remaining[0].sessionKey).toBe('live-1');
+    expect(remaining[0]?.sessionKey).toBe('live-1');
   });
 
   it('deleteSession removes the session products and snapshots', async () => {
@@ -234,6 +234,6 @@ describe('Dexie v2 snapshots store', () => {
     expect(pruned).toBe(1);
     const remaining = await db.snapshots.toArray();
     expect(remaining).toHaveLength(1);
-    expect(remaining[0].sessionKey).toBe('fresh');
+    expect(remaining[0]?.sessionKey).toBe('fresh');
   });
 });
