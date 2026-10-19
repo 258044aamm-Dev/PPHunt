@@ -97,11 +97,8 @@ describe.skipIf(!existsSync(manifestPath))('built manifest', () => {
         !pattern.includes('ssl-images'),
     );
 
-    expect(new Set(manifest.content_scripts[0].matches)).toEqual(
-      new Set(amazonHosts),
-    );
-    expect(manifest.content_scripts[0].matches).toContain(
-      '*://*.amazon.co.za/*',
-    );
+    const matches = manifest.content_scripts[0]?.matches ?? [];
+    expect(new Set(matches)).toEqual(new Set(amazonHosts));
+    expect(matches).toContain('*://*.amazon.co.za/*');
   });
 });

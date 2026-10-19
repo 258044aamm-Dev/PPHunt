@@ -1,3 +1,4 @@
+import { initSaveProductContextMenu } from '@/engines/amazon/background/context-menu';
 import { createAmazonBackgroundController } from '@/engines/amazon/background/handler';
 import { registerTemuBackgroundHandlers } from '@/engines/temu/background/handler';
 import { openOverlayForTab } from '@/lib/overlay/openOverlay';
@@ -10,6 +11,10 @@ import {
 export default defineBackground(() => {
   const amazonController = createAmazonBackgroundController();
   const temuHandlers = registerTemuBackgroundHandlers();
+
+  // SAD-279: the "Save Product Details" menu item. Registration is idempotent
+  // and re-runs on install/startup so a changed title or match list is applied.
+  initSaveProductContextMenu();
 
   let currentOpeningMode: OpeningMode | null = null;
   let modeChangedBeforeInitialRead = false;
