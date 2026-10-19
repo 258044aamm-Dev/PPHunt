@@ -24,6 +24,58 @@ afterEach(() => {
 });
 
 describe('showSaveToast', () => {
+  it('renders one action button and fires it exactly once', () => {
+    const onClick = vi.fn();
+    showSaveToast({
+      state: 'completed',
+      message: 'Saved to History',
+      action: { label: 'Download', onClick },
+    });
+
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-pphunt-toast-action]',
+    );
+    expect(button?.textContent).toBe('Download');
+    expect(
+      document.querySelector('[data-pphunt-toast-message]')?.textContent,
+    ).toBe('Saved to History');
+
+    button?.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(button?.disabled).toBe(true);
+
+    // A second click must not queue a second download.
+    button?.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let the action click reach the page', () => {
+    const pageClick = vi.fn();
+    document.addEventListener('click', pageClick);
+    showSaveToast({
+      state: 'completed',
+      message: 'Saved',
+      action: { label: 'Download', onClick: vi.fn() },
+    });
+
+    document.querySelector<HTMLButtonElement>('[data-pphunt-toast-action]')?.click();
+
+    expect(pageClick).not.toHaveBeenCalled();
+    document.removeEventListener('click', pageClick);
+  });
+
+  it('drops the action when the next message has none', () => {
+    showSaveToast({
+      state: 'completed',
+      message: 'Saved',
+      action: { label: 'Download', onClick: vi.fn() },
+    });
+    showSaveToast({ state: 'queued', message: 'Saving product…' });
+
+    expect(document.querySelector('[data-pphunt-toast-action]')).toBeNull();
+    expect(toast()?.textContent).toBe('Saving product…');
+  });
+
   it('creates exactly one element and reuses it for later messages', () => {
     showSaveToast({ state: 'queued', message: 'Saving…' });
     showSaveToast({ state: 'completed', message: 'Saved' });

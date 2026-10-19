@@ -11,11 +11,22 @@ export const SAVE_TOAST_DEFAULT_MS = 4_000;
 
 export type SaveToastState = 'queued' | 'completed' | 'failed';
 
+export interface SaveToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface SaveToastInput {
   state: SaveToastState;
   message: string;
   autoHideMs?: number;
   doc?: Document;
+  /**
+   * SAD-291: one optional action (the completion toast's "Download"). The toast
+   * itself keeps `pointer-events: none` so it can never eat a page click; only
+   * the button turns pointer events back on.
+   */
+  action?: SaveToastAction;
 }
 
 const COLORS: Record<SaveToastState, { background: string; border: string }> = {
@@ -62,7 +73,42 @@ export function showSaveToast(input: SaveToastInput): void {
   const toast = getOrCreateToast(doc);
   const palette = COLORS[input.state];
 
-  toast.textContent = input.message;
+  // Rebuilt every call: a queued toast has no action, so a stale button from a
+  // previous message must not survive into the next one.
+  toast.replaceChildren();
+  const label = doc.createElement('span');
+  label.dataset.pphuntToastMessage = 'true';
+  label.textContent = input.message;
+  toast.appendChild(label);
+
+  if (input.action) {
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.dataset.pphuntToastAction = 'true';
+    button.textContent = input.action.label;
+    button.style.pointerEvents = 'auto';
+    button.style.marginLeft = '10px';
+    button.style.padding = '3px 8px';
+    button.style.borderRadius = '6px';
+    button.style.border = '1px solid rgba(255, 255, 255, 0.45)';
+    button.style.background = 'rgba(255, 255, 255, 0.14)';
+    button.style.color = '#f9fafb';
+    button.style.font = 'inherit';
+    button.style.cursor = 'pointer';
+    button.addEventListener('click', (event) => {
+      // A click inside the toast must never reach a product card underneath.
+      event.preventDefault();
+      event.stopPropagation();
+      // One click, one download: the worker's `uniquify` would happily make a
+      // second copy, so the button disables itself immediately.
+      button.disabled = true;
+      button.style.cursor = 'default';
+      button.style.opacity = '0.6';
+      input.action?.onClick();
+    });
+    toast.appendChild(button);
+  }
+
   toast.dataset.state = input.state;
   toast.style.background = palette.background;
   toast.style.borderColor = palette.border;

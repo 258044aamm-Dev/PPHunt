@@ -208,10 +208,23 @@ export default defineContentScript({
       if (!pendingSaveJobId || payload.jobId !== pendingSaveJobId) return;
 
       if (payload.state === 'completed') {
+        const completedJobId = pendingSaveJobId;
         pendingSaveJobId = null;
         showSaveToast({
           state: 'completed',
           message: payload.message ?? 'Saved to History',
+          // SAD-291: the format comes from settings in the worker, so the label
+          // stays generic; a failure there is reported by the same channel and
+          // never turns a successful save into a failure.
+          action: {
+            label: 'Download',
+            onClick: () => {
+              sendRuntimeMessageSafe({
+                type: 'EXPORT_SAVED_PRODUCT',
+                payload: { jobId: completedJobId },
+              });
+            },
+          },
         });
         return;
       }
