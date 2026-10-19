@@ -49,6 +49,56 @@ describe('showSaveToast', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('renders a warning detail under the message and keeps the action (SAD-336)', () => {
+    showSaveToast({
+      state: 'completed',
+      message: 'Saved to Chargers · 1 product',
+      detail: 'Saved, but the product page was not fetched — details may be incomplete',
+      action: { label: 'Download', onClick: vi.fn() },
+    });
+
+    expect(
+      document.querySelector('[data-pphunt-toast-message]')?.textContent,
+    ).toBe('Saved to Chargers · 1 product');
+    expect(
+      document.querySelector('[data-pphunt-toast-detail]')?.textContent,
+    ).toBe('Saved, but the product page was not fetched — details may be incomplete');
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-pphunt-toast-action]')
+        ?.textContent,
+    ).toBe('Download');
+  });
+
+  it('keeps a warning-free save byte-identical to before', () => {
+    showSaveToast({ state: 'completed', message: 'Saved to Chargers · 1 product' });
+
+    expect(toast()?.textContent).toBe('Saved to Chargers · 1 product');
+    expect(document.querySelector('[data-pphunt-toast-detail]')).toBeNull();
+  });
+
+  it('drops the previous detail when the next message has none', () => {
+    showSaveToast({
+      state: 'completed',
+      message: 'Saved',
+      detail: 'details may be incomplete',
+    });
+    showSaveToast({ state: 'queued', message: 'Saving product…' });
+
+    expect(document.querySelector('[data-pphunt-toast-detail]')).toBeNull();
+    expect(toast()?.textContent).toBe('Saving product…');
+  });
+
+  it('announces the detail as part of the same live region', () => {
+    showSaveToast({
+      state: 'completed',
+      message: 'Saved',
+      detail: 'details may be incomplete',
+    });
+
+    expect(toast()?.getAttribute('role')).toBe('status');
+    expect(toast()?.textContent).toContain('details may be incomplete');
+  });
+
   it('does not let the action click reach the page', () => {
     const pageClick = vi.fn();
     document.addEventListener('click', pageClick);

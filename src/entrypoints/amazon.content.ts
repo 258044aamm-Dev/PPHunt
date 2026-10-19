@@ -213,6 +213,9 @@ export default defineContentScript({
         showSaveToast({
           state: 'completed',
           message: payload.message ?? 'Saved to History',
+          // SAD-336: the worker says what the product page could not provide.
+          // A save with no warning renders exactly as it did before.
+          ...(payload.warning ? { detail: payload.warning } : {}),
           // SAD-291: the format comes from settings in the worker, so the label
           // stays generic; a failure there is reported by the same channel and
           // never turns a successful save into a failure.

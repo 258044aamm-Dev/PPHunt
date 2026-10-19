@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/database';
 import { updateSettings } from '@/engines/amazon/db/settings';
 import {
+  enrichmentWarningFor,
   handleSaveProduct,
   resetSaveJobsForTests,
   type SaveJobUpdate,
@@ -201,5 +202,27 @@ describe('without an enrichment step', () => {
 
     expect(states).toEqual(['extracting', 'completed']);
     expect(result.enrichmentStatus).toBeUndefined();
+  });
+});
+
+describe('enrichmentWarningFor', () => {
+  it('maps every non-complete status to an operator-readable warning', () => {
+    expect(enrichmentWarningFor('complete')).toBeUndefined();
+    expect(enrichmentWarningFor(undefined)).toBeUndefined();
+    expect(enrichmentWarningFor('partial')).toBe(
+      'Saved, but the product page had no complete details',
+    );
+    expect(enrichmentWarningFor('skipped')).toBe(
+      'Saved, but the product page was not fetched — details may be incomplete',
+    );
+    expect(enrichmentWarningFor('interrupted')).toBe(
+      'Saved, but the product details were interrupted — details may be incomplete',
+    );
+    expect(enrichmentWarningFor('failed', 'ENRICH_PARSE_FAILED')).toBe(
+      'Saved, but the product page could not be read — details may be incomplete',
+    );
+    expect(enrichmentWarningFor('failed')).toBe(
+      'Saved, but the product details could not be fetched — details may be incomplete',
+    );
   });
 });

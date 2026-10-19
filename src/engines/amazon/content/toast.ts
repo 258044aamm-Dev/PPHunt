@@ -22,6 +22,13 @@ export interface SaveToastInput {
   autoHideMs?: number;
   doc?: Document;
   /**
+   * SAD-336: a second, quieter line explaining what the save could not do —
+   * today that is an enrichment warning ("the product page was not fetched").
+   * Kept separate from `message` so the headline stays a clean "Saved to …" and
+   * every existing assertion on the message element still holds.
+   */
+  detail?: string;
+  /**
    * SAD-291: one optional action (the completion toast's "Download"). The toast
    * itself keeps `pointer-events: none` so it can never eat a page click; only
    * the button turns pointer events back on.
@@ -80,6 +87,21 @@ export function showSaveToast(input: SaveToastInput): void {
   label.dataset.pphuntToastMessage = 'true';
   label.textContent = input.message;
   toast.appendChild(label);
+
+  // SAD-336: the reason lives on its own line. Inline styles only — the toast
+  // must not depend on a stylesheet it cannot see, and must not inherit
+  // anything from Amazon's page CSS.
+  if (input.detail) {
+    const detail = doc.createElement('span');
+    detail.dataset.pphuntToastDetail = 'true';
+    detail.textContent = input.detail;
+    detail.style.display = 'block';
+    detail.style.marginTop = '3px';
+    detail.style.fontSize = '12px';
+    detail.style.lineHeight = '1.35';
+    detail.style.opacity = '0.85';
+    toast.appendChild(detail);
+  }
 
   if (input.action) {
     const button = doc.createElement('button');
