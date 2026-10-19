@@ -72,14 +72,23 @@ pre-commit to either side.
 
 ## Progress
 
+All completed work sits in **In Review** (not Done) until the epic's browser QA in `SAD-293` confirms
+it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
+
 | Issue | State | Commit | Automated evidence |
 |---|---|---|---|
-| P0.1 `SAD-274` | Done | `0226e7f` | tsc clean · 426/49 · build 1.76 MB · dead-exports clean |
-| P0.2 `SAD-275` | Done | `0e1233c` (`e230d48` test nit) | tsc clean · 433/50 |
-| P0.3 `SAD-276` | Done | `c100d9b` | tsc clean · 440/51 · `npm run verify` green · audit 0 |
+| P0.1 `SAD-274` | In Review | `0226e7f` | tsc clean · 426/49 · build 1.76 MB · dead-exports clean |
+| P0.2 `SAD-275` | In Review | `0e1233c` (`e230d48` test nit) | tsc clean · 433/50 |
+| P0.3 `SAD-276` | In Review | `c100d9b` | tsc clean · 440/51 · `npm run verify` green · audit 0 |
+| P0.4 `SAD-277` | In Review | `216e8a6` | tsc clean · 461/52 · build 1.76 MB |
+| P1.1 `SAD-278` | In Review | `a5699b4` | tsc clean · 469/53 · manifest: 23 Amazon hosts, `contextMenus` |
+| P1.2 `SAD-279` | In Review | `f6dff5f` | tsc clean · 485/54 · 16 registration tests |
+| P1.3 `SAD-280` | In Review | `0522884` | tsc clean · 502/55 · 17 resolver tests, incl. parser agreement |
+| P1.4 `SAD-281` | In Review | `0441fdc` | tsc clean · 533/58 · build 1.77 MB · 14 pipeline tests |
 
-Baseline has moved 385/48 → **440/51** (+55 tests, +3 files). P0.4 (`SAD-277`) is next;
-P1.1 (`SAD-278`) follows. Every issue still ends with a commit, a comment and the Done transition.
+Baseline has moved 385/48 → **533/58** (+148 tests, +10 files). **P2.1 (`SAD-282`, card observer) is
+next.** No issue is marked Done: the acceptance criteria that need a browser are deferred to `SAD-293`,
+and every completion comment says so explicitly.
 
 ## Ticket hygiene
 
