@@ -239,7 +239,17 @@ export async function handleSaveProduct(
     const count = await refreshCollectionCounts(collection.sessionKey, now());
     deps.store?.update(jobId, { sessionKey: collection.sessionKey });
 
-    if (deps.enrich) {
+    // SAD-337: a save made *on* the product page already parsed the live DOM,
+    // and `saveQuickProduct` stored it with its own `source: 'detail'` snapshot.
+    // Re-fetching the same page over HTTP would duplicate that work and is the
+    // single largest source of breaker trips, so this case skips enrichment
+    // entirely — including the `enriching` transition, which must never show a
+    // spinner for work that will not happen.
+    const savedFromProductPage =
+      payload.context?.pageType === 'product-detail';
+    const shouldEnrich = Boolean(deps.enrich) && !savedFromProductPage;
+
+    if (shouldEnrich) {
       // The row is already saved, so a failure here cannot lose it: the worst
       // outcome is a completed job with `enrichmentStatus: 'failed'`.
       report({
@@ -252,7 +262,10 @@ export async function handleSaveProduct(
     let enrichmentStatus: SaveJobUpdate['enrichmentStatus'];
     let enrichmentErrorCode: SaveJobUpdate['errorCode'];
     let enrichmentWarning: string | undefined;
-    if (deps.enrich) {
+    if (savedFromProductPage) {
+      // The DOM parse *is* the detail read, so the save is complete.
+      enrichmentStatus = 'complete';
+    } else if (deps.enrich) {
       try {
         const enriched = await deps.enrich({
           jobId,

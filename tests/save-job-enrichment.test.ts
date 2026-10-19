@@ -226,3 +226,71 @@ describe('enrichmentWarningFor', () => {
     );
   });
 });
+
+describe('SAD-337: a save made on the product page needs no enrichment', () => {
+  const PDP_URL = 'https://www.amazon.com/dp/B08N5WRWNW';
+
+  function pdpPayload(jobId = 'job-pdp') {
+    return {
+      jobId,
+      product: product(),
+      context: {
+        pageType: 'product-detail' as const,
+        pageUrl: PDP_URL,
+        triggeredBy: 'context-menu' as const,
+      },
+    };
+  }
+
+  it('never calls enrich and never emits the enriching transition', async () => {
+    const states: string[] = [];
+    const enrich = vi.fn(async () => ({ status: 'partial' as const }));
+
+    const result = await handleSaveProduct(pdpPayload(), {
+      emit: (update: SaveJobUpdate) => states.push(update.state),
+      enrich,
+    });
+
+    expect(enrich).not.toHaveBeenCalled();
+    expect(states).toEqual(['extracting', 'completed']);
+    expect(result.state).toBe('completed');
+    expect(result.enrichmentStatus).toBe('complete');
+    // Nothing was fetched, so there is nothing to warn about.
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('keeps the row and exactly one detail snapshot', async () => {
+    await handleSaveProduct(pdpPayload('job-pdp-snap'), {
+      enrich: vi.fn(async () => ({ status: 'complete' as const })),
+    });
+
+    const products = await db.products.toArray();
+    expect(products).toHaveLength(1);
+    expect(products[0]?.title).toBe('Anker 65W Charger');
+
+    const snapshots = await db.snapshots.toArray();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.source).toBe('detail');
+    expect(snapshots[0]?.jobId).toBe('job-pdp-snap');
+  });
+
+  it('is reported complete even when the caller passes no enrich dependency', async () => {
+    const result = await handleSaveProduct(pdpPayload('job-pdp-no-dep'));
+
+    expect(result.state).toBe('completed');
+    expect(result.enrichmentStatus).toBe('complete');
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('still enriches a listing save exactly once', async () => {
+    const enrich = vi.fn(async () => ({ status: 'complete' as const }));
+
+    const result = await handleSaveProduct(payload('job-listing'), { enrich });
+
+    expect(enrich).toHaveBeenCalledTimes(1);
+    expect(result.enrichmentStatus).toBe('complete');
+    const snapshots = await db.snapshots.toArray();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.source).toBe('listing');
+  });
+});
