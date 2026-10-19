@@ -69,3 +69,20 @@ label per phase (`sad-141-p0` … `sad-141-p6`).
 **D10** — ship `downloads` (deterministic, one install-time warning) or the no-permission offscreen
 anchor path (unverified without a user gesture). Recorded as a gate inside **SAD-291**; do not
 pre-commit to either side.
+
+## Progress
+
+| Issue | State | Commit | Automated evidence |
+|---|---|---|---|
+| P0.1 `SAD-274` | Done | `0226e7f` | tsc clean · 426/49 · build 1.76 MB · dead-exports clean |
+| P0.2 `SAD-275` | Done | `0e1233c` (`e230d48` test nit) | tsc clean · 433/50 |
+| P0.3 `SAD-276` | Done | `c100d9b` | tsc clean · 440/51 · `npm run verify` green · audit 0 |
+
+Baseline has moved 385/48 → **440/51** (+55 tests, +3 files). P0.4 (`SAD-277`) is next;
+P1.1 (`SAD-278`) follows. Every issue still ends with a commit, a comment and the Done transition.
+
+## Ticket hygiene
+
+The 23 planned issues are `SAD-274` … `SAD-296`. `SAD-297` … `SAD-302` were created in error while
+resuming the session (they duplicated P4.4, P5.1, P5.2 and P6.1–P6.3) and are **archived** — the
+live set is unchanged. Nothing references the archived numbers.

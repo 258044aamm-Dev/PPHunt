@@ -1,6 +1,6 @@
 # SAD-141 — One-Click Product Saving (Right-Click Menu + Card Button)
 
-**Status:** design proposal, **revision 2** — no source code has been modified.
+**Status:** revision 2 approved; **implementation under way** — SAD-274 (protocol), SAD-275 (Dexie v2) and SAD-276 (settings) are merged on `main` (`0226e7f`…`c100d9b`), taking the suite from 385/48 to 440/51. Live tracker: `docs/plans/SAD-141-issues.md`.
 **Revision 2 (2026-10-19):** compared line by line against the independently revised plan in the same Linear thread (`8fdc9555…` / `62daab08…`). Eight items adopted, three rejected, nine retained; full rationale and evidence in the companion document `docs/plans/SAD-141-comparison.md`. The changes are listed in §17.
 **Issue:** [SAD-141](https://linear.app/sad-mod/issue/SAD-141/feature-request-one-click-product-saving-via-right-click-context-menu) (project PPHunt, team Sad_mod)
 **Repository:** `MakeTheNewHistory/PPHunt`, branch `main`, commit `f7a8478`
