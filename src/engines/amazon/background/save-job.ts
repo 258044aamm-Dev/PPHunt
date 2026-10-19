@@ -41,9 +41,25 @@ export interface SaveProductPayload {
   context: SaveExtractionContext;
 }
 
+export interface EnrichmentStepInput {
+  jobId: string;
+  asin: string;
+  productUrl: string;
+  sessionKey: string;
+}
+
+export interface EnrichmentStepResult {
+  status: Extract<SaveEnrichmentStatus, 'complete' | 'partial' | 'failed'>;
+}
+
 export interface SaveJobDeps {
   emit?: (update: SaveJobUpdate) => void;
   now?: () => Date;
+  /**
+   * SAD-296: runs after the row is committed. Absent by default so every
+   * existing caller and test keeps the pre-enrichment behaviour exactly.
+   */
+  enrich?: (input: EnrichmentStepInput) => Promise<EnrichmentStepResult | void>;
 }
 
 /** Jobs currently writing. A repeated `SAVE_PRODUCT` with the same id is ignored. */
@@ -163,6 +179,31 @@ export async function handleSaveProduct(
 
     const count = await refreshCollectionCounts(collection.sessionKey, now());
 
+    if (deps.enrich) {
+      // The row is already saved, so a failure here cannot lose it: the worst
+      // outcome is a completed job with `enrichmentStatus: 'failed'`.
+      report({
+        state: 'enriching',
+        collectionKey: collection.sessionKey,
+        collectionLabel: collection.label,
+      });
+    }
+
+    let enrichmentStatus: SaveJobUpdate['enrichmentStatus'];
+    if (deps.enrich) {
+      try {
+        const enriched = await deps.enrich({
+          jobId,
+          asin,
+          productUrl: payload.product.url,
+          sessionKey: collection.sessionKey,
+        });
+        enrichmentStatus = enriched?.status;
+      } catch {
+        enrichmentStatus = 'failed';
+      }
+    }
+
     if (collection.requiresChoice) {
       // Registered before the update is emitted: the dialog can be answered the
       // moment the content script receives it, so the entry must already exist.
@@ -180,6 +221,7 @@ export async function handleSaveProduct(
       collectionKey: collection.sessionKey,
       collectionLabel: collection.label,
       message: savedMessage(collection.label, count),
+      ...(enrichmentStatus ? { enrichmentStatus } : {}),
       ...(payload.product?.title ? { productTitle: payload.product.title } : {}),
       ...(collection.requiresChoice
         ? {

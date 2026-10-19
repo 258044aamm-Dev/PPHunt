@@ -32,6 +32,7 @@ import type {
 } from '../types';
 import { isAmazonUrl } from '../utils/amazon-url';
 import { handleAssignSavedProduct } from './assignment';
+import { enrichSavedProduct } from './enrich-saved-product';
 import { handleSaveProduct } from './save-job';
 
 interface ActiveCollectionRuntimeState {
@@ -804,6 +805,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
             }
             broadcastRuntimeMessage(message);
           },
+          // SAD-296: enrich after the row is committed; failures leave it intact.
+          enrich: (input) => enrichSavedProduct(input),
         });
         break;
 
