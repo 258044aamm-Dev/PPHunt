@@ -1,4 +1,7 @@
 import { AMAZON_MATCH_PATTERNS } from '@/engines/amazon/constants/match-patterns';
+import { resolveSaveCandidate } from '@/engines/amazon/content/save-product';
+import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/content/save-target';
+import { removeSaveToast, showSaveToast } from '@/engines/amazon/content/toast';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -41,6 +44,17 @@ function sendRuntimeMessageSafe(message: Record<string, unknown>): void {
   } catch {
     // Ignore synchronous runtime context invalidation
   }
+}
+
+function mintSaveJobId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Fall through to the timestamp form
+  }
+  return `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function extractCurrentPageProducts(
@@ -117,6 +131,60 @@ export default defineContentScript({
     let scrollController: ScrollController | null = null;
     let mutationObserver: MutationObserver | null = null;
     let lastKnownUrl = window.location.href;
+    let lastSaveCapture: CapturedSaveTarget | null = null;
+    let pendingSaveJobId: string | null = null;
+
+    /**
+     * SAD-281: the background cannot see the page (no element in
+     * `contextMenus.OnClickData`), so it asks and this resolves the product that
+     * was under the pointer when the menu opened.
+     */
+    const handleSaveContextProduct = () => {
+      const pageUrl = window.location.href;
+      const candidate = resolveSaveCandidate({
+        capture: lastSaveCapture,
+        pageUrl,
+        triggeredBy: 'context-menu',
+      });
+
+      if (!candidate) {
+        showSaveToast({ state: 'failed', message: 'No product found here' });
+        return;
+      }
+
+      const jobId = mintSaveJobId();
+      pendingSaveJobId = jobId;
+      sendRuntimeMessageSafe({
+        type: 'SAVE_PRODUCT',
+        payload: { jobId, product: candidate.product, context: candidate.context },
+      });
+      showSaveToast({ state: 'queued', message: 'Saving product…' });
+    };
+
+    const handleSaveJobUpdate = (payload: {
+      jobId: string;
+      state: string;
+      message?: string;
+    }) => {
+      if (!pendingSaveJobId || payload.jobId !== pendingSaveJobId) return;
+
+      if (payload.state === 'completed') {
+        pendingSaveJobId = null;
+        showSaveToast({
+          state: 'completed',
+          message: payload.message ?? 'Saved to History',
+        });
+        return;
+      }
+
+      if (payload.state === 'failed') {
+        pendingSaveJobId = null;
+        showSaveToast({
+          state: 'failed',
+          message: payload.message ?? 'Could not save this product',
+        });
+      }
+    };
 
     const reportPageInfo = () => {
       const url = window.location.href;
@@ -394,6 +462,16 @@ export default defineContentScript({
           scrollController?.pause();
           break;
 
+        case 'SAVE_CONTEXT_PRODUCT':
+          sendResponse?.({ ok: true });
+          handleSaveContextProduct();
+          break;
+
+        case 'SAVE_JOB_UPDATE':
+          sendResponse?.({ ok: true });
+          handleSaveJobUpdate(validMsg.payload);
+          break;
+
         case 'STOP_COLLECTION_CMD':
         case 'STOP_COLLECTION':
           sendResponse?.({ ok: true });
@@ -443,6 +521,21 @@ export default defineContentScript({
       }
     };
 
+    const rememberSaveTarget = (event: Event) => {
+      lastSaveCapture = captureSaveTarget(event);
+    };
+
+    // Capture phase + passive: the page's own context-menu handlers may stop
+    // propagation, but they cannot stop a capturing listener.
+    document.addEventListener('contextmenu', rememberSaveTarget, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('mousedown', rememberSaveTarget, {
+      capture: true,
+      passive: true,
+    });
+
     browser.runtime.onMessage.addListener(runtimeListener);
     window.addEventListener('pphunt:command', domBridgeListener);
     window.addEventListener('popstate', handleNavigationChange);
@@ -463,6 +556,13 @@ export default defineContentScript({
       } catch {
         // Ignore
       }
+      document.removeEventListener('contextmenu', rememberSaveTarget, {
+        capture: true,
+      });
+      document.removeEventListener('mousedown', rememberSaveTarget, {
+        capture: true,
+      });
+      removeSaveToast();
       window.removeEventListener('pphunt:command', domBridgeListener);
       window.removeEventListener('popstate', handleNavigationChange);
       window.removeEventListener('hashchange', handleNavigationChange);

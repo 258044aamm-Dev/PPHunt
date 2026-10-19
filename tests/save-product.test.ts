@@ -1,0 +1,171 @@
+/**
+ * SAD-281 (P1.4) - the single "resolve + parse" entry point both save triggers use.
+ */
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import {
+  buildSaveContext,
+  extractProductFromCard,
+  resolveSaveCandidate,
+} from '@/engines/amazon/content/save-product';
+import { captureSaveTarget } from '@/engines/amazon/content/save-target';
+import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
+
+const SEARCH_PAGE = `
+  <div class="s-main-slot">
+    <div data-component-type="s-search-result" data-asin="B0AAAAAAAA">
+      <img class="s-image" id="img-a" src="https://m.media-amazon.com/images/I/a.jpg">
+      <h2><a href="/Test-A/dp/B0AAAAAAAA"><span id="title-a">Product A</span></a></h2>
+      <span class="a-price"><span class="a-price-whole" id="price-a">19</span></span>
+    </div>
+    <div data-component-type="s-search-result" data-asin="B0BBBBBBBB">
+      <span class="puis-sponsored-label-text">Sponsored</span>
+      <img class="s-image" id="img-b" src="https://m.media-amazon.com/images/I/b.jpg">
+      <h2><a href="/Test-B/dp/B0BBBBBBBB"><span id="title-b">Product B</span></a></h2>
+      <span class="a-price"><span class="a-price-whole" id="price-b">29</span></span>
+    </div>
+  </div>
+`;
+
+const DETAIL_PAGE = `
+  <span id="productTitle">Delta Widget, 2 Pack</span>
+  <div id="corePriceDisplay_desktop_feature_div">
+    <span class="a-price"><span class="a-price-whole">89</span><span class="a-price-fraction">99</span></span>
+  </div>
+  <span id="acrCustomerReviewText">1,204 ratings</span>
+  <i id="acrPopover" title="4.5 out of 5 stars"></i>
+  <img id="landingImage" src="https://m.media-amazon.com/images/I/delta._AC_SL1500_.jpg">
+  <div id="feature-bullets"><ul><li>Solid brass</li><li>Two pack</li></ul></div>
+  <span id="bylineInfo">Visit the Delta Store</span>
+  <div id="availability"><span>In Stock</span></div>
+`;
+
+function byId(id: string): Element {
+  const element = document.getElementById(id);
+  if (!element) throw new Error(`fixture element #${id} is missing`);
+  return element;
+}
+
+beforeEach(() => {
+  document.body.innerHTML = SEARCH_PAGE;
+});
+
+describe('extractProductFromCard', () => {
+  it('parses a search card with the search parser', () => {
+    const product = extractProductFromCard(
+      byId('price-b').closest('[data-asin]') as Element,
+      'https://www.amazon.com/s?k=widget',
+    );
+
+    expect(product?.asin).toBe('B0BBBBBBBB');
+    expect(product?.title).toContain('Product B');
+  });
+
+  it('returns null for a card the parsers reject', () => {
+    const empty = document.createElement('div');
+    document.body.appendChild(empty);
+
+    expect(
+      extractProductFromCard(empty, 'https://www.amazon.com/s?k=widget'),
+    ).toBeNull();
+  });
+});
+
+describe('buildSaveContext', () => {
+  it('records the page type, the 1-based search position and the placement', () => {
+    const cardB = byId('price-b').closest('[data-asin]') as Element;
+    const context = buildSaveContext(
+      cardB,
+      'https://www.amazon.com/s?k=widget',
+      'context-menu',
+    );
+
+    expect(context.pageType).toBe('search');
+    expect(context.triggeredBy).toBe('context-menu');
+    expect(context.searchPosition).toBe(2);
+    expect(context.listingCategory).toBe('sponsored');
+  });
+
+  it('marks an unpaid card as organic', () => {
+    const cardA = byId('price-a').closest('[data-asin]') as Element;
+    const context = buildSaveContext(
+      cardA,
+      'https://www.amazon.com/s?k=widget',
+      'card-button',
+    );
+
+    expect(context.listingCategory).toBe('organic');
+    expect(context.searchPosition).toBe(1);
+  });
+
+  it('omits position and placement outside search', () => {
+    const cardA = byId('price-a').closest('[data-asin]') as Element;
+    const context = buildSaveContext(
+      cardA,
+      'https://www.amazon.com/gp/bestsellers/kitchen',
+      'card-button',
+    );
+
+    expect(context.searchPosition).toBeUndefined();
+    expect(context.listingCategory).toBeUndefined();
+  });
+});
+
+describe('resolveSaveCandidate', () => {
+  it('resolves a right-click inside a card to that card product', () => {
+    const capture = captureSaveTarget({ target: byId('price-b') } as unknown as Event);
+    const result = resolveSaveCandidate({
+      capture,
+      pageUrl: 'https://www.amazon.com/s?k=widget',
+      triggeredBy: 'context-menu',
+    });
+
+    expect(result?.product.asin).toBe('B0BBBBBBBB');
+    expect(result?.context.triggeredBy).toBe('context-menu');
+    expect(result?.context.searchPosition).toBe(2);
+  });
+
+  it('resolves nothing when the right-click missed every card', () => {
+    document.body.insertAdjacentHTML('beforeend', '<div id="loose">Search bar</div>');
+    const capture = captureSaveTarget({ target: byId('loose') } as unknown as Event);
+
+    expect(
+      resolveSaveCandidate({
+        capture,
+        pageUrl: 'https://www.amazon.com/s?k=widget',
+        triggeredBy: 'context-menu',
+      }),
+    ).toBeNull();
+  });
+
+  it('treats a product-detail page as one product, with no card involved', () => {
+    document.body.innerHTML = DETAIL_PAGE;
+    const result = resolveSaveCandidate({
+      capture: null,
+      pageUrl: 'https://www.amazon.com/Delta-Widget/dp/B0DDDDDDDD',
+      triggeredBy: 'context-menu',
+    });
+
+    expect(result?.product.asin).toBe('B0DDDDDDDD');
+    expect(result?.product.price).toBe(89.99);
+    expect(result?.product.title).toContain('Delta Widget');
+    expect(result?.context.pageType).toBe('product-detail');
+    expect(result?.context.searchPosition).toBeUndefined();
+  });
+
+  it('agrees with the parser when the same card is parsed twice', () => {
+    const cardA = byId('price-a').closest('[data-asin]') as Element;
+    const direct = parseAmazonSearchCard(
+      cardA,
+      'https://www.amazon.com/s?k=widget',
+    );
+    const capture = captureSaveTarget({ target: byId('title-a') } as unknown as Event);
+    const result = resolveSaveCandidate({
+      capture,
+      pageUrl: 'https://www.amazon.com/s?k=widget',
+      triggeredBy: 'card-button',
+    });
+
+    expect(result?.product.asin).toBe(direct?.asin);
+  });
+});
