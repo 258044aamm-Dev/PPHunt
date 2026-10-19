@@ -355,3 +355,133 @@ describe('theme and accessibility contract', () => {
     expect(button().hasAttribute('disabled')).toBe(false);
   });
 });
+
+/**
+ * SAD-329 — the redesign's own contract.
+ *
+ * The control used to be a near-white chip with a 1.125 px grey stroke, a
+ * 1.51:1 border and no brand colour at rest. These assertions pin the
+ * replacement so a future edit cannot quietly reintroduce any of it, and the
+ * contrast block fails the build if a palette change makes the glyph illegible.
+ */
+function cssText(): string {
+  if (!handle) throw new Error('no handle');
+  return handle.shadowRoot.querySelector('style')?.textContent ?? '';
+}
+
+type RGB = [number, number, number];
+const hexToRgb = (hex: string): RGB => {
+  const h = hex.replace('#', '');
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as RGB;
+};
+const channelToLinear = (c: number): number => {
+  const v = c / 255;
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+};
+const luminance = ([r, g, b]: RGB): number =>
+  0.2126 * channelToLinear(r) + 0.7152 * channelToLinear(g) + 0.0722 * channelToLinear(b);
+const contrast = (a: string, b: string): number => {
+  const la = luminance(hexToRgb(a));
+  const lb = luminance(hexToRgb(b));
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+
+describe('SAD-329 visual contract', () => {
+  beforeEach(() => {
+    handle = createCardActionButton({ asin: 'B0AAAAAAAA', onActivate: vi.fn() });
+  });
+
+  it('draws an 18px glyph with a 2px stroke on the 24 grid', () => {
+    const css = cssText();
+    expect(css).toContain('width: 18px');
+    expect(css).toContain('height: 18px');
+    expect(css).toContain('stroke-width: 2;');
+    // 1.8/24 at 15px was 1.125 device px and read as a grey smear.
+    expect(css).not.toContain('stroke-width: 1.8');
+    expect(css).not.toContain('width: 15px');
+  });
+
+  it('fills the control with clay and draws the glyph in clay-ink', () => {
+    const css = cssText();
+    expect(css).toContain('background: var(--pph-clay)');
+    expect(css).toContain('color: var(--pph-clay-ink)');
+    // The chip look it replaces: pale fill, hairline border at 1.51:1.
+    expect(css).not.toContain('border: 1px solid var(--pph-hairline-soft)');
+  });
+
+  it('gives each terminal state its own fill and ink', () => {
+    const css = cssText();
+    expect(css).toContain('background: var(--pph-moss)');
+    expect(css).toContain('color: var(--pph-moss-ink)');
+    expect(css).toContain('background: var(--pph-crimson)');
+    expect(css).toContain('color: var(--pph-crimson-ink)');
+  });
+
+  it('only repaints to clay-active from idle', () => {
+    const css = cssText();
+    expect(css).toContain('button[data-state="idle"]:hover');
+    // A bare `button:hover` would repaint a saved or failed card back to clay.
+    expect(css).not.toMatch(/\n\s*button:hover\s*\{/);
+  });
+
+  it('keeps the focus ring inside the fill so it always contrasts', () => {
+    const css = cssText();
+    expect(css).toContain('outline-offset: -4px');
+    expect(css).not.toContain('outline-offset: 2px');
+  });
+
+  it('never dims a coloured fill (queued keeps opacity 1)', () => {
+    expect(cssText()).not.toContain('opacity: 0.72');
+  });
+
+  it('haloes the partial badge instead of drawing gold on clay', () => {
+    const css = cssText();
+    expect(css).toContain('--pph-badge-halo');
+    expect(css).toContain('border: 1.5px solid var(--pph-badge-halo)');
+  });
+
+  it('marks the enriching state without adding a DOM node', () => {
+    const css = cssText();
+    expect(css).toContain('button[data-state="enriching"]::after');
+    expect(handle?.shadowRoot.querySelectorAll('button > *').length).toBe(2);
+  });
+
+  it('ships the new tokens on both palettes', () => {
+    const css = cssText();
+    expect(css).toContain('--pph-moss-ink: #faf9f5');
+    expect(css).toContain('--pph-moss-ink: #141413');
+    expect(css).toContain('--pph-crimson-ink: #faf9f5');
+    expect(css).toContain('--pph-crimson-ink: #141413');
+    expect(css).toContain('--pph-badge-halo: #faf9f5');
+    expect(css).toContain('--pph-badge-halo: #1d1c1a');
+  });
+});
+
+describe('SAD-329 contrast matrix', () => {
+  it.each([
+    ['cream glyph on clay', '#faf9f5', '#b04e30', 4.5],
+    ['cream glyph on clay-active', '#faf9f5', '#943e24', 4.5],
+    ['cream glyph on moss', '#faf9f5', '#455e2d', 4.5],
+    ['cream glyph on crimson', '#faf9f5', '#a3302d', 4.5],
+    ['ink glyph on clay (dark)', '#141413', '#d97757', 4.5],
+    ['ink glyph on moss (dark)', '#141413', '#91b370', 4.5],
+    ['ink glyph on crimson (dark)', '#141413', '#e87672', 4.5],
+    ['clay fill vs a white card', '#b04e30', '#ffffff', 3],
+    ['clay fill vs an Amazon grey tile', '#b04e30', '#f7f7f7', 3],
+    ['moss fill vs a white card', '#455e2d', '#ffffff', 3],
+    ['crimson fill vs a white card', '#a3302d', '#ffffff', 3],
+    ['golden badge on its halo', '#856214', '#faf9f5', 3],
+    ['halo on the clay fill', '#faf9f5', '#b04e30', 3],
+    ['halo on the moss fill', '#faf9f5', '#455e2d', 3],
+  ])('%s meets %s:1', (_name, fg, bg, min) => {
+    expect(contrast(fg as string, bg as string)).toBeGreaterThanOrEqual(min as number);
+  });
+
+  it('rejects the pairs the redesign had to remove', () => {
+    // The old hairline border and the naked golden badge both failed.
+    expect(contrast('#d2cdc1', '#faf9f5')).toBeLessThan(3);
+    expect(contrast('#856214', '#b04e30')).toBeLessThan(3);
+    // Cream on the dark clay would have been illegible.
+    expect(contrast('#faf9f5', '#d97757')).toBeLessThan(3);
+  });
+});
