@@ -1,6 +1,7 @@
 import { defineConfig } from 'wxt';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { AMAZON_HOST_PERMISSIONS } from './src/engines/amazon/constants/match-patterns';
 import { computeOverlayWarResources } from './scripts/war-resources';
 
 // Phase 10 (L-7): package.json is the single source of truth for the version —
@@ -25,18 +26,13 @@ export default defineConfig({
       'tabs',
       'storage',
       'scripting',
+      // SAD-278: the "Save Product Details" item needs the menu API.
+      'contextMenus',
     ],
+    // SAD-278: the Amazon half is derived from AMAZON_MARKETPLACE_DOMAINS, so a
+    // marketplace cannot be added to the content script without its permission.
     host_permissions: [
-      '*://*.amazon.com/*',
-      '*://*.amazon.co.uk/*',
-      '*://*.amazon.de/*',
-      '*://*.amazon.fr/*',
-      '*://*.amazon.ca/*',
-      '*://*.amazon.co.jp/*',
-      '*://*.amazon.in/*',
-      '*://*.amazon.com.au/*',
-      '*://*.amazon.es/*',
-      '*://*.amazon.it/*',
+      ...AMAZON_HOST_PERMISSIONS,
       '*://*.media-amazon.com/*',
       '*://*.ssl-images-amazon.com/*',
       '*://*.temu.com/*',

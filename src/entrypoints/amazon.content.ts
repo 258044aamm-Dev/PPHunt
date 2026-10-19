@@ -1,3 +1,4 @@
+import { AMAZON_MATCH_PATTERNS } from '@/engines/amazon/constants/match-patterns';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -16,30 +17,6 @@ import {
   parseAmazonSearchResults,
 } from '@/engines/amazon/scraper';
 
-const AMAZON_MATCH_PATTERNS = [
-  '*://*.amazon.com/*',
-  '*://*.amazon.co.uk/*',
-  '*://*.amazon.de/*',
-  '*://*.amazon.fr/*',
-  '*://*.amazon.it/*',
-  '*://*.amazon.es/*',
-  '*://*.amazon.ca/*',
-  '*://*.amazon.co.jp/*',
-  '*://*.amazon.in/*',
-  '*://*.amazon.com.au/*',
-  '*://*.amazon.com.mx/*',
-  '*://*.amazon.com.br/*',
-  '*://*.amazon.nl/*',
-  '*://*.amazon.se/*',
-  '*://*.amazon.pl/*',
-  '*://*.amazon.sg/*',
-  '*://*.amazon.ae/*',
-  '*://*.amazon.sa/*',
-  '*://*.amazon.com.tr/*',
-  '*://*.amazon.com.be/*',
-  '*://*.amazon.eg/*',
-  '*://*.amazon.cn/*',
-];
 
 interface CollectProductsCommandPayload {
   mode: 'manual' | 'automatic';
@@ -116,7 +93,7 @@ function extractCurrentPageProducts(
 }
 
 export default defineContentScript({
-  matches: AMAZON_MATCH_PATTERNS,
+  matches: [...AMAZON_MATCH_PATTERNS],
   runAt: 'document_idle',
 
   main() {
