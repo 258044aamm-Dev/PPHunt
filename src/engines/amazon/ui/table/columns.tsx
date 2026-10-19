@@ -703,6 +703,10 @@ export const amazonColumns: Array<
   isPrimeColumn,
   isSponsoredColumn,
   urlColumn,
+  // SAD-333: default-on, matching DEFAULT_ENABLED_FIELDS, so the static
+  // (settings-not-loaded) column set and the defaults can never diverge.
+  descriptionColumn,
+  featuresColumn,
   sourceColumn,
 ];
 

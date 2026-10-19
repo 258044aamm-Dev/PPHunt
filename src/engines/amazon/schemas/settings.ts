@@ -38,8 +38,9 @@ export const EnabledFieldsSchema = z.object({
   brand: z.boolean().default(true),
   availability: z.boolean().default(true),
   seller: z.boolean().default(true),
-  description: z.boolean().default(false),
-  features: z.boolean().default(false),
+  // SAD-333: default-on so a PDP-enriched save shows its two PDP-only fields.
+  description: z.boolean().default(true),
+  features: z.boolean().default(true),
 });
 
 const ExportFormatSchema = z.preprocess(

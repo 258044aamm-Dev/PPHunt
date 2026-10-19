@@ -444,7 +444,7 @@ describe('search, product detail, and category DOM scrapers', () => {
 });
 
 describe('default enabled fields across Settings, Preview Table, and Exports', () => {
-  it('enables all 13 core fields by default and excludes description and features by default', () => {
+  it('enables all core fields plus description and features by default (SAD-333)', () => {
     const defaults = SettingsSchema.parse({});
     expect(defaults.enabledFields).toEqual({
       title: true,
@@ -468,8 +468,8 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       brand: true,
       availability: true,
       seller: true,
-      description: false,
-      features: false,
+      description: true,
+      features: true,
     });
 
     expect(DEFAULT_VISIBLE_COLUMNS).toEqual([
@@ -494,6 +494,8 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       'Prime',
       'Image',
       'URL',
+      'Description',
+      'Features',
       'Source',
       'Collected At',
     ]);
@@ -501,11 +503,12 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       getExportColumnsFromSettings(defaults.enabledFields)
     ).toEqual(DEFAULT_VISIBLE_COLUMNS);
 
-    // Table columns: select + rowNumber (#) + 21 core/pricing/deal/BSR/market fields + source = 24 columns by default
-    expect(columns).toHaveLength(24);
-    expect(getColumnsForSettings(defaults.enabledFields)).toHaveLength(24);
+    // Table columns: select + rowNumber (#) + 21 core/pricing/deal/BSR/market fields
+    // + description + features + source = 26 columns by default (SAD-333).
+    expect(columns).toHaveLength(26);
+    expect(getColumnsForSettings(defaults.enabledFields)).toHaveLength(26);
 
-    // Turning on description and features adds 2 columns to both Table and Export
+    // Both stay ordinary per-field toggles: turning them off removes them again.
     const allEnabled = {
       ...defaults.enabledFields,
       description: true,
@@ -514,6 +517,15 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
     expect(getColumnsForSettings(allEnabled)).toHaveLength(26);
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Description');
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Features');
+
+    const bothOff = {
+      ...defaults.enabledFields,
+      description: false,
+      features: false,
+    };
+    expect(getColumnsForSettings(bothOff)).toHaveLength(24);
+    expect(getExportColumnsFromSettings(bothOff)).not.toContain('Description');
+    expect(getExportColumnsFromSettings(bothOff)).not.toContain('Features');
   });
 
   it('detects search, product-detail, bestsellers, and category page types accurately', () => {

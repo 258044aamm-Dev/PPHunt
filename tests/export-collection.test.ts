@@ -15,6 +15,7 @@ import {
   buildCollectionExport,
   loadCollectionForExport,
 } from '@/engines/amazon/background/export-collection';
+import { getExportColumnsFromSettings } from '@/engines/amazon/export/types';
 import type { AmazonSettings } from '@/engines/amazon/types';
 
 const SESSION = 'oc_1';
@@ -145,8 +146,14 @@ describe('buildCollectionExport', () => {
     expect(request.columns).toContain('ASIN');
     expect(request.columns).toContain('Snapshot Count');
     expect(request.columns).toContain('Last Snapshot');
-    // The panel's column set is untouched by this feature.
-    expect(request.columns).not.toContain('Description');
+    // The panel's column set is untouched by this feature: the request is
+    // exactly the settings-derived columns plus the two snapshot columns
+    // (which now include Description/Features, default-on since SAD-333).
+    expect(request.columns).toEqual([
+      ...getExportColumnsFromSettings(settings.enabledFields),
+      'Snapshot Count',
+      'Last Snapshot',
+    ]);
     if (result.ok) {
       expect(result.count).toBe(1);
       expect(result.filename).toMatch(/\.csv$/);

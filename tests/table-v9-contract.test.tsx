@@ -31,6 +31,11 @@ vi.mock('@tanstack/react-virtual', () => ({
  * contract recorded in Step 7.0 (PR #1 description): same column ids, same
  * order, same sizing, same sort-fn mapping, and a working row-selection
  * round-trip through the v9 feature APIs.
+ *
+ * SAD-333 deliberately changes one thing: `description` and `features` became
+ * default-on, so they are now inserted between `url` and `source`. Every other
+ * id, its relative order, its sizing and its sort-fn stay pinned to the
+ * recorded order below — the change is exactly those two insertions.
  */
 
 /**
@@ -49,8 +54,8 @@ type ColShape = {
 
 const asShapes = (cols: unknown): ColShape[] => cols as ColShape[];
 
-/** The exact default column order recorded at f773d87 (Step 7.0). */
-const DEFAULT_COLUMN_IDS = [
+/** The exact default column order recorded at f773d87 (Step 7.0), pre-SAD-333. */
+const LEGACY_COLUMN_IDS = [
   'select',
   'rowNumber',
   'imageUrl',
@@ -74,6 +79,14 @@ const DEFAULT_COLUMN_IDS = [
   'isPrime',
   'isSponsored',
   'url',
+  'source',
+];
+
+/** SAD-333: the two PDP-only columns are default-on, before `source`. */
+const DEFAULT_COLUMN_IDS = [
+  ...LEGACY_COLUMN_IDS.slice(0, LEGACY_COLUMN_IDS.length - 1),
+  'description',
+  'features',
   'source',
 ];
 
@@ -142,12 +155,7 @@ describe('Table v9 migration contract (SAD-186 / Step 7.1)', () => {
         features: true,
       })
     );
-    expect(cols.map(colId)).toEqual([
-      ...DEFAULT_COLUMN_IDS.slice(0, 23),
-      'description',
-      'features',
-      'source',
-    ]);
+    expect(cols.map(colId)).toEqual(DEFAULT_COLUMN_IDS);
     for (const col of cols) {
       const id = colId(col);
       const expected = COLUMN_SIZING[id];
@@ -179,30 +187,28 @@ describe('Table v9 migration contract (SAD-186 / Step 7.1)', () => {
         })
       );
       const ids = cols.map(colId);
-      if (key === 'description' || key === 'features') {
-        // opt-in columns are absent by default anyway
-        expect(ids, `toggling ${key} off`).toEqual(DEFAULT_COLUMN_IDS);
-      } else {
-        expect(ids, `toggling ${key} off`).toEqual(
-          DEFAULT_COLUMN_IDS.filter((id) => id !== key)
-        );
-      }
+      expect(ids, `toggling ${key} off`).toEqual(
+        DEFAULT_COLUMN_IDS.filter((id) => id !== key)
+      );
     }
   });
 
-  it('opting in to description and features adds exactly those columns before source', () => {
-    const cols = asShapes(
+  it('renders description and features by default and drops exactly those two when turned off (SAD-333)', () => {
+    const defaults = asShapes(getColumnsForSettings(DEFAULT_ENABLED_FIELDS))
+      .map(colId);
+    expect(defaults).toContain('description');
+    expect(defaults).toContain('features');
+
+    const turnedOff = asShapes(
       getColumnsForSettings({
         ...DEFAULT_ENABLED_FIELDS,
-        description: true,
-        features: true,
+        description: false,
+        features: false,
       })
-    );
-    const ids = cols.map(colId);
-    expect(ids).toContain('description');
-    expect(ids).toContain('features');
-    expect(ids[ids.length - 1]).toBe('source');
-    expect(ids.length).toBe(DEFAULT_COLUMN_IDS.length + 2);
+    ).map(colId);
+    expect(turnedOff).toEqual(LEGACY_COLUMN_IDS);
+    expect(turnedOff).not.toContain('description');
+    expect(turnedOff).not.toContain('features');
   });
 });
 
@@ -420,5 +426,56 @@ describe('Row-height invariant behind the constant ROW_HEIGHT = 52 (SAD-187 / St
     expect(seller.className).toContain('line-clamp-1');
     const brand = screen.getByText('Anker');
     expect(brand.className).toContain('line-clamp-1');
+  });
+});
+
+describe('SAD-333: Description and Features are on for a default install', () => {
+  beforeEach(async () => {
+    await db.open();
+    await db.products.clear();
+    await db.history.clear();
+    await db.settings.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('renders both column headers with no settings row and no opt-in', async () => {
+    await db.products.put({
+      asin: 'B09V3KXJP3',
+      title: 'Enriched Product',
+      price: 30,
+      currency: 'USD',
+      rating: 4.5,
+      reviewCount: 30,
+      brand: 'BrandC',
+      seller: 'Amazon',
+      availability: 'In Stock',
+      isSponsored: false,
+      isPrime: true,
+      imageUrl: null,
+      url: 'https://www.amazon.com/dp/B09V3KXJP3',
+      description: 'A description that only the product page could provide.',
+      features: ['Feature one', 'Feature two'],
+      source: 'detail',
+      collectedAt: '2026-10-16T12:02:00.000Z',
+      pageUrl: 'https://www.amazon.com/dp/B09V3KXJP3',
+      sessionKey: 'sad-333-defaults',
+    });
+
+    render(<ProductTable />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Select product B09V3KXJP3')).toBeTruthy();
+    });
+
+    // The settings row is seeded from the new defaults on first read.
+    expect(screen.getByText('Description')).toBeTruthy();
+    expect(screen.getByText('Features')).toBeTruthy();
+    expect(
+      screen.getByText('A description that only the product page could provide.')
+    ).toBeTruthy();
+    expect(screen.getByText('Feature one • Feature two')).toBeTruthy();
   });
 });

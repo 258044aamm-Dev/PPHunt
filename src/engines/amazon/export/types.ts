@@ -165,6 +165,8 @@ export const DEFAULT_VISIBLE_COLUMNS = [
   'Prime',
   'Image',
   'URL',
+  'Description',
+  'Features',
   'Source',
   'Collected At',
 ];

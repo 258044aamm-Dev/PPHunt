@@ -47,8 +47,11 @@ export const DEFAULT_ENABLED_FIELDS: EnabledFieldsConfig = {
   brand: true,
   availability: true,
   seller: true,
-  description: false,
-  features: false,
+  // SAD-333: both fields can only ever come from the product page, so hiding
+  // them by default made a right-click save look like data loss. They stay
+  // per-field toggles in Settings -> Data Fields.
+  description: true,
+  features: true,
 };
 
 export const DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR: QuickSaveCollectionBehavior =
@@ -77,6 +80,8 @@ export const AMAZON_DEFAULT_VISIBLE_COLUMNS = [
   'Prime',
   'Image',
   'URL',
+  'Description',
+  'Features',
   'Source',
   'Collected At',
 ] as const;
