@@ -5,6 +5,7 @@ import {
 import { saveQuickProduct } from '../db/quick-save';
 import { rememberPendingAssignment } from './assignment';
 import { resolveCollectionTarget } from './collections';
+import type { JobStore } from './job-store';
 import type {
   SaveEnrichmentStatus,
   SaveErrorCode,
@@ -58,6 +59,14 @@ export interface EnrichmentStepResult {
 export interface SaveJobDeps {
   emit?: (update: SaveJobUpdate) => void;
   now?: () => Date;
+  /**
+   * SAD-289: the `storage.session` mirror that lets a suspended worker resume
+   * this job. Absent by default, so a caller (and every existing test) that does
+   * not opt in behaves exactly as before - the save itself never depends on it.
+   */
+  store?: JobStore;
+  /** Tab that asked for the save; recovery sends its updates there. */
+  tabId?: number;
   /**
    * SAD-296: runs after the row is committed. Absent by default so every
    * existing caller and test keeps the pre-enrichment behaviour exactly.
@@ -121,6 +130,12 @@ export async function handleSaveProduct(
       updatedAt: timestamp(),
       ...update,
     };
+    // One place mirrors every transition: the store can never disagree with the
+    // message the UI just received.
+    deps.store?.update(jobId, {
+      state: full.state,
+      ...(full.enrichmentStatus ? { enrichmentStatus: full.enrichmentStatus } : {}),
+    });
     deps.emit?.(full);
     return full;
   };
@@ -146,6 +161,15 @@ export async function handleSaveProduct(
         updatedAt: timestamp(),
       };
     }
+
+    // Registered before the first transition so a suspend *during* extraction
+    // still leaves a resumable row behind.
+    deps.store?.begin({
+      jobId,
+      asin,
+      productUrl: payload.product?.url ?? '',
+      ...(deps.tabId !== undefined ? { tabId: deps.tabId } : {}),
+    });
 
     report({ state: 'extracting' });
 
@@ -181,6 +205,7 @@ export async function handleSaveProduct(
     });
 
     const count = await refreshCollectionCounts(collection.sessionKey, now());
+    deps.store?.update(jobId, { sessionKey: collection.sessionKey });
 
     if (deps.enrich) {
       // The row is already saved, so a failure here cannot lose it: the worst

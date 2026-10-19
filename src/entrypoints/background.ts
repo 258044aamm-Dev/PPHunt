@@ -1,5 +1,7 @@
 import { initSaveProductContextMenu } from '@/engines/amazon/background/context-menu';
 import { createAmazonBackgroundController } from '@/engines/amazon/background/handler';
+import { saveJobStore } from '@/engines/amazon/background/job-store';
+import { recoverAmazonSaveJobs } from '@/engines/amazon/background/save-job-recovery';
 import { registerTemuBackgroundHandlers } from '@/engines/temu/background/handler';
 import { openOverlayForTab } from '@/lib/overlay/openOverlay';
 import {
@@ -15,6 +17,28 @@ export default defineBackground(() => {
   // SAD-279: the "Save Product Details" menu item. Registration is idempotent
   // and re-runs on install/startup so a changed title or match list is applied.
   initSaveProductContextMenu();
+
+  // SAD-289: a worker suspended mid-save leaves its job in `storage.session`.
+  // Every worker start rehydrates that mirror and resumes what is still inside
+  // the TTL - at most once per job - so a card never spins forever. A failure
+  // here is contained: it must never take the rest of the wiring down with it.
+  const resumeInterruptedSaves = () => {
+    void recoverAmazonSaveJobs().catch(() => {
+      // Recovery is best-effort; the product rows are already committed.
+    });
+  };
+  resumeInterruptedSaves();
+
+  try {
+    browser.runtime?.onStartup?.addListener?.(() => {
+      resumeInterruptedSaves();
+      // Browser start clears `storage.session`; the sweep also keeps the
+      // in-memory table from growing across a long-lived worker.
+      saveJobStore.sweep();
+    });
+  } catch {
+    // Ignore startup listener registration error
+  }
 
   let currentOpeningMode: OpeningMode | null = null;
   let modeChangedBeforeInitialRead = false;

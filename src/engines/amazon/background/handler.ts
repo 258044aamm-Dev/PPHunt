@@ -33,6 +33,7 @@ import type {
 import { isAmazonUrl } from '../utils/amazon-url';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
+import { saveJobStore } from './job-store';
 import { handleSaveProduct } from './save-job';
 
 interface ActiveCollectionRuntimeState {
@@ -807,6 +808,11 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
           },
           // SAD-296: enrich after the row is committed; failures leave it intact.
           enrich: (input) => enrichSavedProduct(input),
+          // SAD-289: mirror every transition so a suspended worker can resume.
+          store: saveJobStore,
+          ...(typeof sender?.tab?.id === 'number'
+            ? { tabId: sender.tab.id }
+            : {}),
         });
         break;
 

@@ -94,15 +94,18 @@ it on live Amazon; `SAD-294` closes the epic. One issue is in review at a time.
 | P4.1 `SAD-295` | In Review | `adbdac2` | tsc clean · 675/69 · build 1.83 MB · 36 tests (parse, blob, create race) |
 | P4.2 `SAD-288` | In Review | `4e89cb0` | tsc clean · 699/70 · 24 fetch tests (outcomes, retry, breaker) |
 | P4.3 `SAD-296` | In Review | `fdfa553` + `05fba84` | tsc clean · 723/72 · build 1.87 MB · 24 merge/seam tests |
+| P4.4 `SAD-289` | In Review | (this commit) | tsc clean · 748/75 · build 1.87 MB · 25 store/recovery tests |
 
-Baseline has moved 385/48 → **723/72** (+338 tests, +24 files). The behaviour is selectable in the
+Baseline has moved 385/48 → **748/75** (+363 tests, +27 files). The behaviour is selectable in the
 panel, the current collection is visible and editable in History, the Ask dialog can move a saved row
 between collections without losing its snapshots, and both entry points write through one pipeline
 into a history-only collection that cannot adopt a full-page run. The offscreen document exists and is
 race-safe, so parsing and blob minting have somewhere to happen, and the fetch that feeds it is
 guarded by a typed outcome enum and a per-marketplace breaker, and a parsed PDP is merged into the saved
-row with `enrichmentStatus: complete | partial | failed` without ever touching listing context. **P4.4
-(`SAD-289`) is next**: the job store and worker-restart recovery. No issue is marked Done: the acceptance criteria that need a browser are deferred to
+row with `enrichmentStatus: complete | partial | failed` without ever touching listing context. Every
+save now also mirrors its lifecycle into `storage.session`, so a worker suspended mid-save rehydrates
+the job on the next start, resumes enrichment at most once, and reports `interrupted` rather than
+leaving a card spinning. **P5.1 (`SAD-290`) is next**: the export builder. No issue is marked Done: the acceptance criteria that need a browser are deferred to
 `SAD-293`, and every completion comment says so explicitly.
 
 ## Ticket hygiene
