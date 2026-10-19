@@ -238,13 +238,13 @@ describe('collection pointer', () => {
     const pointer = await readOneClickCollection();
 
     expect(pointer?.sessionKey).toBe(result.collectionKey);
-    expect(pointer?.label).toBe(result.collectionLabel);
+    expect(pointer?.name).toBe(result.collectionLabel);
   });
 
   it('creates a new collection when the pointed-at row was deleted', async () => {
     const stored = {
       sessionKey: 'oc_1700000000000',
-      label: 'Deleted collection',
+      name: 'Deleted collection',
       createdAt: '2026-10-19T10:00:00.000Z',
       updatedAt: '2026-10-19T10:00:00.000Z',
     };

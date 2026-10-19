@@ -12,7 +12,7 @@ export const ONE_CLICK_COLLECTION_STORAGE_KEY = 'pphunt.oneClickCollection';
 
 export interface OneClickCollectionPointer {
   sessionKey: string;
-  label: string;
+  name: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,16 +44,36 @@ function getLocalStorageArea(): LocalStorageAreaLike | null {
   return null;
 }
 
-function isPointer(value: unknown): value is OneClickCollectionPointer {
-  if (!value || typeof value !== 'object') return false;
+/**
+ * Accepts `name` and the pre-SAD-285 `label` spelling, so a pointer written by an
+ * older build is upgraded rather than discarded.
+ */
+function normalizePointer(value: unknown): OneClickCollectionPointer | null {
+  if (!value || typeof value !== 'object') return null;
   const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.sessionKey === 'string' &&
-    candidate.sessionKey.length > 0 &&
-    typeof candidate.label === 'string' &&
-    typeof candidate.createdAt === 'string' &&
-    typeof candidate.updatedAt === 'string'
-  );
+  const name =
+    typeof candidate.name === 'string'
+      ? candidate.name
+      : typeof candidate.label === 'string'
+        ? candidate.label
+        : null;
+
+  if (
+    typeof candidate.sessionKey !== 'string' ||
+    candidate.sessionKey.length === 0 ||
+    !name ||
+    typeof candidate.createdAt !== 'string' ||
+    typeof candidate.updatedAt !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    sessionKey: candidate.sessionKey,
+    name,
+    createdAt: candidate.createdAt,
+    updatedAt: candidate.updatedAt,
+  };
 }
 
 /** Reads the pointer, or null when it is absent, malformed or unreadable. */
@@ -63,8 +83,7 @@ export async function readOneClickCollection(): Promise<OneClickCollectionPointe
 
   try {
     const stored = await area.get(ONE_CLICK_COLLECTION_STORAGE_KEY);
-    const value = stored?.[ONE_CLICK_COLLECTION_STORAGE_KEY];
-    return isPointer(value) ? value : null;
+    return normalizePointer(stored?.[ONE_CLICK_COLLECTION_STORAGE_KEY]);
   } catch {
     return null;
   }

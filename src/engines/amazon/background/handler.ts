@@ -7,6 +7,7 @@ import {
   addHistoryEntry,
   addProducts,
   clearActiveSession,
+  getProductCountBySession,
   createSession,
   ensureSession,
   getActiveSession,
@@ -384,8 +385,18 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       finalizedSessionKeys.add(active.sessionKey);
       lastFinalizedSession = { ...active };
       const completedAt = new Date().toISOString();
+      // SAD-285: the final count comes from the products table, not from an
+      // in-memory counter that a suspended worker - or a one-click save into the
+      // same collection - can leave behind. Falls back to the counter only if the
+      // table cannot be read.
+      let finalCount = active.lastCollectedCount;
+      try {
+        finalCount = await getProductCountBySession(active.sessionKey);
+      } catch {
+        // Keep the in-memory counter as a best effort.
+      }
       await updateSessionStatus(active.sessionKey, 'completed', {
-        collected: active.lastCollectedCount,
+        collected: finalCount,
         target: active.targetCount,
       });
       await addHistoryEntry({
@@ -393,7 +404,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
         url: active.url || 'https://www.amazon.com',
         mode: active.mode,
         targetCount: active.targetCount,
-        collectedCount: active.lastCollectedCount,
+        collectedCount: finalCount,
         startedAt: active.startedAt,
         completedAt,
         status: 'completed',

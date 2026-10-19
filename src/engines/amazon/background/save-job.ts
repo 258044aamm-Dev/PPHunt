@@ -1,15 +1,9 @@
 import {
   ONE_CLICK_SESSION_PREFIX,
-  createOneClickCollection,
   refreshCollectionCounts,
 } from '../db/collections';
-import {
-  readOneClickCollection,
-  writeOneClickCollection,
-  type OneClickCollectionPointer,
-} from '../db/one-click-state';
 import { saveQuickProduct } from '../db/quick-save';
-import { getHistoryBySessionKey } from '../db/history';
+import { resolveCollectionTarget } from './collections';
 import type {
   SaveEnrichmentStatus,
   SaveErrorCode,
@@ -31,6 +25,8 @@ export interface SaveJobUpdate {
   enrichmentStatus?: SaveEnrichmentStatus;
   collectionKey?: string;
   collectionLabel?: string;
+  requiresCollectionChoice?: boolean;
+  defaultCollectionKey?: string;
   message?: string;
   errorCode?: SaveErrorCode;
   updatedAt: string;
@@ -62,41 +58,19 @@ export function resetSaveJobsForTests(): void {
   inFlightByAsin.clear();
 }
 
-export interface ResolvedCollection {
-  sessionKey: string;
-  label: string;
-  created: boolean;
-}
+export type ResolvedCollection = Awaited<ReturnType<typeof resolveCollectionTarget>>;
 
 /**
- * Reuses the stored pointer while its history row still exists; otherwise makes
- * a new one-click collection. A pointer to a deleted collection must never
- * resurrect it (plan 7.3).
+ * Reuses the stored pointer while it is still valid; otherwise makes a new
+ * one-click collection. Delegates every guard - stale row, full-page run,
+ * `new`/`ask` behaviour - to `resolveCollectionTarget` (plan 7.1-7.3).
  */
 export async function resolveOneClickCollection(
   pageUrl: string,
   product: { title?: string | null; asin?: string | null },
   now: Date = new Date(),
 ): Promise<ResolvedCollection> {
-  const pointer = await readOneClickCollection();
-
-  if (pointer) {
-    const row = await getHistoryBySessionKey(pointer.sessionKey);
-    if (row) {
-      return { sessionKey: pointer.sessionKey, label: pointer.label, created: false };
-    }
-  }
-
-  const created = await createOneClickCollection({ pageUrl, product, now });
-  const next: OneClickCollectionPointer = {
-    sessionKey: created.sessionKey,
-    label: created.label,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  };
-  await writeOneClickCollection(next);
-
-  return { sessionKey: created.sessionKey, label: created.label, created: true };
+  return resolveCollectionTarget({ pageUrl, product, now });
 }
 
 function savedMessage(label: string, count: number): string {
@@ -191,6 +165,12 @@ export async function handleSaveProduct(
       collectionKey: collection.sessionKey,
       collectionLabel: collection.label,
       message: savedMessage(collection.label, count),
+      ...(collection.requiresChoice
+        ? {
+            requiresCollectionChoice: true,
+            defaultCollectionKey: collection.defaultCollectionKey,
+          }
+        : {}),
     });
   } catch (error) {
     const message =
