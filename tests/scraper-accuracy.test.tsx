@@ -28,6 +28,7 @@ import { SettingsSchema } from '@/lib/schemas/settings';
 import { ProductSchema } from '@/lib/schemas/product';
 import {
   DEFAULT_VISIBLE_COLUMNS,
+  EXPORT_COLUMNS,
   getExportColumnsFromSettings,
 } from '@/lib/export/types';
 import { buildCSVContent } from '@/lib/export/csv';
@@ -527,6 +528,41 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
     expect(getColumnsForSettings(bothOff)).toHaveLength(24);
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Description');
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Features');
+  });
+
+  it('owns the default column list in exactly one module, and every listed export column exists (SAD-346)', async () => {
+    // The export surface can render every column it claims by default.
+    for (const column of DEFAULT_VISIBLE_COLUMNS) {
+      expect(
+        Object.prototype.hasOwnProperty.call(EXPORT_COLUMNS, column),
+        `EXPORT_COLUMNS cannot render "${column}"`
+      ).toBe(true);
+    }
+
+    // 'Collected At' is export-only by design: the table has no such accessor,
+    // so nothing promises it in the Preview.
+    const tableIds = getColumnsForSettings(
+      SettingsSchema.parse({}).enabledFields
+    ).map((column) => {
+      const shape = column as unknown as { id?: string; accessorKey?: string };
+      return shape.id ?? shape.accessorKey;
+    });
+    expect(tableIds).not.toContain('collectedAt');
+    expect(tableIds).not.toContain('Collected At');
+
+    // Only the export module declares a default-visible list.
+    const engineConstants = (await import('@/engines/amazon/constants/defaults')) as Record<
+      string,
+      unknown
+    >;
+    expect(engineConstants.AMAZON_DEFAULT_VISIBLE_COLUMNS).toBeUndefined();
+    expect(engineConstants.DEFAULT_VISIBLE_COLUMNS).toBeUndefined();
+
+    const appConstants = (await import('@/constants/defaults')) as Record<
+      string,
+      unknown
+    >;
+    expect(appConstants.DEFAULT_VISIBLE_COLUMNS).toBeUndefined();
   });
 
   it('honours the Best Sellers Rank and Monthly Sales toggles in exports (SAD-345)', () => {

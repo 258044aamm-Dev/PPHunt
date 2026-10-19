@@ -65,36 +65,6 @@ export const DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR: QuickSaveCollectionBehavior
   'current';
 export const DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD = false;
 
-export const AMAZON_DEFAULT_VISIBLE_COLUMNS = [
-  'ASIN',
-  'Title',
-  'Price',
-  'List Price',
-  'Discount',
-  'Deal',
-  'Currency',
-  'Rating',
-  'Reviews',
-  'Best Sellers Rank',
-  'Monthly Sales',
-  'Coupon',
-  'Badge',
-  'Delivery',
-  'Brand',
-  'Seller',
-  'Availability',
-  'Sponsored',
-  'Prime',
-  'Image',
-  'URL',
-  'Description',
-  'Features',
-  'Source',
-  'Collected At',
-] as const;
-
-export const DEFAULT_VISIBLE_COLUMNS = [...AMAZON_DEFAULT_VISIBLE_COLUMNS];
-
 export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   id: 'default',
   // SAD-334: factory defaults are already current, so a fresh install (or a

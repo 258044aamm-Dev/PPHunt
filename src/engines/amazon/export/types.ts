@@ -143,6 +143,16 @@ const FIELD_KEY_TO_HEADER: Record<string, string> = {
   lastSnapshotAt: 'Last Snapshot',
 };
 
+/**
+ * SAD-346: the **export** surface's default column list, and its only owner.
+ *
+ * The Preview table does not use this list — it builds its columns from
+ * `enabledFields` via `getAmazonColumnsForSettings`, and has no `collectedAt`
+ * accessor. So `Collected At` is deliberately export-only: it is a property of
+ * the collected row, not a column the table renders. This list used to be
+ * duplicated in `constants/defaults.ts` under a second name, which is what made
+ * "a column listed as visible" ambiguous.
+ */
 export const DEFAULT_VISIBLE_COLUMNS = [
   'ASIN',
   'Title',
