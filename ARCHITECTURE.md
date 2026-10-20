@@ -198,7 +198,7 @@ A snapshot is one observation of a product — `source: 'listing' | 'detail'`,
 the price/availability at that moment, and the job that produced it — so a
 re-save or a delayed enrichment can never rewrite history. Product fields include optional
 metadata such as list price, discounts, delivery and page URL. Session status
-includes `interrupted`. Settings use 24 boolean field toggles, target bounds
+includes `interrupted`. Settings use 26 boolean field toggles, target bounds
 1–1000, in-panel toast notifications, and `exportImages: auto / always / never`.
 The legacy export-format value `xlsx` normalizes to `excel`.
 
@@ -259,6 +259,26 @@ comma inside its size token (`…_AC_SF226,226_QL85_.jpg`). Naive `split(',')`
 truncates the file name to `…_AC_SF452`, which the media CDN answers with
 HTTP 400. Search and best-seller cards use comma-free tokens (`_AC_UY218_`,
 `_AC_UL320_`), which is why the bug was invisible on those pages.
+
+#### Variations & Weight extraction (SAD-357)
+
+- **Variations (`variations`)**: Search and category cards read color/pattern
+  swatches scoped strictly to `.s-color-swatch-container` (`aria-label` swatches
+  plus `+N other colors/patterns` overflow counts). Product detail pages use a
+  3-tier waterfall — embedded `twister-js-init-dpx-data` balanced JSON (with
+  `dimensionValuesDisplayData` fallback), inline/classic Twister DOM rows, and
+  `#tmmSwatches` format editions — preserving every dimension and option value
+  verbatim while rejecting singleton (`<= 1`) definitions. Authoritative `detail`
+  merges upgrade partial card swatch hints across `dedup.ts`, `db/products.ts`,
+  and `enrich-saved-product.ts`, and `CellExpandModal` (`SAD-358`) renders a
+  per-dimension breakdown on expansion.
+- **Weight (`weight`)**: Extracted from structured PDP containers (`techSpec`,
+  `detailBullets`, 2026 `#productDetails_expanderTables_*`, `productOverview`)
+  using a 4-tier waterfall: direct item-weight labels (`Item Weight`,
+  `Product Weight`, `Weight`) -> packaged/shipping weight -> semicolon
+  `Product Dimensions` mass segment -> `#aplus` brand spec tables, ignoring
+  excluded comparison/sponsored subtrees and sorting by gram mass in
+  `product-sorter.ts`.
 
 ### 4. Deduplication
 
