@@ -5,6 +5,35 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Variations & Weight fields (SAD-357)
+
+Add two first-class fields — **Variations** (`variations`) and **Weight**
+(`weight`) — across the Amazon engine's scraping, persistence, background PDP
+enrichment, sorting, preview table, modal expansion, settings, and exports.
+
+### Added
+- **Data model, settings & exports (`26` data-field toggles):** Added optional
+  `variations` and `weight` fields to `ScrapedAmazonProduct` / `AmazonProduct`,
+  default-on toggles in Settings → Data Fields, and `Variations` / `Weight`
+  columns across CSV, Clipboard TSV, and Excel (`.xlsx`) with blank empty cells
+  (`""` / `null`, per `SAD-348`).
+- **Variations extraction & search → PDP upgrade:** Search and category cards
+  extract `.s-color-swatch-container` swatches and `+N other colors/patterns`
+  counts; PDPs run a 3-tier waterfall (`twister-js-init-dpx-data` balanced JSON
+  with `dimensionValuesDisplayData` fallback → inline/classic Twister DOM →
+  `#tmmSwatches` format editions), rejecting singletons (`<= 1`) and upgrading
+  partial card swatch hints when an authoritative `detail` record merges.
+- **Weight extraction waterfall:** Extracts physical mass (`mg`, `g`, `kg`, `oz`,
+  `lb`/`lbs`, and compound `lb oz`) across legacy spec tables, 2026
+  `#productDetails_expanderTables_*` containers, `detailBullets`, `Package Weight`
+  and semicolon `Product Dimensions` fallbacks, and `#aplus` brand tables while
+  ignoring excluded comparison/sponsored subtrees.
+- **Physical-mass sorting & `SAD-358` cell expand:** `product-sorter.ts` sorts
+  `weight` accurately by gram mass and `variations` numerically by option count;
+  `variationsColumn` integrates with `ExpandableCell` + `CellExpandModal` to show
+  a structured total-count pill and bulleted per-dimension breakdown without
+  lossy truncation. Temu engine files remain untouched.
+
 ## [Unreleased] — Deal-page images (SAD-351)
 
 Product thumbnails collected from the `/deals` grid never rendered, because the
