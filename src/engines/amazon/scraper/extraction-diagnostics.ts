@@ -73,6 +73,8 @@ export const DETAIL_DIAGNOSTIC_FIELDS: readonly string[] = [
   'imageUrl',
   'bestSellersRank',
   'warrantyDescription',
+  'variations',
+  'weight',
   'isPrime',
 ];
 

@@ -33,6 +33,7 @@ import {
 } from '@/engines/amazon/constants/defaults';
 import {
   collectMissingDetailFields,
+  collectPresentDetailFields,
   enrichSavedProduct,
 } from '@/engines/amazon/background/enrich-saved-product';
 import { db } from '@/engines/amazon/db/database';
@@ -588,6 +589,8 @@ describe('Merge, Dexie persistence & background PDP enrichment (SAD-357 + SAD-35
       '8 (Size: 18 oz, 32 oz; Color: Black, Blue, Sage, Sand)',
     );
     expect(enrichedRow?.weight).toBe('0.42 kg');
+    expect(collectPresentDetailFields(offscreen.product)).toContain('variations');
+    expect(collectPresentDetailFields(offscreen.product)).toContain('weight');
     expect(collectMissingDetailFields(enrichedRow!)).not.toContain('variations');
     expect(collectMissingDetailFields(enrichedRow!)).not.toContain('weight');
 
