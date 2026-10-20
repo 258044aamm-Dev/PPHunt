@@ -91,6 +91,58 @@ function renderModalBody(payload: ExpandedCellPayload): React.ReactNode {
     );
   }
 
+  if (columnId === 'variations') {
+    const rawStr = typeof value === 'string' ? value : String(value ?? '');
+    const parsedMatch = /^(\d+)\s*\((.+)\)$/.exec(rawStr.trim());
+    if (parsedMatch) {
+      const count = parsedMatch[1]!;
+      const innerBody = parsedMatch[2]!;
+      const dimParts = innerBody
+        .split(';')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const hasDimensionColons = dimParts.some((part) => part.includes(':'));
+      return (
+        <div className="space-y-3" data-testid="cell-expand-variations-list">
+          <span className="inline-block px-2 py-0.5 rounded-sm bg-surface-card border border-hairline-soft font-mono text-xs text-ink font-medium">
+            {count} total variations
+          </span>
+          {hasDimensionColons ? (
+            <ul className="list-disc list-inside space-y-1.5 font-sans text-sm text-ink leading-relaxed">
+              {dimParts.map((part, idx) => {
+                const colonIdx = part.indexOf(':');
+                if (colonIdx <= 0) {
+                  return (
+                    <li key={idx} className="break-words">
+                      {part}
+                    </li>
+                  );
+                }
+                const dimName = part.slice(0, colonIdx).trim();
+                const dimValues = part.slice(colonIdx + 1).trim();
+                return (
+                  <li key={idx} className="break-words">
+                    <span className="font-semibold">{dimName}:</span>{' '}
+                    <span>{dimValues}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="font-sans text-sm text-ink break-words leading-relaxed">
+              {innerBody}
+            </p>
+          )}
+        </div>
+      );
+    }
+    return (
+      <p className="font-sans text-sm text-ink break-words whitespace-pre-wrap leading-relaxed">
+        {rawStr}
+      </p>
+    );
+  }
+
   if (columnId === 'url') {
     const urlValue = typeof value === 'string' ? value : String(value ?? '');
     return (

@@ -751,6 +751,65 @@ const featuresColumn = columnHelper.accessor('features', {
   enableSorting: false,
 });
 
+const variationsColumn = columnHelper.accessor('variations', {
+  header: 'Variations',
+  cell: (info) => {
+    const variations = info.getValue();
+    if (!variations) return null;
+    const meta = info.table.options.meta as
+      | { onExpand?: (p: ExpandedCellPayload) => void }
+      | undefined;
+    const inner = (
+      <span
+        className="font-sans text-xs text-ink line-clamp-1"
+        title={variations}
+        data-testid={`product-variations-${info.row.original.asin}`}
+      >
+        {variations}
+      </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell
+        label="Variations"
+        columnId="variations"
+        value={variations}
+        product={info.row.original}
+        onExpand={meta.onExpand}
+      >
+        {inner}
+      </ExpandableCell>
+    );
+  },
+  size: 180,
+  minSize: 120,
+  maxSize: 320,
+  enableSorting: true,
+  sortFn: sortFn_alphanumeric,
+});
+
+const weightColumn = columnHelper.accessor('weight', {
+  header: 'Weight',
+  cell: (info) => {
+    const weight = info.getValue();
+    if (!weight) return null;
+    return (
+      <span
+        className="font-mono text-xs text-ink whitespace-nowrap tabular-nums"
+        title={weight}
+        data-testid={`product-weight-${info.row.original.asin}`}
+      >
+        {weight}
+      </span>
+    );
+  },
+  size: 96,
+  minSize: 76,
+  maxSize: 150,
+  enableSorting: true,
+  sortFn: sortFn_alphanumeric,
+});
+
 /**
  * SAD-349: the normalized warranty token, with the verbatim cell it was derived
  * from as the tooltip — the same pattern every other truncated cell here uses,
@@ -846,6 +905,9 @@ export const amazonColumns: Array<
   // (settings-not-loaded) column set and the defaults can never diverge.
   descriptionColumn,
   featuresColumn,
+  // SAD-357: default-on, matching DEFAULT_ENABLED_FIELDS.
+  variationsColumn,
+  weightColumn,
   // SAD-349: PDP-only like the two above, and default-on for the same reason.
   warrantyDescriptionColumn,
   sourceColumn,
@@ -891,6 +953,8 @@ export function getAmazonColumnsForSettings(
   if (enabledFields.url !== false) active.push(urlColumn);
   if (enabledFields.description) active.push(descriptionColumn);
   if (enabledFields.features) active.push(featuresColumn);
+  if (enabledFields.variations) active.push(variationsColumn);
+  if (enabledFields.weight) active.push(weightColumn);
   // SAD-349: truthy check, matching description/features (SAD-333), so a settings
   // row predating the key does not silently drop the column.
   if (enabledFields.warrantyDescription) active.push(warrantyDescriptionColumn);

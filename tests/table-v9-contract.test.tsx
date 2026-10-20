@@ -82,11 +82,13 @@ const LEGACY_COLUMN_IDS = [
   'source',
 ];
 
-/** SAD-333 + SAD-349: the PDP-only columns are default-on, before `source`. */
+/** SAD-333 + SAD-349 + SAD-357: PDP/enrichment columns are default-on, before `source`. */
 const DEFAULT_COLUMN_IDS = [
   ...LEGACY_COLUMN_IDS.slice(0, LEGACY_COLUMN_IDS.length - 1),
   'description',
   'features',
+  'variations',
+  'weight',
   'warrantyDescription',
   'source',
 ];
@@ -119,6 +121,8 @@ const COLUMN_SIZING: Record<string, [number, number, number]> = {
   source: [76, 64, 96],
   description: [200, 120, 400],
   features: [200, 120, 400],
+  variations: [180, 120, 320],
+  weight: [96, 76, 150],
   warrantyDescription: [110, 90, 160],
 };
 
@@ -195,26 +199,32 @@ describe('Table v9 migration contract (SAD-186 / Step 7.1)', () => {
     }
   });
 
-  it('renders the PDP-only columns by default and drops exactly them when turned off (SAD-333 + SAD-349)', () => {
+  it('renders the PDP-only columns by default and drops exactly them when turned off (SAD-333 + SAD-349 + SAD-357)', () => {
     const defaults = asShapes(getColumnsForSettings(DEFAULT_ENABLED_FIELDS))
       .map(colId);
     expect(defaults).toContain('description');
     expect(defaults).toContain('features');
+    expect(defaults).toContain('variations');
+    expect(defaults).toContain('weight');
     expect(defaults).toContain('warrantyDescription');
 
-    // Turning off every PDP-only field returns exactly the frozen pre-SAD-333
+    // Turning off every post-legacy field returns exactly the frozen pre-SAD-333
     // set, which is what this test has always pinned.
     const turnedOff = asShapes(
       getColumnsForSettings({
         ...DEFAULT_ENABLED_FIELDS,
         description: false,
         features: false,
+        variations: false,
+        weight: false,
         warrantyDescription: false,
       })
     ).map(colId);
     expect(turnedOff).toEqual(LEGACY_COLUMN_IDS);
     expect(turnedOff).not.toContain('description');
     expect(turnedOff).not.toContain('features');
+    expect(turnedOff).not.toContain('variations');
+    expect(turnedOff).not.toContain('weight');
     expect(turnedOff).not.toContain('warrantyDescription');
   });
 });

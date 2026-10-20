@@ -472,6 +472,9 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       seller: true,
       description: true,
       features: true,
+      // SAD-357
+      variations: true,
+      weight: true,
       // SAD-349: PDP-only like the two above, so default-on for the same reason.
       warrantyDescription: true,
     });
@@ -500,6 +503,9 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       'URL',
       'Description',
       'Features',
+      // SAD-357
+      'Variations',
+      'Weight',
       // SAD-349
       'Warranty Description',
       'Warranty Details',
@@ -511,21 +517,25 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
     ).toEqual(DEFAULT_VISIBLE_COLUMNS);
 
     // Table columns: select + rowNumber (#) + 21 core/pricing/deal/BSR/market
-    // fields + description + features + warrantyDescription + source
-    // = 27 columns by default (SAD-333 + SAD-349).
-    expect(columns).toHaveLength(27);
-    expect(getColumnsForSettings(defaults.enabledFields)).toHaveLength(27);
+    // fields + description + features + variations + weight + warrantyDescription + source
+    // = 29 columns by default (SAD-333 + SAD-349 + SAD-357).
+    expect(columns).toHaveLength(29);
+    expect(getColumnsForSettings(defaults.enabledFields)).toHaveLength(29);
 
-    // All three stay ordinary per-field toggles: turning them off removes them.
+    // All stay ordinary per-field toggles: turning them off removes them.
     const allEnabled = {
       ...defaults.enabledFields,
       description: true,
       features: true,
+      variations: true,
+      weight: true,
       warrantyDescription: true,
     };
-    expect(getColumnsForSettings(allEnabled)).toHaveLength(27);
+    expect(getColumnsForSettings(allEnabled)).toHaveLength(29);
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Description');
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Features');
+    expect(getExportColumnsFromSettings(allEnabled)).toContain('Variations');
+    expect(getExportColumnsFromSettings(allEnabled)).toContain('Weight');
     expect(getExportColumnsFromSettings(allEnabled)).toContain(
       'Warranty Description'
     );
@@ -538,7 +548,7 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       description: false,
       features: false,
     };
-    expect(getColumnsForSettings(bothOff)).toHaveLength(25);
+    expect(getColumnsForSettings(bothOff)).toHaveLength(27);
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Description');
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Features');
     // SAD-349: turning off description/features leaves warranty alone, and its
@@ -557,13 +567,18 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       'Warranty Details'
     );
 
-    // SAD-349: the warranty toggle is independent of the other two, and turning
-    // all three off returns exactly the pre-SAD-333 column set.
+    // SAD-349 + SAD-357: toggles stay independent, and turning off all five
+    // post-legacy columns returns the original 24-column set.
     expect(
       getColumnsForSettings({ ...defaults.enabledFields, warrantyDescription: false }),
-    ).toHaveLength(26);
+    ).toHaveLength(28);
     expect(
-      getColumnsForSettings({ ...bothOff, warrantyDescription: false }),
+      getColumnsForSettings({
+        ...bothOff,
+        variations: false,
+        weight: false,
+        warrantyDescription: false,
+      }),
     ).toHaveLength(24);
   });
 

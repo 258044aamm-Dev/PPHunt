@@ -377,7 +377,7 @@ describe('Settings > DATA FIELDS', () => {
     expect(grid?.querySelectorAll('label > input[type="checkbox"]').length).toBe(
       Object.keys(DEFAULT_ENABLED_FIELDS).length,
     );
-    expect(Object.keys(DEFAULT_ENABLED_FIELDS)).toHaveLength(24);
+    expect(Object.keys(DEFAULT_ENABLED_FIELDS)).toHaveLength(26);
 
     fireEvent.click(box);
 
@@ -464,7 +464,8 @@ describe('Preview table', () => {
       reviewCount: true, bestSellersRank: true, pastMonthSales: true,
       coupon: true, badge: true, delivery: true, imageUrl: true,
       isSponsored: true, isPrime: true, brand: true, availability: true,
-      seller: true, description: true, features: true, warrantyDescription: true,
+      seller: true, description: true, features: true,
+      variations: true, weight: true, warrantyDescription: true,
     });
     const off = getColumnsForSettings({
       title: true, asin: true, url: true, price: true, listPrice: true,
@@ -472,7 +473,8 @@ describe('Preview table', () => {
       reviewCount: true, bestSellersRank: true, pastMonthSales: true,
       coupon: true, badge: true, delivery: true, imageUrl: true,
       isSponsored: true, isPrime: true, brand: true, availability: true,
-      seller: true, description: true, features: true, warrantyDescription: false,
+      seller: true, description: true, features: true,
+      variations: true, weight: true, warrantyDescription: false,
     });
     const ids = (cols: unknown[]) =>
       (cols as Array<{ id?: string; accessorKey?: string }>).map(
@@ -568,7 +570,8 @@ describe('Exports', () => {
       reviewCount: true, bestSellersRank: true, pastMonthSales: true,
       coupon: true, badge: true, delivery: true, imageUrl: true,
       isSponsored: true, isPrime: true, brand: true, availability: true,
-      seller: true, description: true, features: true, warrantyDescription: true,
+      seller: true, description: true, features: true,
+      variations: true, weight: true, warrantyDescription: true,
     });
     const off = getExportColumnsFromSettings({
       title: true, asin: true, url: true, price: true, listPrice: true,
@@ -576,7 +579,8 @@ describe('Exports', () => {
       reviewCount: true, bestSellersRank: true, pastMonthSales: true,
       coupon: true, badge: true, delivery: true, imageUrl: true,
       isSponsored: true, isPrime: true, brand: true, availability: true,
-      seller: true, description: true, features: true, warrantyDescription: false,
+      seller: true, description: true, features: true,
+      variations: true, weight: true, warrantyDescription: false,
     });
 
     expect(on).toContain('Warranty Description');

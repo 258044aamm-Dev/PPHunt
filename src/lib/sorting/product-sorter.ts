@@ -24,6 +24,8 @@ export const AMAZON_SORTABLE_FIELDS: readonly SortableFieldOption[] = [
   { id: 'brand', label: 'Brand', defaultDesc: false },
   { id: 'seller', label: 'Seller', defaultDesc: false },
   { id: 'asin', label: 'ASIN', defaultDesc: false },
+  { id: 'variations', label: 'Variations', defaultDesc: true },
+  { id: 'weight', label: 'Weight', defaultDesc: false },
   { id: 'isPrime', label: 'Prime', defaultDesc: true },
   { id: 'isSponsored', label: 'Sponsored', defaultDesc: true },
 ];
@@ -221,6 +223,76 @@ export function parseSortableDiscount(value: unknown): number | null {
   return Number.isFinite(num) ? Math.abs(num) : null;
 }
 
+const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
+  mg: 0.001,
+  milligram: 0.001,
+  milligrams: 0.001,
+  g: 1,
+  gm: 1,
+  gms: 1,
+  gram: 1,
+  grams: 1,
+  gramm: 1,
+  grammes: 1,
+  kg: 1_000,
+  kgs: 1_000,
+  kilogram: 1_000,
+  kilograms: 1_000,
+  kilogramm: 1_000,
+  kilogrammes: 1_000,
+  oz: 28.349523125,
+  ounce: 28.349523125,
+  ounces: 28.349523125,
+  lb: 453.59237,
+  lbs: 453.59237,
+  pound: 453.59237,
+  pounds: 453.59237,
+};
+
+/**
+ * SAD-357: parses a weight string (`0.19 kg`, `9.12 oz`, `1.73 lbs`, `1 lb 4 oz`)
+ * into grams so ascending/descending sort orders accurately by physical mass.
+ */
+export function parseSortableWeightGrams(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+
+  const compound =
+    /(?:^|[^\d.])(\d+(?:[.,]\d+)?)\s*(lbs?|pounds?)\.?\s+(\d+(?:[.,]\d+)?)\s*(oz|ounces?)\.?(?![a-zA-Z])/i.exec(
+      value,
+    );
+  if (compound) {
+    const lbs = Number.parseFloat(compound[1]!.replace(/,/g, ''));
+    const oz = Number.parseFloat(compound[3]!.replace(/,/g, ''));
+    if (Number.isFinite(lbs) && Number.isFinite(oz)) {
+      return lbs * WEIGHT_UNIT_TO_GRAMS.lb! + oz * WEIGHT_UNIT_TO_GRAMS.oz!;
+    }
+  }
+
+  const single =
+    /(?:^|[^\d.])(\d+(?:[.,]\d+)?)\s*(mg|milligrams?|g|gms?|grams?|gramm|grammes|kgs?|kilograms?|kilogramm|kilogrammes|oz|ounces?|lbs?|pounds?)\.?(?![a-zA-Z])/i.exec(
+      value,
+    );
+  if (!single) return null;
+  const num = Number.parseFloat(single[1]!.replace(/,/g, ''));
+  const factor = WEIGHT_UNIT_TO_GRAMS[single[2]!.toLowerCase()];
+  if (!Number.isFinite(num) || !factor) return null;
+  return num * factor;
+}
+
+/**
+ * SAD-357: extracts the leading variation count (`10 (Size: ...)`, `4 (+3 other colors/patterns)`)
+ * so sorting `variations` compares total options numerically before alphabetical tie-breaking.
+ */
+export function parseSortableVariationCount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const match = /^\s*(\d+)\b/.exec(value);
+  if (!match?.[1]) return null;
+  const num = Number.parseInt(match[1], 10);
+  return Number.isFinite(num) ? num : null;
+}
+
 function isMissingSortValue(value: unknown): boolean {
   if (value === null || value === undefined) return true;
   if (typeof value === 'string' && value.trim() === '') return true;
@@ -261,6 +333,30 @@ function compareFieldValues(
     if (na === null) return 1;
     if (nb === null) return -1;
     return (na - nb) * dir;
+  }
+
+  if (colId === 'weight') {
+    const na = parseSortableWeightGrams(va);
+    const nb = parseSortableWeightGrams(vb);
+    if (na === null && nb === null) return 0;
+    if (na === null) return 1;
+    if (nb === null) return -1;
+    return (na - nb) * dir;
+  }
+
+  if (colId === 'variations') {
+    const na = parseSortableVariationCount(va);
+    const nb = parseSortableVariationCount(vb);
+    if (na === null && nb === null) return 0;
+    if (na === null) return 1;
+    if (nb === null) return -1;
+    if (na !== nb) return (na - nb) * dir;
+    return (
+      String(va).localeCompare(String(vb), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      }) * dir
+    );
   }
 
   const aMissing = isMissingSortValue(va);

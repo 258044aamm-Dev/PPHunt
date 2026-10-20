@@ -52,6 +52,10 @@ export const DEFAULT_ENABLED_FIELDS: EnabledFieldsConfig = {
   // per-field toggles in Settings -> Data Fields.
   description: true,
   features: true,
+  // SAD-357: weight is PDP-only and full twister variations come from the PDP
+  // (or upgrade search-card swatches on enrichment), so default-on like above.
+  variations: true,
+  weight: true,
   // SAD-349: PDP-only like the two above, so default-on for the same reason.
   warrantyDescription: true,
 };

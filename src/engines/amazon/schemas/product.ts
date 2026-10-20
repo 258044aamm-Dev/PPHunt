@@ -42,6 +42,10 @@ export const AmazonProductSchema = z.object({
   seller: z.string().nullable().optional().default(null),
   description: z.string().nullable().optional().default(null),
   features: z.array(z.string()).optional().default([]),
+  // SAD-357: optional with no default, matching listPrice/coupon/warranty, so an
+  // unscraped or singleton row simply lacks the key rather than storing null.
+  variations: z.string().nullable().optional(),
+  weight: z.string().nullable().optional(),
   // SAD-349: optional with no default, matching listPrice/coupon/delivery, so an
   // unscraped row simply lacks the key instead of carrying an explicit null.
   warrantyDescription: z.string().nullable().optional(),

@@ -20,6 +20,7 @@ import {
   extractCardRatingAndReviewsWithTier,
   extractCardSeller,
   extractCardTitleAndBrandWithTier,
+  extractCardVariations,
   isWithinAnyCard,
   normalizeWhitespace,
   validateAndNormalizeScrapedProduct,
@@ -90,6 +91,7 @@ export function parseAmazonSearchCard(
     const isPrime = extractCardIsPrime(card, delivery);
     const isSponsored = extractCardIsSponsored(card);
     const bestSellersRank = extractInlineCardBsr(card);
+    const variations = extractCardVariations(card);
     const { listingCategory, sectionLabel } =
       extractCardListingCategoryAndSection(card, isSponsored);
 
@@ -149,6 +151,9 @@ export function parseAmazonSearchCard(
     }
     if (delivery !== undefined) {
       candidate.delivery = delivery;
+    }
+    if (variations !== undefined) {
+      candidate.variations = variations;
     }
     if (listingCategory !== undefined) {
       candidate.listingCategory = listingCategory;
