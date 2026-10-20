@@ -1,6 +1,8 @@
 # SAD-360 — Review of "Add diagnostic logging to the existing Temu Engine" + amended implementation plan
 
-**Mode: PLANNING / REVIEW ONLY.** No source code was changed for this review. All owner decisions (D1–D8) are locked; this plan is pushed on `feat/temu-engine` per owner instruction, **not** `main`, pending implementation approval. (Branch history: first pushed onto `feat/temu-engine` at its older base, then rebased onto `origin/main` (`6f168df`) the same day, so this branch is exactly `main` + this plan commit and the `034cb12` audit base is in its history.)
+> **Implementation authorization (2026-10-20): steps 0 and 1 only.** The owner approved the follow-up amendments and baseline in §11. That section supersedes the historical planning-only notice and conflicting transport/log-frequency sketches below. Steps 2 onward remain outside the current authorization; the issue stays In Progress until the full feature is implemented and verified.
+
+**Historical review mode: PLANNING / REVIEW ONLY.** No source code was changed for this review. All owner decisions (D1–D8) are locked; this plan is pushed on `feat/temu-engine` per owner instruction, **not** `main`, pending implementation approval. (Branch history: first pushed onto `feat/temu-engine` at its older base, then rebased onto `origin/main` (`6f168df`) the same day, so this branch is exactly `main` + this plan commit and the `034cb12` audit base is in its history.)
 Repo: `MakeTheNewHistory/PPHunt`, cloned fresh, reviewed at `034cb12` (then-current `origin/main`).
 Issue: [SAD-360](https://linear.app/sad-mod/issue/SAD-360/add-diagnostic-logging-to-the-existing-temu-engine) (Todo, priority 1, project PPHunt). No comments, relations, or attachments exist on the issue.
 Baseline verified during review: `tests/temu-scraper.test.ts`, `tests/temu-schemas.test.ts`, `tests/extraction-diagnostics.test.ts` = **34/34 pass**; `tsc --noEmit` clean.
@@ -120,3 +122,35 @@ All four former open items are decided (see D5–D8 in §3): exclude `asin`/`sou
 Extraction results, dedup/cache behaviour, DB writes, sessions/history, exports, UI, and Amazon are **byte-for-byte unaffected by design**: collector is an optional out-param (parity-tested), message field is additive-optional (old senders validate), logging is post-persist and throw-isolated. Residual risks are (a) log volume on large card collections — mitigated in §5.4, inherent to D1+D4; (b) in-helper instrumentation touching shared `field-parsers.ts` — mitigated by optional params + parity tests + full-suite verify. Settings/UI risk is zero (always-on, D4).
 
 **Recommendation: approve SAD-360 with D1–D8 and §5–§9 as the amended plan; do not implement the issue text literally.**
+
+
+## 11. Follow-up approval and Step 0 baseline (2026-10-20)
+
+The owner explicitly authorized **only steps 0 and 1**, with a separate GitHub push and Linear progress update after each completed step. Do not mark the overall feature In Review while later implementation steps remain unfinished.
+
+### Additional owner decisions (interactive confirmation)
+
+These supplement D1–D8 and supersede conflicting details in §5/§7/§8:
+
+- **A1 — Null-ID PDP transport:** use the existing `TEMU_PRODUCTS_COLLECTED` message with `products: []` plus a null-ID report, once per failed PDP collection attempt. The diagnostics-only path must not create a product/session or change counts, progress, history, or broadcasts. ID-less card skips remain silent.
+- **A2 — Per-stage uniqueness:** emit at most one report per `(sessionId, goodsId, stage)`, with duplicate suppression surviving normal service-worker restarts. Search, category, and PDP may each report the same saved product. Later background wiring will use a Temu-only `browser.storage.session` seen-key ledger, not only an in-memory Set.
+- **A3 — Deduplicated later-stage snapshots:** a freshly parsed later-stage report may be sent without a product save. Background must confirm that the product already exists in the resolved session; do not re-save or enrich it merely to log. The report describes that stage's extraction, not newly persisted fields. Validation flags describe existing parse-time checks. Normal background-rejected incoming products still get no line.
+
+Engineering boundaries retained: exactly 22 PDP / 20 card fields; no `goodsId`, `asin`, or `source` entries; no unsupported fields, extracted values, HTML, Amazon imports, selector changes, or product-schema changes. `parseTemuCategoryPage` will need a forwarding-only optional-argument edit in a later step. Malformed JSON-LD cannot prove field presence: where attribution is impossible, report `UNKNOWN`, not guessed `MISSING`/`PARSE_FAILED`.
+
+Logging eligibility must confirm actual persisted membership, not merely validation success: existing upsert logic can skip products at the target cap. No persistence behavior or upsert contract is to change. Resolve/capture the actual background session before scheduling diagnostics. Diagnostic bookkeeping/serialization/console failures must never prevent a save. Console output and seen-key storage cannot be atomic: an abrupt crash can lose a line; full browser shutdown is not covered by session-storage retention.
+
+### Step 0 — completed baseline
+
+- Branch: `feat/temu-engine`; starting HEAD `c7f3bda05f7d2375d58b70a336d726017ac8139e`; remote `main` `6f168dfffeed7f5604ecb362efbb0bb8b492a081`.
+- Confirmed branch is `main` plus the existing plan; no application/source changes at this step. No force push or main-branch write.
+- Installed from the unchanged lockfile with `npm ci --no-audit --no-fund`.
+- Verification runtime: **Node v22.23.3**, directly on `PATH` (WXT requires Node >=22); npm 10.8.2. No manifest/dependency/configuration edits.
+- Built once before tests with `npm run build`: **pass**. Existing built-manifest tests need that artifact on a fresh checkout.
+- `npm run verify`: **pass** — TypeScript clean, **88 test files / 1046 tests passed**, production WXT build successful, production dependency audit **0 vulnerabilities**.
+- `npm run check:dead-exports`: **pass** (42 `src/lib` files scanned).
+- Focused baseline: Temu scraper/schemas/isolation, Amazon diagnostic regression, and quick-save settings: **44/44 passed**.
+- Recorded SHA-256 hashes for all **28** built extension files for a before/after runtime-artifact comparison in step 1.
+- Earlier baseline attempts exposed setup-only manifest/nested-`npx` failures and one intermittent existing quick-save settings test failure (`tests/quick-save-settings-location.test.tsx`, persistence assertion). That test passed on targeted rerun and the final full verification passed. No unrelated application or test code was changed to obtain the green run.
+
+**Step 1 boundary:** add only the Temu-native diagnostics collector/formatter module and its focused unit tests, plus this progress record. Do not instrument parsers or wire transport/background logging yet. The collector must remain unreferenced by production code in this step; existing runtime behavior must remain unchanged.
