@@ -132,13 +132,19 @@ them is part of the work, not a regression:
      `Object.keys(DEFAULT_ENABLED_FIELDS)`, so a new key is automatically covered.
    - SAD-333 is the precedent for how to extend it: append before `'source'`.
 
-2. **`tests/scraper-accuracy.test.tsx`**
+2. **`tests/scraper-accuracy.test.tsx`** — **three** pins, not the two this plan
+   originally listed. The third was found during Step 4 and is corrected here:
+   - **L451 `expect(defaults.enabledFields).toEqual({ …23 exact keys… })`** — an exact
+     object literal. Adding any `enabledFields` key breaks it immediately, i.e. at
+     Step 4, before any column changes. *The original audit missed this one; it is
+     recorded so the next field addition does not.*
    - L477-503 `expect(DEFAULT_VISIBLE_COLUMNS).toEqual([...25 exact headers...])`.
    - L510-511 `expect(columns).toHaveLength(26)` / `getColumnsForSettings(...) → 26`.
    - L528 `expect(getColumnsForSettings(bothOff)).toHaveLength(24)`.
 
 **Audited and confirmed safe (no change needed)** — every other `enabledFields`
-assertion in the suite is relative, not absolute:
+assertion in the suite is relative, not absolute (re-checked with
+`grep -rn "enabledFields).toEqual\|enabledFields).toStrictEqual\|enabledFields: {" tests/`):
 `tests/export-collection.test.ts:153` spreads `getExportColumnsFromSettings(...)`;
 `tests/settings-consumption.test.tsx:231` derives from `SettingsSchema.parse({})`;
 `tests/quick-save-settings-schema.test.ts:77` uses `toEqual(before.enabledFields)`;

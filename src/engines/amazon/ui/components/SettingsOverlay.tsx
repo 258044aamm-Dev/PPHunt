@@ -407,6 +407,7 @@ export function AmazonSettingsOverlay() {
                   seller: 'Seller',
                   description: 'Description',
                   features: 'Features',
+                  warrantyDescription: 'Warranty Description',
                 };
                 const label =
                   FIELD_LABELS[field] ??

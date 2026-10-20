@@ -52,6 +52,8 @@ export const DEFAULT_ENABLED_FIELDS: EnabledFieldsConfig = {
   // per-field toggles in Settings -> Data Fields.
   description: true,
   features: true,
+  // SAD-349: PDP-only like the two above, so default-on for the same reason.
+  warrantyDescription: true,
 };
 
 /**

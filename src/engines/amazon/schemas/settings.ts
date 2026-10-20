@@ -42,6 +42,12 @@ export const EnabledFieldsSchema = z.object({
   // SAD-333: default-on so a PDP-enriched save shows its two PDP-only fields.
   description: z.boolean().default(true),
   features: z.boolean().default(true),
+  // SAD-349: default-on for the same reason as the two above — it is PDP-only,
+  // so hiding it by default makes a right-click save look like data loss.
+  // No settingsVersion bump is needed: parseStoredSettings merges
+  // {...DEFAULT_ENABLED_FIELDS, ...stored}, so an existing install gains the key
+  // on its next read and a deliberate later toggle-off still sticks.
+  warrantyDescription: z.boolean().default(true),
 });
 
 const ExportFormatSchema = z.preprocess(

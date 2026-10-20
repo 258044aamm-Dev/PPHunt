@@ -472,6 +472,8 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       seller: true,
       description: true,
       features: true,
+      // SAD-349: PDP-only like the two above, so default-on for the same reason.
+      warrantyDescription: true,
     });
 
     expect(DEFAULT_VISIBLE_COLUMNS).toEqual([

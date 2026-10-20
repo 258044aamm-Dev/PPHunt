@@ -132,6 +132,7 @@ describe('parseAmazonProductDetail — warranty shapes', () => {
  * but never displayed" bug was produced. One pin per gate.
  * ------------------------------------------------------------------------- */
 
+import React, { StrictMode } from 'react';
 import { beforeEach } from 'vitest';
 import { db } from '@/engines/amazon/db/database';
 import { addProducts } from '@/engines/amazon/db/products';
@@ -248,5 +249,110 @@ describe('G5: addProducts backfills warranty onto an existing row', () => {
     const row = await db.products.where('sessionKey').equals('sess-w').first();
     expect(row?.warrantyDescription).toBe('1-year');
     expect(row?.warrantyDescriptionRaw).toBe('1 Year');
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * Settings. The claim to prove is that a NEW key needs no migration:
+ * parseStoredSettings merges {...DEFAULT_ENABLED_FIELDS, ...stored}, so an
+ * install written by the previous build simply gains the key on its next read.
+ * Bumping settingsVersion here would be the unnecessary change.
+ * ------------------------------------------------------------------------- */
+
+import { afterEach, vi } from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { getSettings, updateSettings } from '@/engines/amazon/db/settings';
+import { CURRENT_SETTINGS_VERSION } from '@/engines/amazon/constants/defaults';
+import { Header } from '@/entrypoints/sidepanel/components/Header';
+import { SettingsOverlay } from '@/entrypoints/sidepanel/components/SettingsOverlay';
+import { useUIStore } from '@/entrypoints/sidepanel/store/uiStore';
+
+describe('settings integration', () => {
+  beforeEach(async () => {
+    await db.delete();
+    await db.open();
+  });
+
+  it('an install written before the field existed gains it with no migration', async () => {
+    // Exactly what the previous build stored: current version, no warranty key.
+    const { warrantyDescription: _drop, ...legacyFields } = (
+      await getSettings()
+    ).enabledFields;
+    await db.settings.put({
+      id: 'default',
+      settingsVersion: CURRENT_SETTINGS_VERSION,
+      enabledFields: legacyFields,
+    } as never);
+
+    const settings = await getSettings();
+
+    expect(settings.enabledFields.warrantyDescription).toBe(true);
+    // No version bump, and nothing else about the row was rewritten.
+    expect(settings.settingsVersion).toBe(CURRENT_SETTINGS_VERSION);
+    expect(settings.enabledFields.description).toBe(true);
+    expect(settings.enabledFields.features).toBe(true);
+  });
+
+  it('a deliberate toggle-off sticks across a reload', async () => {
+    await getSettings();
+    await updateSettings({ enabledFields: { warrantyDescription: false } });
+
+    const stored = await db.settings.get('default');
+    expect(stored?.enabledFields.warrantyDescription).toBe(false);
+
+    const reread = await getSettings();
+    expect(reread.enabledFields.warrantyDescription).toBe(false);
+  });
+});
+
+describe('Settings > DATA FIELDS', () => {
+  beforeEach(async () => {
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({}),
+          set: vi.fn().mockResolvedValue(undefined),
+          remove: vi.fn().mockResolvedValue(undefined),
+        },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+      },
+    });
+    await db.delete();
+    await db.open();
+    useUIStore.setState({ activeTab: 'collect', settingsOpen: false });
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await db.delete();
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a "Warranty Description" toggle, on by default, that persists', async () => {
+    render(
+      <StrictMode>
+        <Header />
+        <SettingsOverlay />
+      </StrictMode>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    await screen.findByText('DATA FIELDS', {}, { timeout: 3000 });
+
+    const box = screen.getByLabelText('Warranty Description') as HTMLInputElement;
+    expect(box.checked).toBe(true);
+
+    fireEvent.click(box);
+
+    await waitFor(async () => {
+      const row = await db.settings.get('default');
+      expect(row?.enabledFields.warrantyDescription).toBe(false);
+    });
   });
 });
