@@ -156,6 +156,87 @@ export function mergeDetailIntoStored(
   return { patch, changedFields: changed };
 }
 
+/**
+ * SAD-352 (Phase 1a): which PDP-authoritative fields are still empty on a row.
+ *
+ * Driven by `DETAIL_FIELDS` (plus `features`, which the merge handles outside
+ * the list) so a field added to the whitelist — e.g. SAD-349's warranty pair —
+ * is measured automatically. Diagnostics only: the result feeds the outcome
+ * log below and decides nothing.
+ */
+export function collectMissingDetailFields(product: Product): string[] {
+  const missing: string[] = [];
+  const record = product as unknown as Record<string, unknown>;
+
+  for (const field of DETAIL_FIELDS) {
+    const value = record[field];
+    if (
+      value === null ||
+      value === undefined ||
+      (typeof value === 'string' && value.trim().length === 0)
+    ) {
+      missing.push(field);
+    }
+  }
+
+  if (!Array.isArray(product.features) || product.features.length === 0) {
+    missing.push('features');
+  }
+
+  return missing;
+}
+
+/** Extra context the outcome log can carry when the step reached that far. */
+interface EnrichmentOutcomeExtras {
+  httpStatus?: number;
+  htmlBytes?: number;
+  missingDetailFields?: string[];
+}
+
+/**
+ * SAD-352 (Phase 1a): one structured console line per enrichment attempt.
+ *
+ * Until now a listing save's outcome, its reason and the fields it changed
+ * existed only in a transient `SAVE_JOB_UPDATE` and a 2.5 s card badge, so a
+ * row left at card quality could not be explained after the fact. This log is
+ * the measurement that decides whether the fetch transport needs to change at
+ * all (plan §8.1.1, Gate 1). Console-only by owner decision; best-effort in
+ * the same style as `logFailure` — a logging failure must never fail a save,
+ * and no return value anywhere depends on this function.
+ */
+function logEnrichmentOutcome(
+  input: EnrichSavedProductInput,
+  startedAt: number,
+  result: EnrichSavedProductResult,
+  extras: EnrichmentOutcomeExtras = {},
+): void {
+  try {
+    console.info('[PPHunt] enrichment outcome', {
+      jobId: input.jobId,
+      asin: input.asin,
+      status: result.status,
+      ...(result.reason ? { reason: result.reason } : {}),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(extras.httpStatus !== undefined
+        ? { httpStatus: extras.httpStatus }
+        : {}),
+      ...(extras.htmlBytes !== undefined
+        ? { htmlBytes: extras.htmlBytes }
+        : {}),
+      fieldsChanged: result.fieldsChanged,
+      ...(extras.missingDetailFields
+        ? { missingDetailFields: extras.missingDetailFields }
+        : {}),
+      snapshotCreated: result.snapshotCreated,
+      currencyMismatch: result.currencyMismatch,
+      // Wall time including the concurrency-queue wait.
+      ms: Date.now() - startedAt,
+    });
+  } catch {
+    // Diagnostics only — never let the console break a save.
+  }
+}
+
 let activeEnrichments = 0;
 const waiting: Array<() => void> = [];
 
@@ -208,6 +289,17 @@ export async function enrichSavedProduct(
   const max = Math.max(1, deps.maxConcurrent ?? MAX_CONCURRENT_ENRICHMENTS);
   const parse = deps.parse ?? parsePdpHtmlViaOffscreen;
 
+  // SAD-352 (Phase 1a): every exit goes through `finish` so exactly one
+  // outcome line is logged per attempt. The returned results are untouched.
+  const startedAt = Date.now();
+  const finish = (
+    result: EnrichSavedProductResult,
+    extras: EnrichmentOutcomeExtras = {},
+  ): EnrichSavedProductResult => {
+    logEnrichmentOutcome(input, startedAt, result, extras);
+    return result;
+  };
+
   await acquireSlot(max);
   try {
     const fetched = await fetchPdpHtml(input.productUrl, input.asin, {
@@ -218,16 +310,23 @@ export async function enrichSavedProduct(
     if (fetched.status === 'skipped') {
       // A guard fired (no permission, not Amazon, breaker open): nothing was
       // attempted, so this is a skip rather than a failure.
-      return stop('skipped', `skipped:${fetched.reason}`);
+      return finish(stop('skipped', `skipped:${fetched.reason}`));
     }
 
     if (fetched.status !== 'ok') {
-      return stop('failed', fetched.status, 'ENRICH_FETCH_FAILED');
+      return finish(stop('failed', fetched.status, 'ENRICH_FETCH_FAILED'), {
+        ...(fetched.httpStatus !== undefined
+          ? { httpStatus: fetched.httpStatus }
+          : {}),
+      });
     }
 
     const parsed = await parse(fetched.html, input.productUrl, input.asin);
     if (!parsed.ok) {
-      return stop('failed', parsed.code.toLowerCase(), 'ENRICH_PARSE_FAILED');
+      return finish(stop('failed', parsed.code.toLowerCase(), 'ENRICH_PARSE_FAILED'), {
+        httpStatus: fetched.httpStatus,
+        htmlBytes: fetched.html.length,
+      });
     }
 
     const detail = parsed.product;
@@ -240,7 +339,10 @@ export async function enrichSavedProduct(
     if (!stored || stored.id === undefined) {
       // Deleted while the enrichment was in flight (History delete, Clear all).
       // Re-creating it would resurrect a row the user removed.
-      return stop('failed', 'row-missing', 'DB_WRITE_FAILED');
+      return finish(stop('failed', 'row-missing', 'DB_WRITE_FAILED'), {
+        httpStatus: fetched.httpStatus,
+        htmlBytes: fetched.html.length,
+      });
     }
 
     const { patch, changedFields } = mergeDetailIntoStored(stored, detail);
@@ -267,17 +369,32 @@ export async function enrichSavedProduct(
     // failure, because the row is already saved and the listing price survives.
     const complete = Boolean(detail.title) && detail.price !== null && detail.price !== undefined;
 
-    return {
-      status: complete ? 'complete' : 'partial',
-      fieldsChanged: changedFields,
-      snapshotCreated: snapshot.created,
-      currencyMismatch,
-    };
+    return finish(
+      {
+        status: complete ? 'complete' : 'partial',
+        fieldsChanged: changedFields,
+        snapshotCreated: snapshot.created,
+        currencyMismatch,
+      },
+      {
+        httpStatus: fetched.httpStatus,
+        htmlBytes: fetched.html.length,
+        // What the row still lacks after the merge — the signal that separates
+        // "the PDP fetch failed" from "the fetch worked but the field was not
+        // on the parsed page" (SAD-352 H1 vs H4).
+        missingDetailFields: collectMissingDetailFields({
+          ...stored,
+          ...patch,
+        } as Product),
+      },
+    );
   } catch (error) {
-    return stop(
-      'failed',
-      error instanceof Error ? error.message : 'enrichment-failed',
-      'ENRICH_FETCH_FAILED',
+    return finish(
+      stop(
+        'failed',
+        error instanceof Error ? error.message : 'enrichment-failed',
+        'ENRICH_FETCH_FAILED',
+      ),
     );
   } finally {
     releaseSlot();

@@ -206,6 +206,23 @@ export async function handleSaveProduct(
       ...(deps.tabId !== undefined ? { tabId: deps.tabId } : {}),
     });
 
+    // SAD-352 (Phase 1a): diagnostics only. Pairing this line with the
+    // enrichment outcome log (same `jobId`) is what lets a measurement tell
+    // the trigger paths apart — and spot a listing save whose context says
+    // `product-detail` (which would skip enrichment entirely). Best-effort:
+    // a logging failure must never fail the save.
+    try {
+      console.info('[PPHunt] save job', {
+        jobId,
+        asin,
+        pageType: payload.context?.pageType,
+        triggeredBy: payload.context?.triggeredBy,
+        pageUrl: payload.context?.pageUrl,
+      });
+    } catch {
+      // Diagnostics only.
+    }
+
     report({ state: 'extracting' });
 
     const runningJobId = inFlightByAsin.get(asin);

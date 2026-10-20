@@ -325,3 +325,39 @@ describe('what the content script receives', () => {
     expect(outcome.status).toBe('valid');
   });
 });
+
+describe('SAD-352 save-job diagnostics logging', () => {
+  it('logs the job context once, keyed by jobId for pairing with the enrichment outcome', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const result = await handleSaveProduct(payload('job-diag-1'));
+
+      expect(result.state).toBe('completed');
+      const lines = info.mock.calls
+        .filter((call) => call[0] === '[PPHunt] save job')
+        .map((call) => call[1] as Record<string, unknown>);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        jobId: 'job-diag-1',
+        asin: 'B08N5WRWNW',
+        pageType: 'search',
+        triggeredBy: 'context-menu',
+        pageUrl: PAGE_URL,
+      });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('a throwing console never fails the save', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {
+      throw new Error('console is gone');
+    });
+    try {
+      const result = await handleSaveProduct(payload('job-diag-2'));
+      expect(result.state).toBe('completed');
+    } finally {
+      info.mockRestore();
+    }
+  });
+});
