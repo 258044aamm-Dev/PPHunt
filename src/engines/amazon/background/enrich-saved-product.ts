@@ -45,6 +45,10 @@ const DETAIL_FIELDS = [
   'dealBadge',
   'pastMonthSales',
   'badge',
+  // SAD-357: full twister variations upgrade partial card swatches on enrichment;
+  // weight is PDP-exclusive. Neither belongs in FILL_ONLY_FIELDS.
+  'variations',
+  'weight',
   // SAD-349: warranty can only come from a PDP, so a one-click save that omits
   // this would fetch the page, parse the row, and throw the value away.
   // Deliberately NOT in FILL_ONLY_FIELDS: the detail page is authoritative here

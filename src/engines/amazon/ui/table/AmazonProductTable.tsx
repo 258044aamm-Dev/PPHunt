@@ -176,6 +176,8 @@ export function AmazonProductTable({
         (p.coupon ?? '').toLowerCase().includes(lower) ||
         (p.badge ?? '').toLowerCase().includes(lower) ||
         (p.delivery ?? '').toLowerCase().includes(lower) ||
+        (p.variations ?? '').toLowerCase().includes(lower) ||
+        (p.weight ?? '').toLowerCase().includes(lower) ||
         (p.sectionLabel ?? '').toLowerCase().includes(lower) ||
         (p.placements ?? []).some((pl) => pl.toLowerCase().includes(lower)),
     );

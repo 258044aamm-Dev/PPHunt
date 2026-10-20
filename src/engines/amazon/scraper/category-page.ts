@@ -20,6 +20,7 @@ import {
   extractCardRatingAndReviewsWithTier,
   extractCardSeller,
   extractCardTitleAndBrandWithTier,
+  extractCardVariations,
   normalizeWhitespace,
   validateAndNormalizeScrapedProduct,
 } from './field-parsers';
@@ -144,6 +145,7 @@ export function parseAmazonCategoryCard(
     const seller = extractCardSeller(card);
     const isPrime = extractCardIsPrime(card, delivery);
     const isSponsored = extractCardIsSponsored(card);
+    const variations = extractCardVariations(card);
 
     const fieldTiers: Partial<
       Record<AmazonTrackedField, typeof asinResult.tier>
@@ -201,6 +203,9 @@ export function parseAmazonCategoryCard(
     }
     if (delivery !== undefined) {
       candidate.delivery = delivery;
+    }
+    if (variations !== undefined) {
+      candidate.variations = variations;
     }
 
     return validateAndNormalizeScrapedProduct(candidate, pageUrl);

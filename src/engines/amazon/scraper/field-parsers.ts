@@ -328,6 +328,236 @@ export function normalizeWarrantyDescription(
   return `${quantity}-${unit}`;
 }
 
+const WEIGHT_UNIT_CANONICAL: Record<
+  string,
+  { singular: string; plural: string }
+> = {
+  mg: { singular: 'mg', plural: 'mg' },
+  milligram: { singular: 'mg', plural: 'mg' },
+  milligrams: { singular: 'mg', plural: 'mg' },
+  g: { singular: 'g', plural: 'g' },
+  gm: { singular: 'g', plural: 'g' },
+  gms: { singular: 'g', plural: 'g' },
+  gram: { singular: 'g', plural: 'g' },
+  grams: { singular: 'g', plural: 'g' },
+  gramm: { singular: 'g', plural: 'g' },
+  grammes: { singular: 'g', plural: 'g' },
+  kg: { singular: 'kg', plural: 'kg' },
+  kgs: { singular: 'kg', plural: 'kg' },
+  kilogram: { singular: 'kg', plural: 'kg' },
+  kilograms: { singular: 'kg', plural: 'kg' },
+  kilogramm: { singular: 'kg', plural: 'kg' },
+  kilogrammes: { singular: 'kg', plural: 'kg' },
+  oz: { singular: 'oz', plural: 'oz' },
+  ounce: { singular: 'oz', plural: 'oz' },
+  ounces: { singular: 'oz', plural: 'oz' },
+  lb: { singular: 'lb', plural: 'lbs' },
+  lbs: { singular: 'lb', plural: 'lbs' },
+  pound: { singular: 'lb', plural: 'lbs' },
+  pounds: { singular: 'lb', plural: 'lbs' },
+};
+
+const COMPOUND_IMPERIAL_WEIGHT_RE =
+  /(?:^|[^\d.])(\d+(?:[.,]\d+)?)\s*(lbs?|pounds?)\.?\s+(\d+(?:[.,]\d+)?)\s*(oz|ounces?)\.?(?![a-zA-Z])/i;
+
+const SINGLE_WEIGHT_RE =
+  /(?:^|[^\d.])(\d+(?:[.,]\d+)?)\s*(mg|milligrams?|g|gms?|grams?|gramm|grammes|kgs?|kilograms?|kilogramm|kilogrammes|oz|ounces?|lbs?|pounds?)\.?(?![a-zA-Z])/i;
+
+function parsePositiveWeightNumber(rawNum: string): {
+  numeric: number;
+  display: string;
+} | null {
+  let cleaned = rawNum.trim();
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    cleaned =
+      cleaned.lastIndexOf('.') > cleaned.lastIndexOf(',')
+        ? cleaned.replace(/,/g, '')
+        : cleaned.replace(/\./g, '').replace(',', '.');
+  } else if (cleaned.includes(',')) {
+    cleaned = /,\d{1,3}$/.test(cleaned)
+      ? cleaned.replace(',', '.')
+      : cleaned.replace(/,/g, '');
+  }
+  const numeric = Number.parseFloat(cleaned);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return { numeric, display: String(Number(cleaned)) };
+}
+
+/**
+ * SAD-357: cleans an Amazon weight cell into a canonical value + unit string
+ * (e.g. `"0.19 kg"`, `"9.12 oz"`, `"1.73 lbs"`, `"1 lb 4 oz"`).
+ * Returns `null` when no positive physical mass unit is present.
+ */
+export function normalizeWeightValue(
+  raw: string | null | undefined,
+): string | null {
+  const text = normalizeWhitespace(raw);
+  if (!text) return null;
+
+  const compound = COMPOUND_IMPERIAL_WEIGHT_RE.exec(text);
+  if (compound) {
+    const lbParsed = parsePositiveWeightNumber(compound[1]!);
+    const ozParsed = parsePositiveWeightNumber(compound[3]!);
+    if (lbParsed && ozParsed) {
+      const lbUnit = lbParsed.numeric === 1 ? 'lb' : 'lbs';
+      return `${lbParsed.display} ${lbUnit} ${ozParsed.display} oz`;
+    }
+  }
+
+  const single = SINGLE_WEIGHT_RE.exec(text);
+  if (!single) return null;
+
+  const parsed = parsePositiveWeightNumber(single[1]!);
+  if (!parsed) return null;
+
+  const unitSpec = WEIGHT_UNIT_CANONICAL[single[2]!.toLowerCase()];
+  if (!unitSpec) return null;
+
+  const unitLabel =
+    parsed.numeric === 1 ? unitSpec.singular : unitSpec.plural;
+  return `${parsed.display} ${unitLabel}`;
+}
+
+export interface VariationDimensionSummaryInput {
+  label: string;
+  values: readonly string[];
+}
+
+/**
+ * SAD-357: formats structured variation dimensions and total count into a
+ * lossless human-readable string (full values preserved for exports and
+ * SAD-358's CellExpandModal; clamped via `line-clamp-1` inside the table cell).
+ * Returns `null` for singletons (`totalVariations <= 1` and `<= 1` option per dim).
+ */
+export function formatVariationDimensionsSummary(
+  dimensions: readonly VariationDimensionSummaryInput[],
+  totalVariations?: number | null,
+): string | null {
+  const cleanedDims: Array<{ label: string; values: string[] }> = [];
+
+  for (const dim of dimensions) {
+    const label = normalizeWhitespace(dim.label).replace(/:+$/, '').trim();
+    if (!label) continue;
+    const uniqueValues: string[] = [];
+    for (const rawVal of dim.values) {
+      const val = normalizeWhitespace(rawVal);
+      if (val && !uniqueValues.includes(val)) {
+        uniqueValues.push(val);
+      }
+    }
+    if (uniqueValues.length > 0) {
+      cleanedDims.push({ label, values: uniqueValues });
+    }
+  }
+
+  const hasMultiOptionDim = cleanedDims.some((d) => d.values.length > 1);
+  const validTotal =
+    typeof totalVariations === 'number' && Number.isFinite(totalVariations)
+      ? Math.trunc(totalVariations)
+      : null;
+
+  if ((validTotal === null || validTotal <= 1) && !hasMultiOptionDim) {
+    return null;
+  }
+
+  const dimSummary = cleanedDims
+    .map(({ label, values }) => `${label}: ${values.join(', ')}`)
+    .join('; ');
+
+  if (validTotal !== null && validTotal > 1 && dimSummary) {
+    return `${validTotal} (${dimSummary})`;
+  }
+  if (dimSummary) {
+    const inferredCount =
+      cleanedDims.length === 1
+        ? cleanedDims[0]!.values.length
+        : Math.max(...cleanedDims.map((d) => d.values.length));
+    return `${inferredCount} (${dimSummary})`;
+  }
+  if (validTotal !== null && validTotal > 1) {
+    return `${validTotal} variations`;
+  }
+  return null;
+}
+
+const SWATCH_REMAINING_RE =
+  /^\+\s*(\d+)\s+(?:other\s+)?(colors?(?:\/patterns?)?|patterns?|sizes?|styles?|flavors?|scents?|options?|designs?)\b/i;
+
+/**
+ * SAD-357: extracts variation hints from search/category result cards using
+ * Amazon's `.s-color-swatch-container` region (immune to sustainability badges).
+ */
+export function extractCardVariations(card: Element): string | undefined {
+  const container = safeQuerySelector(
+    card,
+    AMAZON_SELECTORS.cardFields.variationSwatches.containers,
+  );
+  if (!container) return undefined;
+
+  const swatchNames: string[] = [];
+  const swatchLinks = safeQuerySelectorAll(
+    container,
+    AMAZON_SELECTORS.cardFields.variationSwatches.swatchLinks,
+  );
+  for (const link of swatchLinks) {
+    const rawLabel = normalizeWhitespace(
+      link.getAttribute('aria-label') ||
+        link.querySelector('img')?.getAttribute('alt'),
+    );
+    if (
+      !rawLabel ||
+      /^colors?\s+available$/i.test(rawLabel) ||
+      SWATCH_REMAINING_RE.test(rawLabel)
+    ) {
+      continue;
+    }
+    if (!swatchNames.includes(rawLabel)) {
+      swatchNames.push(rawLabel);
+    }
+  }
+
+  let extraCount = 0;
+  let overflowText: string | null = null;
+  const moreNodes = safeQuerySelectorAll(
+    container,
+    AMAZON_SELECTORS.cardFields.variationSwatches.moreLinks,
+  );
+  for (const node of moreNodes) {
+    const candidate = normalizeWhitespace(
+      node.getAttribute('data-csa-c-swatch-remaining-count') ||
+        node.getAttribute('aria-label') ||
+        node.textContent,
+    );
+    const match = SWATCH_REMAINING_RE.exec(candidate);
+    if (match) {
+      extraCount = Number.parseInt(match[1]!, 10);
+      overflowText = candidate;
+      break;
+    }
+  }
+
+  if (swatchNames.length > 0 && extraCount > 0) {
+    const total = swatchNames.length + extraCount;
+    return `${total} (Color: ${swatchNames.join(', ')}, +${extraCount} more)`;
+  }
+
+  if (swatchNames.length >= 2) {
+    return (
+      formatVariationDimensionsSummary(
+        [{ label: 'Color', values: swatchNames }],
+        swatchNames.length,
+      ) ?? undefined
+    );
+  }
+
+  if (extraCount > 0 && overflowText) {
+    const total = (swatchNames.length || 1) + extraCount;
+    return `${total} (${overflowText})`;
+  }
+
+  return undefined;
+}
+
 /**
  * SAD-351: a URL that plainly names an image file.
  *
@@ -1617,6 +1847,12 @@ export function validateAndNormalizeScrapedProduct(
     }
     if (raw.delivery) {
       normalized.delivery = raw.delivery;
+    }
+    if (typeof raw.variations === 'string' && raw.variations.trim()) {
+      normalized.variations = raw.variations.trim();
+    }
+    if (typeof raw.weight === 'string' && raw.weight.trim()) {
+      normalized.weight = raw.weight.trim();
     }
     // SAD-349: the token and its source text travel together — a token without
     // the cell it came from would be the only surviving copy of the value.

@@ -27,6 +27,10 @@ function enrichStoredProductFields(
     'availability',
     'seller',
     'description',
+    // SAD-357: backfill variations/weight and allow PDP detail rows to upgrade
+    // partial search-card swatch hints.
+    'variations',
+    'weight',
     // SAD-349: lets a later pass over the same ASIN backfill a warranty the
     // first pass did not see (e.g. a listing row later re-collected on the PDP).
     'warrantyDescription',
@@ -44,6 +48,16 @@ function enrichStoredProductFields(
       (patch as Record<string, unknown>)[key] = nextVal;
       hasChanges = true;
     }
+  }
+
+  if (
+    incoming.source === 'detail' &&
+    existing.source !== 'detail' &&
+    incoming.variations &&
+    existing.variations !== incoming.variations
+  ) {
+    patch.variations = incoming.variations;
+    hasChanges = true;
   }
 
   if (!existing.isPrime && incoming.isPrime) {
