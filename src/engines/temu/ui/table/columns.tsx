@@ -210,7 +210,7 @@ const discountPercentageColumn = columnHelper.accessor('discountPercentage', {
   header: 'Discount',
   cell: (info) => {
     const discount = info.getValue();
-    if (!discount) return null;
+    if (!discount) return <span className="text-ink-subtle">No</span>;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-mono text-xs font-medium bg-clay/15 text-clay whitespace-nowrap"
@@ -231,7 +231,7 @@ const dealBadgeColumn = columnHelper.accessor('dealBadge', {
   header: 'Deal',
   cell: (info) => {
     const deal = info.getValue();
-    if (!deal) return null;
+    if (!deal) return <span className="text-ink-subtle">No</span>;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-crimson/15 text-crimson line-clamp-1"
@@ -356,7 +356,7 @@ const couponColumn = columnHelper.accessor('coupon', {
   header: 'Coupon',
   cell: (info) => {
     const coupon = info.getValue();
-    if (!coupon) return null;
+    if (!coupon) return <span className="text-ink-subtle">No</span>;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-moss/15 text-moss line-clamp-1"
@@ -378,7 +378,7 @@ const badgeColumn = columnHelper.accessor('badge', {
   header: 'Badge',
   cell: (info) => {
     const badge = info.getValue();
-    if (!badge) return null;
+    if (!badge) return <span className="text-ink-subtle">No</span>;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-golden/15 text-golden line-clamp-1"
