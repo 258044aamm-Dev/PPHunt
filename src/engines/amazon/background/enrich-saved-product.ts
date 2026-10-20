@@ -156,6 +156,14 @@ export function mergeDetailIntoStored(
   return { patch, changedFields: changed };
 }
 
+function isDetailValueMissing(value: unknown): boolean {
+  return (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim().length === 0)
+  );
+}
+
 /**
  * SAD-352 (Phase 1a): which PDP-authoritative fields are still empty on a row.
  *
@@ -169,12 +177,7 @@ export function collectMissingDetailFields(product: Product): string[] {
   const record = product as unknown as Record<string, unknown>;
 
   for (const field of DETAIL_FIELDS) {
-    const value = record[field];
-    if (
-      value === null ||
-      value === undefined ||
-      (typeof value === 'string' && value.trim().length === 0)
-    ) {
+    if (isDetailValueMissing(record[field])) {
       missing.push(field);
     }
   }
@@ -186,11 +189,39 @@ export function collectMissingDetailFields(product: Product): string[] {
   return missing;
 }
 
+/**
+ * SAD-352 (Phase 1a.2): which PDP-authoritative fields the *parsed detail
+ * itself* carried — the complement view to `collectMissingDetailFields` on the
+ * merged row. Session 2 showed a recurring buybox-family fingerprint
+ * (price/discount/seller/delivery missing together); this separates "the
+ * parser never saw the field" from "the merge declined it" (fill-only family,
+ * already-known values), which `fieldsChanged` alone cannot.
+ */
+export function collectPresentDetailFields(detail: ScrapedProduct): string[] {
+  const present: string[] = [];
+  const record = detail as unknown as Record<string, unknown>;
+
+  for (const field of DETAIL_FIELDS) {
+    if (!isDetailValueMissing(record[field])) {
+      present.push(field);
+    }
+  }
+
+  if (Array.isArray(detail.features) && detail.features.length > 0) {
+    present.push('features');
+  }
+
+  return present;
+}
+
 /** Extra context the outcome log can carry when the step reached that far. */
 interface EnrichmentOutcomeExtras {
   httpStatus?: number;
   htmlBytes?: number;
   missingDetailFields?: string[];
+  detailPresentFields?: string[];
+  /** Fetch/parse explanation (Step 1a.2: separates the >3 MB cap from a bad content type). */
+  message?: string;
 }
 
 /**
@@ -227,7 +258,11 @@ function logEnrichmentOutcome(
       ...(extras.htmlBytes !== undefined
         ? { htmlBytes: extras.htmlBytes }
         : {}),
+      ...(extras.message ? { message: extras.message } : {}),
       fieldsChanged: result.fieldsChanged,
+      ...(extras.detailPresentFields
+        ? { detailPresentFields: extras.detailPresentFields }
+        : {}),
       ...(extras.missingDetailFields
         ? { missingDetailFields: extras.missingDetailFields }
         : {}),
@@ -315,7 +350,9 @@ export async function enrichSavedProduct(
     if (fetched.status === 'skipped') {
       // A guard fired (no permission, not Amazon, breaker open): nothing was
       // attempted, so this is a skip rather than a failure.
-      return finish(stop('skipped', `skipped:${fetched.reason}`));
+      return finish(stop('skipped', `skipped:${fetched.reason}`), {
+        message: fetched.message,
+      });
     }
 
     if (fetched.status !== 'ok') {
@@ -323,6 +360,7 @@ export async function enrichSavedProduct(
         ...(fetched.httpStatus !== undefined
           ? { httpStatus: fetched.httpStatus }
           : {}),
+        message: fetched.message,
       });
     }
 
@@ -331,6 +369,7 @@ export async function enrichSavedProduct(
       return finish(stop('failed', parsed.code.toLowerCase(), 'ENRICH_PARSE_FAILED'), {
         httpStatus: fetched.httpStatus,
         htmlBytes: fetched.html.length,
+        message: parsed.message,
       });
     }
 
@@ -347,6 +386,7 @@ export async function enrichSavedProduct(
       return finish(stop('failed', 'row-missing', 'DB_WRITE_FAILED'), {
         httpStatus: fetched.httpStatus,
         htmlBytes: fetched.html.length,
+        detailPresentFields: collectPresentDetailFields(detail),
       });
     }
 
@@ -384,6 +424,7 @@ export async function enrichSavedProduct(
       {
         httpStatus: fetched.httpStatus,
         htmlBytes: fetched.html.length,
+        detailPresentFields: collectPresentDetailFields(detail),
         // What the row still lacks after the merge — the signal that separates
         // "the PDP fetch failed" from "the fetch worked but the field was not
         // on the parsed page" (SAD-352 H1 vs H4).

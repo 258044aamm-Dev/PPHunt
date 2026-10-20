@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db/database';
 import {
   collectMissingDetailFields,
+  collectPresentDetailFields,
   enrichSavedProduct,
   mergeDetailIntoStored,
   resetEnrichmentConcurrencyForTests,
@@ -479,6 +480,18 @@ describe('collectMissingDetailFields (SAD-352)', () => {
     expect(missing).toContain('brand');
     expect(missing).toContain('features');
   });
+
+  it('collectPresentDetailFields is the complement view on a parsed detail', () => {
+    const present = collectPresentDetailFields(
+      detail({ brand: 'Anker', features: ['Fast'] }),
+    );
+
+    expect(present).toEqual(
+      expect.arrayContaining(['title', 'price', 'brand', 'features']),
+    );
+    expect(present).not.toContain('seller');
+    expect(present).not.toContain('description');
+  });
 });
 
 describe('SAD-352 enrichment outcome logging', () => {
@@ -529,6 +542,12 @@ describe('SAD-352 enrichment outcome logging', () => {
     expect(lines[0]?.missingDetailFields).toEqual(
       expect.arrayContaining(['brand']),
     );
+    // The parsed detail itself carried title/price/rating but no brand —
+    // parser-side absence, not a merge refusal (SAD-352 step 1a.2).
+    expect(lines[0]?.detailPresentFields).toEqual(
+      expect.arrayContaining(['title', 'price', 'rating']),
+    );
+    expect(lines[0]?.detailPresentFields).not.toContain('brand');
     expect(typeof lines[0]?.ms).toBe('number');
   });
 
@@ -555,6 +574,7 @@ describe('SAD-352 enrichment outcome logging', () => {
       reason: 'not-found',
       errorCode: 'ENRICH_FETCH_FAILED',
       httpStatus: 404,
+      message: 'The product page no longer exists',
       snapshotCreated: false,
     });
   });
@@ -580,6 +600,7 @@ describe('SAD-352 enrichment outcome logging', () => {
     expect(lines[0]).toMatchObject({
       status: 'skipped',
       reason: 'skipped:no-permission',
+      message: 'No host permission for amazon.com',
     });
     expect(lines[0]).not.toHaveProperty('httpStatus');
   });
