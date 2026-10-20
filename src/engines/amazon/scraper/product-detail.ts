@@ -14,6 +14,7 @@ import {
   extractCardPastMonthSales,
   extractCardPricingAndDiscounts,
   normalizeDiscountBadge,
+  normalizeWarrantyDescription,
   normalizeWhitespace,
   parseRating,
   parseReviewCount,
@@ -21,6 +22,7 @@ import {
 } from './field-parsers';
 import {
   AMAZON_SELECTORS,
+  AMAZON_WARRANTY_LABEL_PATTERN,
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
@@ -204,6 +206,79 @@ function extractDetailBsr(doc: Document): string | undefined {
     }
     if (rankMatches.length === 1) {
       return rankMatches[0];
+    }
+  }
+  return undefined;
+}
+
+/** SAD-349: the normalized token plus the verbatim cell it came from. */
+interface DetailWarranty {
+  warrantyDescription: string;
+  warrantyDescriptionRaw: string;
+}
+
+/**
+ * SAD-349: yields `{ label, value }` for each labelled row of a detail
+ * container, handling every shape Amazon ships:
+ *
+ * - `<tr><th>Label</th><td>Value</td></tr>` — `productDetails_techSpec_*`,
+ *   `productDetails_detailBullets_sections1`, `productDetails_db_sections`
+ * - `<tr class="po-x"><td><span class="a-text-bold">Label</span></td><td>…</td></tr>`
+ *   — `productOverview_feature_div`, where the label lives in the *first* `td`
+ * - `<li><span class="a-text-bold">Label:</span> Value</li>` —
+ *   `detailBulletsWrapper_feature_div`
+ *
+ * The value cell is the first `td` that is not the label's own cell; when there
+ * is no `td` at all (the list shape) the row text minus the label is used.
+ */
+function* iterDetailSpecRows(
+  container: Element,
+): Generator<{ label: string; value: string }> {
+  for (const row of safeQuerySelectorAll(container, 'tr, li')) {
+    const header = row.querySelector('th, .a-text-bold');
+    if (!header) continue;
+
+    const label = normalizeWhitespace(header.textContent).replace(/:+$/, '').trim();
+    if (!label) continue;
+
+    const cells = safeQuerySelectorAll(row, 'td');
+    const valueCell = cells.find((cell) => cell !== header && !cell.contains(header));
+
+    let value = normalizeWhitespace(
+      valueCell ? valueCell.textContent : row.textContent,
+    );
+    if (!valueCell && value.startsWith(label)) {
+      value = value.slice(label.length);
+    }
+    value = value.replace(/^[\s:]+/, '').trim();
+
+    if (value) yield { label, value };
+  }
+}
+
+/**
+ * SAD-349: reads the warranty period from the PDP's structured detail tables.
+ *
+ * Deliberately mirrors `extractDetailBsr` — same container walk, same exclusion
+ * of sponsored/similar-item subtrees — because the warranty row sits in the very
+ * tables the BSR row does.
+ *
+ * A labelled row whose cell yields no duration is skipped rather than returned:
+ * that is the "Product Warranty: For warranty information about this product,
+ * please click here" boilerplate, and a real row can follow it in the same table.
+ */
+function extractDetailWarranty(doc: Document): DetailWarranty | undefined {
+  for (const selector of AMAZON_SELECTORS.detail.warrantyContainers) {
+    const container = safeQuerySelector(doc, selector);
+    if (!container || isInsideExcludedDetailSubtree(container)) continue;
+
+    for (const { label, value } of iterDetailSpecRows(container)) {
+      if (!AMAZON_WARRANTY_LABEL_PATTERN.test(label)) continue;
+
+      const warrantyDescription = normalizeWarrantyDescription(value);
+      if (!warrantyDescription) continue;
+
+      return { warrantyDescription, warrantyDescriptionRaw: value };
     }
   }
   return undefined;
@@ -495,6 +570,9 @@ export function parseAmazonProductDetail(
     // BSR
     const bestSellersRank = extractDetailBsr(doc);
 
+    // Warranty (SAD-349) — structured detail tables only, PDP-exclusive.
+    const warranty = extractDetailWarranty(doc);
+
     // Prime
     const isPrime = Boolean(
       safeQuerySelector(
@@ -538,6 +616,12 @@ export function parseAmazonProductDetail(
     }
     if (coupon !== undefined) candidate.coupon = coupon;
     if (delivery !== undefined) candidate.delivery = delivery;
+    // SAD-349: both halves or neither — a token with no source text would make
+    // the normalized form the only surviving copy of what the page said.
+    if (warranty) {
+      candidate.warrantyDescription = warranty.warrantyDescription;
+      candidate.warrantyDescriptionRaw = warranty.warrantyDescriptionRaw;
+    }
 
     return validateAndNormalizeScrapedProduct(candidate, activeUrl);
   } catch (err) {

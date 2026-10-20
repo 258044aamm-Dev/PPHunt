@@ -232,6 +232,102 @@ export function cleanSeller(raw: string | null | undefined): string | null {
   return cleaned || null;
 }
 
+/** SAD-349: spelled-out quantities Amazon writes into warranty cells. */
+const WARRANTY_WORD_NUMBERS: Readonly<Record<string, number>> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  eighteen: 18,
+  twenty: 20,
+  thirty: 30,
+  sixty: 60,
+  ninety: 90,
+  'twenty-one': 21,
+  'twenty-two': 22,
+  'twenty-three': 23,
+  'twenty-four': 24,
+  'twenty-five': 25,
+  'thirty-six': 36,
+  'sixty-four': 64,
+};
+
+/**
+ * SAD-349: `<quantity><unit>` inside a warranty cell. Compound spelled numbers
+ * are listed first so "twenty-four year" cannot be mis-read as "four year", and
+ * the unit alternation accepts every plural/abbrev spelling Amazon uses.
+ */
+const WARRANTY_DURATION_RE =
+  /\b((?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
+
+/** Maps each unit spelling onto the one canonical singular form. */
+const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
+  year: 'year',
+  years: 'year',
+  yr: 'year',
+  yrs: 'year',
+  month: 'month',
+  months: 'month',
+  mo: 'month',
+  mos: 'month',
+  day: 'day',
+  days: 'day',
+  week: 'week',
+  weeks: 'week',
+};
+
+/**
+ * SAD-349: reduces an Amazon warranty cell to a compact, sortable token
+ * (`1-year`, `2-year`, `90-day`, `lifetime`).
+ *
+ * Returning `null` when the cell states no coverage period is deliberate and
+ * load-bearing. The "Warranty & Support" block on essentially every amazon.com
+ * page reads *"Product Warranty: For warranty information about this product,
+ * please click here"* — a link, not data. Requiring a duration token rejects
+ * that boilerplate **structurally**, so there is no denylist to maintain and a
+ * new boilerplate variant cannot slip through.
+ *
+ * Two documented consequences:
+ * - the **first** duration wins, so a cell quoting a secondary period
+ *   ("...or 90 days from shipment, whichever is longer") keeps the leading,
+ *   primary one;
+ * - the qualifier is dropped — the caller keeps the verbatim cell in
+ *   `warrantyDescriptionRaw` so nothing is lost.
+ */
+export function normalizeWarrantyDescription(
+  raw: string | null | undefined,
+): string | null {
+  const text = normalizeWhitespace(raw);
+  if (!text) return null;
+
+  // "Limited lifetime warranty" states coverage that is not a duration.
+  if (/\blifetime\b/i.test(text)) return 'lifetime';
+
+  const match = WARRANTY_DURATION_RE.exec(text);
+  if (!match) return null;
+
+  const quantityText = match[1]!.toLowerCase().replace(/\s+/g, '-');
+  const quantity = /^\d+$/.test(quantityText)
+    ? Number.parseInt(quantityText, 10)
+    : WARRANTY_WORD_NUMBERS[quantityText];
+  if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+    return null;
+  }
+
+  const unit = WARRANTY_UNIT_CANONICAL[match[2]!.toLowerCase()];
+  if (!unit) return null;
+
+  return `${quantity}-${unit}`;
+}
+
 /**
  * Picks the highest-resolution image URL from an `<img>` element (`data-old-hires`, `data-a-hires`,
  * `data-a-dynamic-image`, `srcset`, `<picture><source srcset>`, `src`, `data-src`, or `data-lazy-src`).
@@ -1422,6 +1518,14 @@ export function validateAndNormalizeScrapedProduct(
     }
     if (raw.delivery) {
       normalized.delivery = raw.delivery;
+    }
+    // SAD-349: the token and its source text travel together — a token without
+    // the cell it came from would be the only surviving copy of the value.
+    if (raw.warrantyDescription) {
+      normalized.warrantyDescription = raw.warrantyDescription;
+      if (raw.warrantyDescriptionRaw) {
+        normalized.warrantyDescriptionRaw = raw.warrantyDescriptionRaw;
+      }
     }
     if (
       raw.listingCategory === 'organic' ||

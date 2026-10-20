@@ -9,6 +9,23 @@
 
 export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.0.0';
 
+/**
+ * SAD-349: the row labels under which Amazon publishes a warranty period.
+ *
+ * English only, on purpose. The extension matches 23 marketplaces
+ * (`AMAZON_MARKETPLACE_DOMAINS`) but the only label with verified evidence is
+ * the English one — an Amazon.in Seller Central thread quotes the PDP's Product
+ * information block as literally `Warranty Description  2 year manufacturer`.
+ * Adding a marketplace means adding a verified translation here and nowhere
+ * else; nothing in the parser is language-aware.
+ *
+ * The pattern is anchored on the whole label so a neighbouring row cannot match
+ * by containing the word, and a match alone is never enough to store a value:
+ * `normalizeWarrantyDescription` must also find a duration in the cell.
+ */
+export const AMAZON_WARRANTY_LABEL_PATTERN =
+  /^(?:product\s+|manufacturer(?:['\u2019]s)?\s+)?warranty(?:\s+(?:description|details?|policy|type|period|coverage|information|service|support|(?:&|and)\s+support))*\s*:?$/i;
+
 export const AMAZON_SELECTORS = {
   search: {
     productCard:
@@ -113,6 +130,23 @@ export const AMAZON_SELECTORS = {
       '#prodDetails',
       '#productDetails_detailBullets_sections1',
       '#productDetails_db_sections',
+    ],
+    /**
+     * SAD-349: containers that hold labelled spec rows. Amazon ships the
+     * warranty period in four different shapes depending on category and page
+     * age — the two `productDetails_*` tables (`<th>/<td>`), the
+     * `detailBulletsWrapper` list (`<span class="a-text-bold">Label:</span>
+     * Value`) and the `productOverview` table (`tr.po-*`) — so all of them are
+     * walked, narrowest first. Same list as `bsr` minus the BSR-only `#SalesRank`.
+     */
+    warrantyContainers: [
+      '#productDetails_techSpec_section_1',
+      '#productDetails_techSpec_section_2',
+      '#productDetails_detailBullets_sections1',
+      '#productDetails_db_sections',
+      '#detailBulletsWrapper_feature_div',
+      '#productOverview_feature_div',
+      '#prodDetails',
     ],
     description: [
       '#productDescription p',
