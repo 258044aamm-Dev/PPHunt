@@ -19,6 +19,7 @@ import {
 } from '@/engines/amazon/background/enrich-saved-product';
 import { resetEnrichmentCircuitForTests } from '@/engines/amazon/background/enrichment-fetch';
 import type { Product, ScrapedProduct } from '@/engines/amazon/types';
+import type { ExtractionDiagnosticsReport } from '@/engines/amazon/scraper/extraction-diagnostics';
 
 const ASIN = 'B08N5WRWNW';
 const SESSION = 'oc_1760000000000';
@@ -623,5 +624,100 @@ describe('SAD-352 enrichment outcome logging', () => {
     );
 
     expect(result.status).toBe('complete');
+  });
+});
+
+describe('SAD-359 extraction diagnostics logging', () => {
+  const REPORT: ExtractionDiagnosticsReport = {
+    asin: ASIN,
+    fields: [
+      { field: 'asin', status: 'EXTRACTED', source: 'url' },
+      {
+        field: 'price',
+        status: 'PARTIAL',
+        source: 'json-ld',
+        reason: 'buybox present but no parseable DOM price; JSON-LD fallback used',
+      },
+      {
+        field: 'seller',
+        status: 'MISSING',
+        reason: 'no seller/merchant node in the fetched HTML',
+      },
+    ],
+  };
+
+  function diagnosticLines(
+    spy: { mock: { calls: unknown[][] } },
+  ): Array<Record<string, unknown>> {
+    const tag = '[PPHunt] extraction diagnostics ';
+    return spy.mock.calls
+      .map((call) => call[0])
+      .filter(
+        (first): first is string =>
+          typeof first === 'string' && first.startsWith(tag),
+      )
+      .map((line) => JSON.parse(line.slice(tag.length)) as Record<string, unknown>);
+  }
+
+  const okFetch = () => ({
+    fetchImpl: vi.fn(async () => htmlResponse()) as unknown as typeof fetch,
+    hasHostPermission: async () => true,
+  });
+
+  it('logs the parse diagnostics once, grouped with the enrichment job', async () => {
+    await db.products.add(storedRow());
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const result = await enrichSavedProduct(
+      { jobId: 'job-diag-359-1', asin: ASIN, productUrl: PRODUCT_URL, sessionKey: SESSION, now: NOW },
+      {
+        fetchOptions: okFetch(),
+        parse: async () => ({ ok: true as const, product: detail(), fieldDiagnostics: REPORT }),
+      },
+    );
+
+    expect(result.status).toBe('complete');
+    const lines = diagnosticLines(info);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      jobId: 'job-diag-359-1',
+      asin: ASIN,
+      stage: 'enrichment-parse',
+      counts: { extracted: 1, missing: 1, partial: 1 },
+    });
+    expect(lines[0]?.fields).toEqual(REPORT.fields);
+  });
+
+  it('logs diagnostics for a rejected parse as well', async () => {
+    await db.products.add(storedRow());
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const result = await enrichSavedProduct(
+      { jobId: 'job-diag-359-2', asin: ASIN, productUrl: PRODUCT_URL, sessionKey: SESSION, now: NOW },
+      {
+        fetchOptions: okFetch(),
+        parse: async () => ({
+          ok: false as const,
+          code: 'PARSE_FAILED' as const,
+          message: 'no product',
+          fieldDiagnostics: REPORT,
+        }),
+      },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(diagnosticLines(info)).toHaveLength(1);
+  });
+
+  it('stays silent when the parser provides no diagnostics', async () => {
+    await db.products.add(storedRow());
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    await enrichSavedProduct(
+      { jobId: 'job-diag-359-3', asin: ASIN, productUrl: PRODUCT_URL, sessionKey: SESSION, now: NOW },
+      { fetchOptions: okFetch(), parse: parseReturning(detail()) },
+    );
+
+    expect(diagnosticLines(info)).toHaveLength(0);
   });
 });

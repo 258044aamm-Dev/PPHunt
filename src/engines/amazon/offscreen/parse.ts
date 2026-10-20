@@ -1,3 +1,4 @@
+import { createFieldDiagnosticsCollector } from '../scraper/extraction-diagnostics';
 import { validateAndNormalizeScrapedProduct } from '../scraper/field-parsers';
 import { parseAmazonProductDetail } from '../scraper/product-detail';
 import { normalizeASIN } from '../utils/amazon-url';
@@ -74,14 +75,26 @@ export function parsePdpHtml(
     );
   }
 
-  const parsed = parseAmazonProductDetail(doc, productUrl);
+  // SAD-359: collect per-field extraction diagnostics alongside the parse and
+  // ride them back on the response (success and parser-ran errors alike), so
+  // the service worker can log them next to the enrichment outcome. The
+  // product itself is unaffected.
+  const diagnostics = createFieldDiagnosticsCollector();
+  const parsed = parseAmazonProductDetail(doc, productUrl, diagnostics);
+  const fieldDiagnostics = diagnostics.build();
   if (!parsed) {
-    return offscreenError('PARSE_FAILED', 'No product found on the fetched page');
+    return {
+      ...offscreenError('PARSE_FAILED', 'No product found on the fetched page'),
+      fieldDiagnostics,
+    };
   }
 
   const normalized = validateAndNormalizeScrapedProduct(parsed, productUrl);
   if (!normalized) {
-    return offscreenError('PARSER_REJECTED', 'Parsed product failed validation');
+    return {
+      ...offscreenError('PARSER_REJECTED', 'Parsed product failed validation'),
+      fieldDiagnostics,
+    };
   }
 
   if (expectedAsin) {
@@ -90,12 +103,15 @@ export function parsePdpHtml(
     if (!got || got !== wanted) {
       // A variant redirect or an interstitial resolves to a different product.
       // Reporting it as this ASIN's details would silently corrupt the row.
-      return offscreenError(
-        'PARSER_REJECTED',
-        `Page resolved to ${normalized.asin || 'no ASIN'}, expected ${expectedAsin}`,
-      );
+      return {
+        ...offscreenError(
+          'PARSER_REJECTED',
+          `Page resolved to ${normalized.asin || 'no ASIN'}, expected ${expectedAsin}`,
+        ),
+        fieldDiagnostics,
+      };
     }
   }
 
-  return { ok: true, product: normalized as ScrapedProduct };
+  return { ok: true, product: normalized as ScrapedProduct, fieldDiagnostics };
 }

@@ -1,5 +1,6 @@
 import { db } from '../db/database';
 import { appendSnapshot, snapshotFromProduct } from '../db/quick-save';
+import { formatExtractionDiagnosticsLog } from '../scraper/extraction-diagnostics';
 import type { Product, ScrapedProduct } from '../types';
 import { fetchPdpHtml, type FetchPdpOptions } from './enrichment-fetch';
 import { parsePdpHtmlViaOffscreen } from './offscreen';
@@ -365,6 +366,24 @@ export async function enrichSavedProduct(
     }
 
     const parsed = await parse(fetched.html, input.productUrl, input.asin);
+
+    // SAD-359: per-field extraction diagnostics for this parse (one-line JSON,
+    // same jobId as the outcome line). Present on success and parser-ran
+    // errors alike. Best-effort: logging must never fail the enrichment.
+    try {
+      if (parsed.fieldDiagnostics) {
+        console.info(
+          formatExtractionDiagnosticsLog(parsed.fieldDiagnostics, {
+            jobId: input.jobId,
+            asin: input.asin,
+            stage: 'enrichment-parse',
+          }),
+        );
+      }
+    } catch {
+      // Diagnostics only.
+    }
+
     if (!parsed.ok) {
       return finish(stop('failed', parsed.code.toLowerCase(), 'ENRICH_PARSE_FAILED'), {
         httpStatus: fetched.httpStatus,

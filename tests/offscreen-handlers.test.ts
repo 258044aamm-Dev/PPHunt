@@ -100,6 +100,40 @@ describe('parsePdpHtml', () => {
     expect(result.product.url).toBe(PRODUCT_URL);
   });
 
+  it('SAD-359: carries per-field extraction diagnostics on success', () => {
+    const result = parsePdpHtml(PDP_HTML, PRODUCT_URL);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.fieldDiagnostics?.asin).toBe('B0DELTA123');
+
+    const fields = new Map(
+      (result.fieldDiagnostics?.fields ?? []).map((e) => [e.field, e]),
+    );
+    expect(fields.size).toBe(21);
+    expect(fields.get('price')).toMatchObject({ status: 'EXTRACTED' });
+    // The fixture has no seller node: absent from the HTML, with a reason.
+    expect(fields.get('seller')).toMatchObject({ status: 'MISSING' });
+    expect(fields.get('seller')?.reason).toContain('no seller/merchant node');
+  });
+
+  it('SAD-359: carries diagnostics on parser-ran errors too', () => {
+    const noProduct = parsePdpHtml(NO_PRODUCT_HTML, PRODUCT_URL);
+    expect(noProduct.ok).toBe(false);
+    if (!noProduct.ok) {
+      const fields = new Map(
+        (noProduct.fieldDiagnostics?.fields ?? []).map((e) => [e.field, e]),
+      );
+      expect(fields.get('title')?.status).toBe('MISSING');
+    }
+
+    const mismatch = parsePdpHtml(PDP_HTML, PRODUCT_URL, 'B0OTHER999');
+    expect(mismatch.ok).toBe(false);
+    if (!mismatch.ok) {
+      expect(mismatch.fieldDiagnostics?.asin).toBe('B0DELTA123');
+    }
+  });
+
   it('accepts a page whose ASIN matches the one that was requested', () => {
     const result = parsePdpHtml(PDP_HTML, PRODUCT_URL, 'B0DELTA123');
     expect(result.ok).toBe(true);

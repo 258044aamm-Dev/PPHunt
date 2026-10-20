@@ -94,11 +94,18 @@ export interface OffscreenError {
   ok: false;
   code: OffscreenErrorCode;
   message: string;
+  /**
+   * SAD-359: per-field extraction diagnostics when the parser ran (parse
+   * requests only). Diagnostics only — consumers must not branch on it.
+   */
+  fieldDiagnostics?: import('../scraper/extraction-diagnostics').ExtractionDiagnosticsReport;
 }
 
 export interface OffscreenParseSuccess {
   ok: true;
   product: import('../types').ScrapedProduct;
+  /** SAD-359: see OffscreenError.fieldDiagnostics. */
+  fieldDiagnostics?: import('../scraper/extraction-diagnostics').ExtractionDiagnosticsReport;
 }
 
 export interface OffscreenBlobSuccess {
