@@ -83,6 +83,7 @@ export interface ExtractionDiagnosticsReport {
  */
 export const DETAIL_DIAGNOSTIC_FIELDS: readonly string[] = [
   'asin',
+  'url',
   'title',
   'brand',
   'price',

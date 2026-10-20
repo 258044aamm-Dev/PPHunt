@@ -221,7 +221,7 @@ function extractDetailAsin(
     return jsonLd.asin;
   }
 
-  diagnostics?.missing('asin', 'no ASIN in URL, page markup or JSON-LD');
+  diagnostics?.missing('asin', 'no ASIN in URL, page markup or JSON-LD', { source: 'url' });
   return null;
 }
 
@@ -257,7 +257,7 @@ function extractDetailBsr(
   }
 
   if (labelSeenSelector) {
-    diagnostics?.partial(
+    diagnostics?.parseFailed(
       'bestSellersRank',
       'Best Sellers Rank label present but no rank could be parsed',
       { selector: labelSeenSelector },
@@ -266,6 +266,7 @@ function extractDetailBsr(
     diagnostics?.missing(
       'bestSellersRank',
       'no Best Sellers Rank row in the detail tables',
+      { source: 'dom' },
     );
   }
   return undefined;
@@ -356,7 +357,7 @@ function extractDetailWarranty(
   }
 
   if (labelSeen) {
-    diagnostics?.partial(
+    diagnostics?.parseFailed(
       'warrantyDescription',
       'warranty row present but no duration could be parsed',
     );
@@ -364,6 +365,7 @@ function extractDetailWarranty(
     diagnostics?.missing(
       'warrantyDescription',
       'no warranty row in the detail tables',
+      { source: 'dom' },
     );
   }
   return undefined;
@@ -460,13 +462,13 @@ function extractDetailWeight(
   }
 
   if (labelSeenSelector) {
-    diagnostics?.partial(
+    diagnostics?.parseFailed(
       'weight',
       'weight row present but no positive mass could be parsed',
       { selector: labelSeenSelector },
     );
   } else {
-    diagnostics?.missing('weight', 'no weight row in the detail tables');
+    diagnostics?.missing('weight', 'no weight row in the detail tables', { source: 'dom' });
   }
   return undefined;
 }
@@ -786,6 +788,7 @@ function extractDetailVariations(
     scriptResult.singleton
       ? 'singleton product (no multi-option variations)'
       : 'no variation twister or format swatches in the fetched HTML',
+    { source: 'dom' },
   );
   return undefined;
 }
@@ -850,11 +853,11 @@ export function parseAmazonProductDetail(
     }
     if (!title) {
       if (titleRejectedSelector) {
-        diag?.partial('title', 'title node present but empty', {
+        diag?.parseFailed('title', 'title node present but empty', {
           selector: titleRejectedSelector,
         });
       } else {
-        diag?.missing('title', 'no title node or JSON-LD name in the fetched HTML');
+        diag?.missing('title', 'no title node or JSON-LD name in the fetched HTML', { source: 'dom' });
       }
       return null;
     }
@@ -891,11 +894,11 @@ export function parseAmazonProductDetail(
     }
     if (!brand) {
       if (brandRejectedSelector) {
-        diag?.partial('brand', 'brand node present but rejected by the field parser', {
+        diag?.parseFailed('brand', 'brand node present but rejected by the field parser', {
           selector: brandRejectedSelector,
         });
       } else {
-        diag?.missing('brand', 'no byline/brand node or JSON-LD brand in the fetched HTML');
+        diag?.missing('brand', 'no byline/brand node or JSON-LD brand in the fetched HTML', { source: 'dom' });
       }
     }
 
@@ -999,9 +1002,9 @@ export function parseAmazonProductDetail(
         diag?.extracted('price', { source: 'json-ld' });
       }
     } else if (buyboxScopeSeen || legacyPriceRejected) {
-      diag?.partial('price', 'buybox/price node present but no parseable price');
+      diag?.parseFailed('price', 'buybox/price node present but no parseable price');
     } else {
-      diag?.missing('price', 'no buybox or price node in the fetched HTML');
+      diag?.missing('price', 'no buybox or price node in the fetched HTML', { source: 'dom' });
     }
     // Currency always resolves (pricing → page → USD), so it is a derived value.
     diag?.extracted('currency', { source: 'derived' });
@@ -1028,13 +1031,13 @@ export function parseAmazonProductDetail(
     if (listPrice !== undefined) {
       diag?.extracted('listPrice', { source: 'dom', selector: listPriceSelector });
     } else if (listPriceRejected) {
-      diag?.partial(
+      diag?.parseFailed(
         'listPrice',
         'struck-through price node present but rejected (unparseable or not above selling price)',
         { selector: listPriceFallbackSelector },
       );
     } else {
-      diag?.missing('listPrice', 'no list price shown on the page');
+      diag?.missing('listPrice', 'no list price shown on the page', { source: 'dom' });
     }
 
     const savingsSelector =
@@ -1057,13 +1060,13 @@ export function parseAmazonProductDetail(
         selector: discountSelector,
       });
     } else if (savingsRejected) {
-      diag?.partial(
+      diag?.parseFailed(
         'discountPercentage',
         'savings percentage node present but unparseable',
         { selector: savingsSelector },
       );
     } else {
-      diag?.missing('discountPercentage', 'no discount shown on the page');
+      diag?.missing('discountPercentage', 'no discount shown on the page', { source: 'dom' });
     }
 
     let dealBadgeRejectedSelector: string | undefined;
@@ -1083,11 +1086,11 @@ export function parseAmazonProductDetail(
     if (dealBadge !== undefined) {
       diag?.extracted('dealBadge', { source: 'dom', selector: dealBadgeSelector });
     } else if (dealBadgeRejectedSelector) {
-      diag?.partial('dealBadge', 'badge-like node present but its text is not a deal badge', {
+      diag?.parseFailed('dealBadge', 'badge-like node present but its text is not a deal badge', {
         selector: dealBadgeRejectedSelector,
       });
     } else {
-      diag?.missing('dealBadge', 'no deal badge shown on the page');
+      diag?.missing('dealBadge', 'no deal badge shown on the page', { source: 'dom' });
     }
 
     let couponRejectedSelector: string | undefined;
@@ -1107,11 +1110,11 @@ export function parseAmazonProductDetail(
     if (coupon !== undefined) {
       diag?.extracted('coupon', { source: 'dom', selector: couponSelector });
     } else if (couponRejectedSelector) {
-      diag?.partial('coupon', 'coupon-like node present but its text is not a coupon', {
+      diag?.parseFailed('coupon', 'coupon-like node present but its text is not a coupon', {
         selector: couponRejectedSelector,
       });
     } else {
-      diag?.missing('coupon', 'no coupon shown on the page');
+      diag?.missing('coupon', 'no coupon shown on the page', { source: 'dom' });
     }
 
     // Past Month Sales
@@ -1143,13 +1146,13 @@ export function parseAmazonProductDetail(
         selector: pastMonthFromScan ? '(document text scan)' : pastMonthSelector,
       });
     } else if (pastMonthRejected) {
-      diag?.partial(
+      diag?.parseFailed(
         'pastMonthSales',
         'social-proof node present but the bought-in-past-month pattern did not match',
         { selector: pastMonthSelector },
       );
     } else {
-      diag?.missing('pastMonthSales', 'no bought-in-past-month social proof on the page');
+      diag?.missing('pastMonthSales', 'no bought-in-past-month social proof on the page', { source: 'dom' });
     }
 
     // Rating & Review count
@@ -1183,11 +1186,11 @@ export function parseAmazonProductDetail(
         diag?.extracted('rating', { source: 'json-ld' });
       }
     } else if (ratingRejected) {
-      diag?.partial('rating', 'rating node present but unparseable', {
+      diag?.parseFailed('rating', 'rating node present but unparseable', {
         selector: ratingSelector,
       });
     } else {
-      diag?.missing('rating', 'no rating node or JSON-LD aggregateRating in the fetched HTML');
+      diag?.missing('rating', 'no rating node or JSON-LD aggregateRating in the fetched HTML', { source: 'dom' });
     }
 
     let reviewCount: number | null = null;
@@ -1215,13 +1218,14 @@ export function parseAmazonProductDetail(
         diag?.extracted('reviewCount', { source: 'json-ld' });
       }
     } else if (reviewRejected) {
-      diag?.partial('reviewCount', 'review-count node present but unparseable', {
+      diag?.parseFailed('reviewCount', 'review-count node present but unparseable', {
         selector: '#acrCustomerReviewText',
       });
     } else {
       diag?.missing(
         'reviewCount',
         'no review-count node or JSON-LD aggregateRating in the fetched HTML',
+        { source: 'dom' },
       );
     }
 
@@ -1243,13 +1247,13 @@ export function parseAmazonProductDetail(
     if (availability) {
       diag?.extracted('availability', { source: 'dom', selector: availabilitySelector });
     } else if (availabilityRejectedSelector) {
-      diag?.partial(
+      diag?.parseFailed(
         'availability',
         'availability node present but rejected by the field parser',
         { selector: availabilityRejectedSelector },
       );
     } else {
-      diag?.missing('availability', 'no availability node in the fetched HTML');
+      diag?.missing('availability', 'no availability node in the fetched HTML', { source: 'dom' });
     }
 
     // Delivery
@@ -1271,11 +1275,11 @@ export function parseAmazonProductDetail(
     if (delivery !== undefined) {
       diag?.extracted('delivery', { source: 'dom', selector: deliverySelector });
     } else if (deliveryRejectedSelector) {
-      diag?.partial('delivery', 'delivery node present but empty', {
+      diag?.parseFailed('delivery', 'delivery node present but empty', {
         selector: deliveryRejectedSelector,
       });
     } else {
-      diag?.missing('delivery', 'no delivery block in the fetched HTML');
+      diag?.missing('delivery', 'no delivery block in the fetched HTML', { source: 'dom' });
     }
 
     // Seller
@@ -1296,11 +1300,11 @@ export function parseAmazonProductDetail(
     if (seller) {
       diag?.extracted('seller', { source: 'dom', selector: sellerSelector });
     } else if (sellerRejectedSelector) {
-      diag?.partial('seller', 'seller node present but rejected by the field parser', {
+      diag?.parseFailed('seller', 'seller node present but rejected by the field parser', {
         selector: sellerRejectedSelector,
       });
     } else {
-      diag?.missing('seller', 'no seller/merchant node in the fetched HTML');
+      diag?.missing('seller', 'no seller/merchant node in the fetched HTML', { source: 'dom' });
     }
 
     // Features
@@ -1324,9 +1328,9 @@ export function parseAmazonProductDetail(
     if (features.length > 0) {
       diag?.extracted('features', { source: 'dom', selector: featuresSelector });
     } else if (featureNodesSeen > 0) {
-      diag?.partial('features', 'feature bullet nodes present but empty');
+      diag?.parseFailed('features', 'feature bullet nodes present but empty');
     } else {
-      diag?.missing('features', 'no feature bullets in the fetched HTML');
+      diag?.missing('features', 'no feature bullets in the fetched HTML', { source: 'dom' });
     }
 
     // Description
@@ -1362,13 +1366,14 @@ export function parseAmazonProductDetail(
     }
     if (!description) {
       if (descriptionRejectedSelector) {
-        diag?.partial('description', 'description node present but empty', {
+        diag?.parseFailed('description', 'description node present but empty', {
           selector: descriptionRejectedSelector,
         });
       } else {
         diag?.missing(
           'description',
           'no description node or JSON-LD description in the fetched HTML',
+          { source: 'dom' },
         );
       }
     }
@@ -1405,11 +1410,11 @@ export function parseAmazonProductDetail(
     }
     if (!imageUrl) {
       if (imageRejectedSelector) {
-        diag?.partial('imageUrl', 'image node present but no usable URL', {
+        diag?.parseFailed('imageUrl', 'image node present but no usable URL', {
           selector: imageRejectedSelector,
         });
       } else {
-        diag?.missing('imageUrl', 'no product image node or JSON-LD image in the fetched HTML');
+        diag?.missing('imageUrl', 'no product image node or JSON-LD image in the fetched HTML', { source: 'dom' });
       }
     }
 
@@ -1434,10 +1439,21 @@ export function parseAmazonProductDetail(
     if (isPrime) {
       diag?.extracted('isPrime', { source: 'derived' });
     } else {
-      diag?.missing('isPrime', 'no Prime marker found');
+      diag?.missing('isPrime', 'no Prime marker found', { source: 'derived' });
     }
 
     const url = resolveProductUrl(null, asin, activeUrl);
+    // SAD-359: the product URL is derived from the resolved ASIN and the
+    // marketplace origin, so it is part of what this page yielded.
+    if (url) {
+      diag?.extracted('url', { source: 'url' });
+    } else {
+      diag?.missing(
+        'url',
+        'no product URL could be derived from the ASIN and page origin',
+        { source: 'derived' },
+      );
+    }
 
     const candidate: Partial<ScrapedAmazonProduct> = {
       asin,

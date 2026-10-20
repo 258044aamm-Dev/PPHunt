@@ -647,6 +647,13 @@ describe('SAD-359 extraction diagnostics logging', () => {
         status: 'MISSING',
         reason: 'no seller/merchant node in the fetched HTML',
       },
+      {
+        field: 'rating',
+        status: 'PARSE_FAILED',
+        source: 'dom',
+        selector: '#acrPopover',
+        reason: 'rating node present but unparseable',
+      },
     ],
   };
 
@@ -687,7 +694,7 @@ describe('SAD-359 extraction diagnostics logging', () => {
       jobId: 'job-diag-359-1',
       asin: ASIN,
       stage: 'enrichment-parse',
-      counts: { extracted: 1, missing: 1, partial: 1 },
+      counts: { extracted: 1, missing: 1, parseFailed: 1, partial: 1, unknown: 0 },
     });
     expect(lines[0]?.fields).toEqual(REPORT.fields);
   });

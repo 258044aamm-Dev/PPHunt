@@ -49,6 +49,12 @@ const PDP_HTML = `<!doctype html>
 
 const NO_PRODUCT_HTML = '<!doctype html><html><body><p>Nothing to see</p></body></html>';
 
+/** The buybox node is present but its text carries no price. */
+const GARBAGE_PRICE_HTML = PDP_HTML.replace(
+  /<span class="a-price">[\s\S]*?<\/span>\s*<\/div>/,
+  '<span class="a-price">See price in cart</span></div>',
+);
+
 function parseRequest(overrides: Partial<OffscreenParseProductRequest> = {}) {
   return {
     target: OFFSCREEN_TARGET,
@@ -110,11 +116,27 @@ describe('parsePdpHtml', () => {
     const fields = new Map(
       (result.fieldDiagnostics?.fields ?? []).map((e) => [e.field, e]),
     );
-    expect(fields.size).toBe(23);
+    expect(fields.size).toBe(24);
     expect(fields.get('price')).toMatchObject({ status: 'EXTRACTED' });
     // The fixture has no seller node: absent from the HTML, with a reason.
     expect(fields.get('seller')).toMatchObject({ status: 'MISSING' });
     expect(fields.get('seller')?.reason).toContain('no seller/merchant node');
+  });
+
+  it('SAD-359: carries a PARSE_FAILED outcome across the offscreen boundary', () => {
+    const result = parsePdpHtml(GARBAGE_PRICE_HTML, PRODUCT_URL);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const fields = new Map(
+      (result.fieldDiagnostics?.fields ?? []).map((e) => [e.field, e]),
+    );
+    // The buybox node was present but carried no price: the source was there
+    // and the parser failed on it. That is not the same as "no buybox".
+    expect(fields.get('price')).toMatchObject({
+      status: 'PARSE_FAILED',
+      reason: 'buybox/price node present but no parseable price',
+    });
   });
 
   it('SAD-359: carries diagnostics on parser-ran errors too', () => {

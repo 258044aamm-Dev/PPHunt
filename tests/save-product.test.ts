@@ -165,7 +165,7 @@ describe('resolveSaveCandidate', () => {
     // SAD-359: the live-DOM detail parse carries its full per-field report
     // back on the candidate, ready to ride along with SAVE_PRODUCT.
     expect(result?.extractionDiagnostics?.asin).toBe('B0DDDDDDDD');
-    expect(result?.extractionDiagnostics?.fields).toHaveLength(23);
+    expect(result?.extractionDiagnostics?.fields).toHaveLength(24);
     const fields = new Map(
       (result?.extractionDiagnostics?.fields ?? []).map((entry) => [
         entry.field,
@@ -178,6 +178,31 @@ describe('resolveSaveCandidate', () => {
     });
     expect(fields.get('price')).toMatchObject({ status: 'EXTRACTED' });
     expect(fields.get('seller')).toMatchObject({ status: 'MISSING' });
+  });
+
+  it('SAD-359: reports a present-but-unparseable buybox as PARSE_FAILED', () => {
+    document.body.innerHTML = DETAIL_PAGE.replace(
+      /<span class="a-price">[\s\S]*?<\/span>\s*<\/div>/,
+      '<span class="a-price">See price in cart</span></div>',
+    );
+    const result = resolveSaveCandidate({
+      capture: null,
+      pageUrl: 'https://www.amazon.com/Delta-Widget/dp/B0DDDDDDDD',
+      triggeredBy: 'context-menu',
+    });
+
+    const fields = new Map(
+      (result?.extractionDiagnostics?.fields ?? []).map((entry) => [
+        entry.field,
+        entry,
+      ]),
+    );
+    // The buybox node was found and its text carried no price: the source
+    // was present and the extraction logic failed on it.
+    expect(fields.get('price')).toMatchObject({
+      status: 'PARSE_FAILED',
+      reason: 'buybox/price node present but no parseable price',
+    });
   });
 
   it('SAD-359: the SAVE_PRODUCT schema retains the optional PDP diagnostics', () => {
@@ -203,7 +228,7 @@ describe('resolveSaveCandidate', () => {
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.payload.extractionDiagnostics?.fields).toHaveLength(23);
+      expect(parsed.data.payload.extractionDiagnostics?.fields).toHaveLength(24);
     }
 
     // The same message from an older content script remains valid.

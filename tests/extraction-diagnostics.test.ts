@@ -157,9 +157,14 @@ describe('SAD-359 detail-parser field diagnostics', () => {
 
     expect(product).not.toBeNull();
     expect(report.asin).toBe('B0DELTA123');
-    expect(report.fields).toHaveLength(23);
+    expect(report.fields).toHaveLength(24);
 
     expect(fields.get('asin')).toMatchObject({ status: 'EXTRACTED', source: 'url' });
+    // The product URL is a modelled field of its own (SAD-359 requirement 1).
+    expect(fields.get('url')).toMatchObject({
+      status: 'EXTRACTED',
+      source: 'url',
+    });
     expect(fields.get('title')).toMatchObject({
       status: 'EXTRACTED',
       source: 'dom',
@@ -217,15 +222,28 @@ describe('SAD-359 detail-parser field diagnostics', () => {
     expect(fields.get('features')?.status).toBe('EXTRACTED');
   });
 
-  it('reports a present-but-unparseable price as PARTIAL (candidate rejected)', () => {
+  it('reports a present-but-unparseable price as PARSE_FAILED (candidate rejected)', () => {
     const { product } = parseWithReport(GARBAGE_PRICE_HTML);
     const fields = fieldMap(GARBAGE_PRICE_HTML);
 
     expect(product?.price).toBeNull();
     expect(fields.get('price')).toMatchObject({
-      status: 'PARTIAL',
+      status: 'PARSE_FAILED',
       reason: 'buybox/price node present but no parseable price',
     });
+  });
+
+  it('separates "source present but unparseable" from "obtained but incomplete"', () => {
+    // Same page shape, two different causes: a rejected DOM candidate with no
+    // fallback is PARSE_FAILED; the same rejected candidate rescued by
+    // JSON-LD yields a value that is merely incomplete, so it is PARTIAL.
+    const rejected = fieldMap(GARBAGE_PRICE_HTML);
+    const rescued = fieldMap(JSONLD_RESCUE_HTML);
+
+    expect(rejected.get('price')?.status).toBe('PARSE_FAILED');
+    expect(rescued.get('price')?.status).toBe('PARTIAL');
+    // Both name the rejected candidate, so the reader can see what rotted.
+    expect(rescued.get('price')?.reason).toContain('JSON-LD');
   });
 
   it('reports JSON-LD-only fields as EXTRACTED via the fallback source', () => {
@@ -272,20 +290,20 @@ describe('SAD-359 detail-parser field diagnostics', () => {
     });
   });
 
-  it('reports a rank label without a parseable rank as PARTIAL', () => {
+  it('reports a rank label without a parseable rank as PARSE_FAILED', () => {
     const fields = fieldMap(BSR_LABEL_ONLY_HTML);
 
     expect(fields.get('bestSellersRank')).toMatchObject({
-      status: 'PARTIAL',
+      status: 'PARSE_FAILED',
     });
     expect(fields.get('bestSellersRank')?.reason).toContain('no rank could be parsed');
   });
 
-  it('reports unparseable weight rows as PARTIAL and singleton twister data as MISSING', () => {
+  it('reports unparseable weight rows as PARSE_FAILED and singleton twister data as MISSING', () => {
     const fields = fieldMap(WEIGHT_LABEL_ONLY_HTML);
 
     expect(fields.get('weight')).toMatchObject({
-      status: 'PARTIAL',
+      status: 'PARSE_FAILED',
       selector: '#detailBulletsWrapper_feature_div',
     });
     expect(fields.get('weight')?.reason).toContain('no positive mass could be parsed');
@@ -424,7 +442,7 @@ describe('SAD-359 diagnostics collector', () => {
         counts.parseFailed +
         counts.partial +
         counts.unknown,
-    ).toBe(23);
+    ).toBe(24);
 
     const line = formatExtractionDiagnosticsLog(report, {
       jobId: 'job-1',
@@ -443,6 +461,6 @@ describe('SAD-359 diagnostics collector', () => {
     expect(payload.jobId).toBe('job-1');
     expect(payload.stage).toBe('enrichment-parse');
     expect(payload.counts).toEqual(counts);
-    expect(payload.fields).toHaveLength(23);
+    expect(payload.fields).toHaveLength(24);
   });
 });

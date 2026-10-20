@@ -367,6 +367,13 @@ describe('SAD-352 save-job diagnostics logging', () => {
           status: 'MISSING',
           reason: 'no seller/merchant node in the fetched HTML',
         },
+        {
+          field: 'rating',
+          status: 'PARSE_FAILED',
+          source: 'dom',
+          selector: '#acrPopover',
+          reason: 'rating node present but unparseable',
+        },
       ],
     };
 
@@ -392,7 +399,7 @@ describe('SAD-352 save-job diagnostics logging', () => {
         jobId: 'job-diag-359',
         asin: 'B08N5WRWNW',
         stage: 'detail-page',
-        counts: { extracted: 1, missing: 1, partial: 1 },
+        counts: { extracted: 1, missing: 1, parseFailed: 1, partial: 1, unknown: 0 },
       });
       expect(logged.fields).toEqual(report.fields);
     } finally {
