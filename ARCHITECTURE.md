@@ -236,6 +236,30 @@ Each page type has a dedicated parser:
 - `parseProductDetail(document, url?)` → `ScrapedProduct | null`
 - `parseCategoryPage(document, pageUrl?, source = 'category', cache?)` → `ScrapedProduct[]`
 
+#### Image extraction precedence (SAD-351)
+
+All three parsers reach the DOM through `extractBestImageUrl(img)`, which tries
+these sources in order and returns the first hit:
+
+1. `data-old-hires` / `data-a-hires`
+2. `data-a-dynamic-image` (largest `[w, h]` area)
+3. `srcset`, then the first `<picture><source srcset>` — **split comma-aware**:
+   a comma only separates candidates when the next token starts a URL
+4. `img.currentSrc` — the URL the browser actually fetched
+5. `src` / `data-src` / `data-lazy-src`
+
+Steps 3 and 4 are ranked together rather than tried in sequence: the highest
+descriptor wins (2x over 1x, 452w over 226w), and a candidate whose URL names an
+image file (`.jpg/.jpeg/.png/.webp/.avif/.gif`) outranks one that does not.
+`currentSrc` enters with a zero score, so it can never outrank a parsed
+candidate — it only rescues a srcset that produced nothing renderable.
+
+Why the comma handling exists: Amazon's `/deals` `ProductCard` grid embeds a
+comma inside its size token (`…_AC_SF226,226_QL85_.jpg`). Naive `split(',')`
+truncates the file name to `…_AC_SF452`, which the media CDN answers with
+HTTP 400. Search and best-seller cards use comma-free tokens (`_AC_UY218_`,
+`_AC_UL320_`), which is why the bug was invisible on those pages.
+
 ### 4. Deduplication
 
 `DeduplicationEngine` maintains two Sets (ASINs and URLs):

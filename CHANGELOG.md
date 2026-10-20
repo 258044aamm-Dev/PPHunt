@@ -5,6 +5,38 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Deal-page images (SAD-351)
+
+Product thumbnails collected from the `/deals` grid never rendered, because the
+image URL was stored truncated. Amazon puts a comma *inside* its size token
+(`…_AC_SF226,226_QL85_.jpg`), and the parser split `srcset` on every comma, so
+every deal card ended up pointing at `…_AC_SF452` — a URL the media CDN answers
+with HTTP 400, which made the preview table fall back to the placeholder icon.
+
+### Fixed
+- **`srcset` candidates are split comma-aware** (`src/engines/amazon/scraper/field-parsers.ts`):
+  a comma separates candidates only when the next token starts a URL, so Amazon's
+  comma-bearing size tokens survive intact.
+- **Candidates are ranked instead of first/last-matched.** The highest descriptor
+  wins (`2x` before `1x`, `452w` before `226w`), and a URL that names an image
+  file outranks one that does not. That tie-break is the guard against a
+  truncated URL coming back; it is a preference, never a rejection, so an input
+  whose candidates all lack an extension still resolves as before.
+- **`img.currentSrc` is a trusted input.** It is the URL the browser actually
+  fetched, so it cannot contain a split artefact. It ranks below every parsed
+  candidate — the `2x` selection on search, best-seller and product-detail pages
+  is unchanged — and wins only when nothing better parses.
+
+### Notes
+- No selector, schema, message, database, setting, export or UI change. The fix
+  is confined to one function in one file; search, best-seller, category,
+  product-detail, one-click save and offscreen enrichment keep their previous
+  output (pinned by 9 parity tests in `tests/deal-page-images-sad351.test.tsx`).
+- Temu is untouched: its parser has its own image logic and its URLs carry no
+  commas today.
+- Verified against live pages: 30/30 `amazon.com/deals` cards broken before,
+  25/25 healthy after (every stored URL requested, HTTP 200 `image/jpeg`).
+
 ## [Unreleased] — Warranty Description field (SAD-349)
 
 Scrape, display and export a product's warranty, which Amazon publishes in the

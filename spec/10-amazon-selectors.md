@@ -30,7 +30,7 @@ URL pattern: `amazon.{tld}/s?k={query}` or `amazon.{tld}/s?i={category}`
 | Star rating | `span.a-icon-alt` | Class | High | Returns "4.4 out of 5 stars" — parse the leading number. |
 | Review count (primary) | `[aria-label$="ratings"]` or `[aria-label$="rating"]` | Attribute ends-with | High | Returns "12,450 ratings" — parse the number. |
 | Review count (fallback) | `span.s-underline-text` | Class | Medium | May match other text spans. |
-| Product image | `img.s-image` | Class | High | The `src` attribute contains the image URL. |
+| Product image | `img.s-image` | Class | High | Read via `extractBestImageUrl`, not raw `src`: `data-old-hires` → `data-a-dynamic-image` → comma-aware `srcset` → `currentSrc` → `src`. |
 | Sponsored label | `.puis-sponsored-label-text` | Class | High | Presence = this card is sponsored. Absent for organic results. |
 | Prime badge | `[aria-label*="Prime"]` | Attribute contains | High | Presence = Prime eligible. |
 | Next page button | `.s-pagination-next` | Class | Medium | Used for pagination detection. May be absent on the last page. |
@@ -44,6 +44,8 @@ URL pattern: `amazon.{tld}/s?k={query}` or `amazon.{tld}/s?i={category}`
 - **Review count text**: Format varies — "12,450 ratings" or "1 rating" — extract the number.
 - **Sponsored detection**: Check for `.puis-sponsored-label-text` or `[data-component-type="s-sponsored-result"]`.
 - **Image loading**: Images may be lazy-loaded. The `src` attribute is usually populated by the time the content script runs at `document_idle`.
+- **Image URLs may contain commas (SAD-351)**: Amazon's size token can embed one (`…_AC_SF226,226_QL85_.jpg` on the `/deals` `ProductCard` grid). Never split a `srcset` on `,` alone — a comma separates candidates only when the next token starts a URL. Truncating at the comma yields a URL the CDN answers with HTTP 400.
+- **Image precedence** (implemented once in `extractBestImageUrl`, shared by every parser): `data-old-hires` / `data-a-hires` → `data-a-dynamic-image` (largest area) → `srcset` / first `<picture><source srcset>` (highest descriptor, image-file URLs preferred) → `img.currentSrc` → `src` / `data-src` / `data-lazy-src`.
 
 ---
 
@@ -69,7 +71,7 @@ URL pattern: `amazon.{tld}/dp/{ASIN}` or `amazon.{tld}/gp/product/{ASIN}`
 | Features | `#feature-bullets .a-list-item` | ID + class | High | Each `.a-list-item` inside `#feature-bullets` is one bullet point. |
 | Description | `#productDescription p` | ID + element | Medium | Full description text. Not all products have this. |
 | Description (alt) | `#aplus .a-section` | ID + class | Medium | A+ content description. Richer than basic description. |
-| Hero image | `#landingImage` | ID | Very high | Use `src` for display, `data-old-hires` for highest resolution. |
+| Hero image | `#landingImage` | ID | Very high | Use `data-old-hires` for the highest resolution, then the same cascade as cards (`extractBestImageUrl`). |
 | Image gallery | `#altImages .a-button-thumbnail img` | Class chain | Medium | Each img is a gallery thumbnail. |
 | Seller (primary) | `#sellerProfileTriggerId` | ID | High | Seller name link in the Buy Box. |
 | Seller (fallback) | `#tabular-buybox .tabular-buybox-text a` | Class chain | Medium | Alternative seller selector for newer layouts. |
