@@ -485,9 +485,14 @@ describe('SAD-352 enrichment outcome logging', () => {
   function outcomeLines(
     spy: { mock: { calls: unknown[][] } },
   ): Array<Record<string, unknown>> {
+    const tag = '[PPHunt] enrichment outcome ';
     return spy.mock.calls
-      .filter((call) => call[0] === '[PPHunt] enrichment outcome')
-      .map((call) => call[1] as Record<string, unknown>);
+      .map((call) => call[0])
+      .filter(
+        (first): first is string =>
+          typeof first === 'string' && first.startsWith(tag),
+      )
+      .map((line) => JSON.parse(line.slice(tag.length)) as Record<string, unknown>);
   }
 
   it('logs exactly one outcome for a completed enrichment', async () => {

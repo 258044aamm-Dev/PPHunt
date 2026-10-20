@@ -203,6 +203,10 @@ interface EnrichmentOutcomeExtras {
  * all (plan §8.1.1, Gate 1). Console-only by owner decision; best-effort in
  * the same style as `logFailure` — a logging failure must never fail a save,
  * and no return value anywhere depends on this function.
+ *
+ * Emitted as one-line JSON (Step 1a.1): session 1's pasted outcome objects
+ * arrived collapsed (`fieldsChanged`/`missingDetailFields` hidden behind an
+ * ellipsis), which is exactly the data Gate 1 needs.
  */
 function logEnrichmentOutcome(
   input: EnrichSavedProductInput,
@@ -211,7 +215,7 @@ function logEnrichmentOutcome(
   extras: EnrichmentOutcomeExtras = {},
 ): void {
   try {
-    console.info('[PPHunt] enrichment outcome', {
+    const payload = {
       jobId: input.jobId,
       asin: input.asin,
       status: result.status,
@@ -231,7 +235,8 @@ function logEnrichmentOutcome(
       currencyMismatch: result.currencyMismatch,
       // Wall time including the concurrency-queue wait.
       ms: Date.now() - startedAt,
-    });
+    };
+    console.info(`[PPHunt] enrichment outcome ${JSON.stringify(payload)}`);
   } catch {
     // Diagnostics only — never let the console break a save.
   }
