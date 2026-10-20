@@ -1,6 +1,6 @@
 # SAD-360 — Implementation & verification report (Temu engine diagnostics)
 
-**Status: complete.** Steps 0–5 done on branch `feat/temu-engine`.
+**Status: complete and merged.** Steps 0–5 were built on `feat/temu-engine` and merged into `main` at `e1729fa` (merge commit, reviewed on the merged tree: 101 files / 1193 tests green).
 
 | Step | Commit | Content |
 |---|---|---|
