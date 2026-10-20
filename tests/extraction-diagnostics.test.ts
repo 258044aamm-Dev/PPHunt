@@ -302,11 +302,32 @@ describe('SAD-359 detail-parser field diagnostics', () => {
     expect(product).toBeNull();
     expect(fields.get('asin')?.status).toBe('EXTRACTED');
     expect(fields.get('title')?.status).toBe('MISSING');
-    // Fields after the early return were honestly never attempted.
+    // Fields after the early return were never attempted. The report must not
+    // claim they were absent from the page (SAD-359 requirement 3) — it knows
+    // nothing about them.
     expect(fields.get('brand')).toMatchObject({
-      status: 'MISSING',
-      reason: 'not attempted',
+      status: 'UNKNOWN',
+      reason: 'not attempted — the parser stopped before this field',
     });
+  });
+
+  it('never reports a field the parser did not reach as absent', () => {
+    const { product, report } = parseWithReport(NO_TITLE_HTML);
+    expect(product).toBeNull();
+
+    const notAttempted = report.fields.filter((entry) =>
+      entry.reason?.includes('not attempted'),
+    );
+    expect(notAttempted.length).toBeGreaterThan(0);
+    for (const entry of notAttempted) {
+      expect(entry.status).toBe('UNKNOWN');
+    }
+    // Nothing may claim absence on the strength of a field never looked at.
+    expect(
+      report.fields.some(
+        (entry) => entry.status === 'MISSING' && entry.reason === 'not attempted',
+      ),
+    ).toBe(false);
   });
 
   it('never changes the extracted product (collector parity)', () => {
@@ -341,9 +362,30 @@ describe('SAD-359 diagnostics collector', () => {
     expect(fields.get('title')?.status).toBe('PARTIAL');
     expect(fields.get('brand')).toEqual({
       field: 'brand',
-      status: 'MISSING',
-      reason: 'not attempted',
+      status: 'UNKNOWN',
+      reason: 'not attempted — the parser stopped before this field',
     });
+  });
+
+  it('records a rejected candidate as PARSE_FAILED, not as an incomplete value', () => {
+    const collector = createFieldDiagnosticsCollector();
+    collector.parseFailed(
+      'price',
+      'buybox/price node present but no parseable price',
+    );
+    collector.partial(
+      'rating',
+      'rating node present but unparseable; JSON-LD fallback used',
+    );
+
+    const fields = new Map(
+      collector.build(['price', 'rating']).fields.map((e) => [e.field, e]),
+    );
+    expect(fields.get('price')).toMatchObject({
+      status: 'PARSE_FAILED',
+      reason: 'buybox/price node present but no parseable price',
+    });
+    expect(fields.get('rating')).toMatchObject({ status: 'PARTIAL' });
   });
 
   it('flips a validation-dropped field and stamps survivors as validated', () => {
@@ -375,7 +417,14 @@ describe('SAD-359 diagnostics collector', () => {
   it('summarizes counts and formats one paste-safe JSON log line', () => {
     const { report } = parseWithReport(NO_BUYBOX_HTML);
     const counts = summarizeFieldDiagnostics(report.fields);
-    expect(counts.extracted + counts.missing + counts.partial).toBe(23);
+    // The five buckets partition the reported fields.
+    expect(
+      counts.extracted +
+        counts.missing +
+        counts.parseFailed +
+        counts.partial +
+        counts.unknown,
+    ).toBe(23);
 
     const line = formatExtractionDiagnosticsLog(report, {
       jobId: 'job-1',

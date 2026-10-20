@@ -205,7 +205,13 @@ export const SaveExtractionContextSchema = z.object({
  */
 export const FieldDiagnosticSchema = z.object({
   field: z.string().min(1),
-  status: z.enum(['EXTRACTED', 'MISSING', 'PARTIAL']),
+  /**
+   * Five statuses (SAD-359 requirement 3). The enum only ever grew, so a
+   * payload that validated against the earlier three-status form still
+   * validates here — an older content script talking to a newer worker is
+   * unaffected.
+   */
+  status: z.enum(['EXTRACTED', 'MISSING', 'PARSE_FAILED', 'PARTIAL', 'UNKNOWN']),
   source: z.string().optional(),
   selector: z.string().optional(),
   tier: z.string().optional(),

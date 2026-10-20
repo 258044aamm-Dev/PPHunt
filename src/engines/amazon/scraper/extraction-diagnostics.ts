@@ -13,9 +13,38 @@ import type { AmazonExtractionTier, ScrapedAmazonProduct } from '../types';
  * Diagnostics only: nothing here feeds back into extraction, enrichment
  * status, or stored data. The module is deliberately DOM-free so the
  * classification rules are unit-testable without a page fixture.
+ *
+ * ## The five statuses (SAD-359 requirement 3)
+ *
+ * The requirement asks the report to distinguish *why* a field is not a
+ * complete value. Each status therefore answers exactly one question:
+ *
+ * - `EXTRACTED` — the final value is present and was kept.
+ * - `MISSING` — a candidate was searched for and **not found**. The engine
+ *   holds evidence of absence.
+ * - `PARSE_FAILED` — a candidate **was found** in the source and the
+ *   extraction logic could not turn it into a value (empty text, an
+ *   unparseable number, a label without its value, a URL the extractor
+ *   rejects). The source is present; the parser failed on it.
+ * - `PARTIAL` — a value **was obtained** but it is incomplete: either
+ *   JSON-LD had to rescue a rejected DOM candidate, or validation dropped
+ *   the parsed value.
+ * - `UNKNOWN` — the engine could **not establish** presence or absence,
+ *   because the parser never reached this field. No conclusion is claimed.
+ *
+ * `MISSING` and `PARSE_FAILED` are the pair the requirement cares about
+ * most: one means "the page did not carry it", the other means "the page
+ * carried it and we failed on it". `UNKNOWN` exists so the report never
+ * claims absence it cannot establish — a field the parser never looked at
+ * is not an absent field.
  */
 
-export type FieldExtractionStatus = 'EXTRACTED' | 'MISSING' | 'PARTIAL';
+export type FieldExtractionStatus =
+  | 'EXTRACTED'
+  | 'MISSING'
+  | 'PARSE_FAILED'
+  | 'PARTIAL'
+  | 'UNKNOWN';
 
 export type FieldExtractionSource =
   | 'dom'
@@ -90,6 +119,17 @@ export interface FieldDiagnosticsCollector {
   setAsin(asin: string | null): void;
   extracted(field: string, options?: RecordOptions): void;
   missing(field: string, reason: string, options?: RecordOptions): void;
+  /**
+   * The source was present and the extraction logic failed on it: a node was
+   * found but its text could not be parsed, was empty, or was rejected by the
+   * field cleaner. Distinct from `partial`, which means a value *was*
+   * obtained but came out incomplete.
+   */
+  parseFailed(field: string, reason: string, options?: RecordOptions): void;
+  /**
+   * A value was obtained but it is incomplete. Two producers: the strict
+   * JSON-LD rescue rule below, and a value that validation later dropped.
+   */
   partial(field: string, reason: string, options?: RecordOptions): void;
   /**
    * SAD-359 (strict rescue rule): a DOM candidate was found but rejected, and
@@ -100,8 +140,9 @@ export interface FieldDiagnosticsCollector {
   rescued(field: string, reason: string, options?: RecordOptions): void;
   /**
    * Builds the report. Fields never recorded (e.g. the parser aborted on a
-   * missing title) are reported as MISSING with reason 'not attempted', so a
-   * report always covers the whole field set honestly.
+   * missing title) are reported as UNKNOWN with reason 'not attempted', so a
+   * report always covers the whole field set honestly *without* claiming the
+   * field was absent from the page — the parser never looked at it.
    */
   build(fields?: readonly string[]): ExtractionDiagnosticsReport;
   /** Internal view used by `applyValidationResults`. */
@@ -139,6 +180,9 @@ export function createFieldDiagnosticsCollector(): FieldDiagnosticsCollector {
     missing(field, reason, options) {
       record(withOptions({ field, status: 'MISSING', reason }, options));
     },
+    parseFailed(field, reason, options) {
+      record(withOptions({ field, status: 'PARSE_FAILED', reason }, options));
+    },
     partial(field, reason, options) {
       record(withOptions({ field, status: 'PARTIAL', reason }, options));
     },
@@ -152,8 +196,12 @@ export function createFieldDiagnosticsCollector(): FieldDiagnosticsCollector {
           (field) =>
             byField.get(field) ?? {
               field,
-              status: 'MISSING' as const,
-              reason: 'not attempted',
+              // The parser never reached this field, so the report knows
+              // nothing about it. Claiming MISSING here would assert the
+              // field was absent from the page — a claim the engine cannot
+              // support (SAD-359 requirement 3).
+              status: 'UNKNOWN' as const,
+              reason: 'not attempted — the parser stopped before this field',
             },
         ),
       };
@@ -184,6 +232,11 @@ function isEmptyValue(value: unknown): boolean {
  *
  * `isPrime` is excluded: `false` is a legitimate normalized value, not an
  * absence, so emptiness comparison does not apply to it.
+ *
+ * The `PARTIAL` it writes means *obtained, then invalidated* — the value
+ * existed and was parsed, and validation is what dropped it. That is a
+ * different failure from `PARSE_FAILED` (the source was there and the
+ * parser could not read it), so the two must not collapse into one status.
  */
 export function applyValidationResults(
   collector: FieldDiagnosticsCollector,
@@ -216,20 +269,37 @@ export function applyValidationResults(
   }
 }
 
+/**
+ * Per-status totals for one report.
+ *
+ * The five buckets are a partition of the reported fields: their sum equals
+ * the number of entries, so a reader can tell at a glance that every field
+ * was accounted for and in which way.
+ */
 export interface FieldDiagnosticCounts {
   extracted: number;
   missing: number;
+  parseFailed: number;
   partial: number;
+  unknown: number;
 }
 
 export function summarizeFieldDiagnostics(
   fields: readonly FieldDiagnostic[],
 ): FieldDiagnosticCounts {
-  const counts: FieldDiagnosticCounts = { extracted: 0, missing: 0, partial: 0 };
+  const counts: FieldDiagnosticCounts = {
+    extracted: 0,
+    missing: 0,
+    parseFailed: 0,
+    partial: 0,
+    unknown: 0,
+  };
   for (const entry of fields) {
     if (entry.status === 'EXTRACTED') counts.extracted += 1;
+    else if (entry.status === 'MISSING') counts.missing += 1;
+    else if (entry.status === 'PARSE_FAILED') counts.parseFailed += 1;
     else if (entry.status === 'PARTIAL') counts.partial += 1;
-    else counts.missing += 1;
+    else counts.unknown += 1;
   }
   return counts;
 }
