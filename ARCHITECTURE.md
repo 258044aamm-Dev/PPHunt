@@ -280,6 +280,45 @@ HTTP 400. Search and best-seller cards use comma-free tokens (`_AC_UY218_`,
   excluded comparison/sponsored subtrees and sorting by gram mass in
   `product-sorter.ts`.
 
+#### Per-field extraction diagnostics (SAD-359)
+
+`src/engines/amazon/scraper/extraction-diagnostics.ts` is a pure, DOM-free
+module that records **why** a product field is not a complete value. The PDP
+detail parser already decides all of it — which selector won, whether a
+candidate node existed but its text could not be parsed, whether JSON-LD had
+to rescue a rejected DOM candidate, whether validation later dropped the
+value — and used to throw the decision away. A collector is threaded through
+the parser as an optional out-parameter so those decisions become one
+structured report per product.
+
+Each of the 24 modelled detail fields carries exactly one status:
+
+| Status | Meaning |
+|--------|---------|
+| `EXTRACTED` | the final value is present and was kept |
+| `MISSING` | the source was searched and the field was **not found** |
+| `PARSE_FAILED` | the source **was found** and the extraction logic failed on it |
+| `PARTIAL` | a value was obtained but is incomplete (JSON-LD rescue, or dropped by validation) |
+| `UNKNOWN` | the parser never reached the field, so nothing is claimed about it |
+
+The five counts partition the report, so every field is accounted for. The
+report never changes what is extracted: the collector only records, and the
+parsed product is byte-identical with and without it.
+
+The report reaches the console as one line of JSON behind the prefix
+`[PPHunt][Amazon][Diagnostics]` — in the **service worker** console for a
+PDP save (`stage: "detail-page"`) and for an enrichment parse
+(`stage: "enrichment-parse"`), and in the **page** console for the aggregate
+card-drift line a listing parse emits. One-line JSON is deliberate: console
+objects collapse to `…` when pasted out of DevTools, one-line JSON survives
+copy-paste and stays greppable. Only statuses, sources, selectors, reasons
+and counts are logged — never titles, prices, or page content.
+
+`scripts/sad-359-diagnostics-measurement.mjs` is the measurement harness
+(spike tool, not bundled, not in CI): it drives the built extension against
+real product pages and checks the report against the row the extension
+actually stored.
+
 ### 4. Deduplication
 
 `DeduplicationEngine` maintains two Sets (ASINs and URLs):
@@ -398,6 +437,7 @@ No line counts on purpose: they are wrong the moment anyone edits a file
 | `src/engines/amazon/background/` | Save pipeline (`save-job.ts`), job store + recovery (`job-store.ts`, `save-job-recovery.ts`), PDP enrichment (`enrichment-fetch.ts`, `enrich-saved-product.ts`), export service (`export-service.ts`, `export-collection.ts`), offscreen client, collection resolution |
 | `src/engines/amazon/offscreen/` | Offscreen protocol, request dispatcher, PDP parser, export builder (the only context with `DOMParser` and `URL.createObjectURL`) |
 | `src/engines/amazon/content/` | Card action layer/button, save-target capture, collection-choice dialog, save toast |
+| `src/engines/amazon/scraper/extraction-diagnostics.ts` | Per-field extraction diagnostics: the five statuses, the collector, the counts and the one-line log formatter |
 | `src/lib/overlay/` | Overlay host (iframe in closed shadow root) + open/allow logic |
 | `src/lib/ui/` | Theme + opening-mode preferences |
 | `src/lib/diagnostics/` | Error diagnosis (categories, recovery actions, clipboard report) |

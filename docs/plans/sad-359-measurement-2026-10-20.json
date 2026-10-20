@@ -1,0 +1,3473 @@
+{
+  "tool": "scripts/sad-359-diagnostics-measurement.mjs",
+  "generatedAt": "2026-10-20T11:26:40.967Z",
+  "prefix": "[PPHunt][Amazon][Diagnostics]",
+  "results": [
+    {
+      "asin": "B0D1XD1ZV3",
+      "url": "https://www.amazon.com/dp/B0D1XD1ZV3",
+      "landedUrl": "https://www.amazon.com/dp/B0D1XD1ZV3",
+      "title": "Amazon.com: Apple AirPods Pro 2 Wireless Earbuds, Active Noise Cancellation, Hearing Aid Feature, Bluetooth Headphones, Transparency, Personalized Spatial Audio, High-Fidelity Sound, H2 Chip, USB-C Charging : Electronics",
+      "gate": "ok",
+      "jobId": "30adbf03-27f0-44c5-b012-36b882cc1ebb",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 16,
+        "missing": 8,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "MISSING",
+          "reason": "no list price shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "discountPercentage",
+          "status": "MISSING",
+          "reason": "no discount shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "MISSING",
+          "reason": "no Best Sellers Rank row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "MISSING",
+          "reason": "singleton product (no multi-option variations)",
+          "source": "dom"
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_techSpec_section_1",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Apple AirPods Pro 2 Wireless Earbuds, Active Noise Cancellation, Hearing Aid Feature, Bluetooth Headphones, Transparency, Personalized Spatial Audio, High-Fidelity Sound, H2 Chip, USB-C Charging",
+      "storedPrice": 182.34,
+      "mismatches": []
+    },
+    {
+      "asin": "B0BXYKQBDC",
+      "url": "https://www.amazon.com/dp/B0BXYKQBDC",
+      "landedUrl": "https://www.amazon.com/dp/B0BXYKQBDC",
+      "title": "Amazon.com: Micro Ingredients Oil of Oregano with Black Seed Oil, 300 Softgels | Naturally Occurring Carvacrol & Thymoquinone. 2-in-1 Oregano Oil Supplement. Non-GMO, Gluten Free, 3rd Party Tested. : Health & Household",
+      "gate": "ok",
+      "jobId": "5db691ca-ae45-4b67-890b-2f98612416a6",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Micro Ingredients Oil of Oregano with Black Seed Oil, 300 Softgels",
+      "storedPrice": 0.09,
+      "mismatches": []
+    },
+    {
+      "asin": "B0FLCP2X8L",
+      "url": "https://www.amazon.com/dp/B0FLCP2X8L",
+      "landedUrl": "https://www.amazon.com/dp/B0FLCP2X8L",
+      "title": "Amazon.com : Dr.Melaxin Peel Shot Kojic Acid Turmeric Body Exfoliator Spray 6.76 fl.oz - AHA PHA Niacinamide Body Scrub for KP Bumps, Dark Spots, Uneven Skin Tone, Dead Skin, Korean Skin Care : Beauty & Personal Care",
+      "gate": "ok",
+      "jobId": "a882192a-534d-4fdc-85a7-609973067a2a",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Dr.Melaxin Peel Shot Kojic Acid Turmeric Body Exfoliator Spray 6.76 fl.oz - AHA PHA Niacinamide Body Scrub for KP Bumps, Dark Spots, Uneven Skin Tone, Dead Skin, Korean Skin Care",
+      "storedPrice": 3.08,
+      "mismatches": []
+    },
+    {
+      "asin": "B0CBTZSS9F",
+      "url": "https://www.amazon.com/dp/B0CBTZSS9F",
+      "landedUrl": "https://www.amazon.com/dp/B0CBTZSS9F",
+      "title": "Amazon.com: Bedsure Soft Navy Blue Throw Blanket for Couch Decor Gifts 50\"x70\" | Birthday Gifts for Women Mom Her, Warm Lightweight Cozy Fluffy Throw Blanket Sofa, Dorm Room Home Decor, Machine Washable : Home & Kitchen",
+      "gate": "ok",
+      "jobId": "36b250ea-5efd-4fca-8e70-704b93b9a192",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Bedsure Soft Navy Blue Throw Blanket for Couch Decor Gifts 50\"x70\"",
+      "storedPrice": 24.29,
+      "mismatches": []
+    },
+    {
+      "asin": "B0GKMCP4JY",
+      "url": "https://www.amazon.com/dp/B0GKMCP4JY",
+      "landedUrl": "https://www.amazon.com/dp/B0GKMCP4JY",
+      "title": "Amazon.com: TYMO CurlPro Plus Automatic Rotating Curling Iron - Upgraded Long Barrel Curling Wand for Long Hair & Loose Waves, Ceramic Hair Curler for Women, Anti-Scald, 600M Ionic, Dual Voltage, Gold, 1 1/2 Inch : Beauty & Personal Care",
+      "gate": "ok",
+      "jobId": "e80de5ec-07da-4678-a310-629325e9d2ab",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "TYMO CurlPro Plus Automatic Rotating Curling Iron - Upgraded Long Barrel Curling Wand for Long Hair & Loose Waves, Ceramic Hair Curler for Women, Anti-Scald, 600M Ionic, Dual Voltage, Gold, 1 1/2 Inch",
+      "storedPrice": 76.49,
+      "mismatches": []
+    },
+    {
+      "asin": "B0D16L5F2M",
+      "url": "https://www.amazon.com/dp/B0D16L5F2M",
+      "landedUrl": "https://www.amazon.com/dp/B0D16L5F2M",
+      "title": "Amazon.com: medicube Exosome Shot Zero 2,000 PPM Spicule Facial Serum For Pores & Sebum | Liquid Skin Booster Serum with Exosome, AHA+BHA+PHA - Pore Care, Dead Skin Cells, Skin Texture, Korean Skincare, 1.01 fl.oz : Industrial & Scientific",
+      "gate": "ok",
+      "jobId": "82702223-8c29-45f3-b207-e9baeabc0df1",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 19,
+        "missing": 5,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "MISSING",
+          "reason": "no weight row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "medicube Exosome Shot Zero 2,000 PPM Spicule Facial Serum For Pores & Sebum",
+      "storedPrice": 11.78,
+      "mismatches": []
+    },
+    {
+      "asin": "B09BD8GZ8L",
+      "url": "https://www.amazon.com/dp/B09BD8GZ8L",
+      "landedUrl": "https://www.amazon.com/dp/B09BD8GZ8L",
+      "title": "Amazon.com: Nectar Hydration Packets - Electrolytes Powder Packets - Sugar Free & 0 Calorie - Organic Fruit Liquid Daily IV Electrolytes Powder for Dehydration Relief and Rehydration (Variety 30 Pack) : Health & Household",
+      "gate": "ok",
+      "jobId": "def545a9-7a03-482e-a606-0ccf9c767925",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Nectar Hydration Packets - Electrolytes Powder Packets - Sugar Free & 0 Calorie - Organic Fruit Liquid Daily IV Electrolytes Powder for Dehydration Relief and Rehydration (Variety 30 Pack)",
+      "storedPrice": 7.94,
+      "mismatches": []
+    },
+    {
+      "asin": "B0F5977GWC",
+      "url": "https://www.amazon.com/dp/B0F5977GWC",
+      "landedUrl": "https://www.amazon.com/dp/B0F5977GWC",
+      "title": "PRETTYGARDEN Womens Bell Long Sleeve Ribbed Knit Tops,Black,S | Trendy Boat Neck Y2K Cropped Going Out Tops, Ruched Slim Fit Cute Garment Friendly Shirts, Fall Outfits, Fashion Clothing at Amazon Women’s Clothing store",
+      "gate": "ok",
+      "jobId": "d5632493-efeb-48dc-9e82-980d7826d104",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productFactsDesktopExpander ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "PRETTYGARDEN Womens Bell Long Sleeve Ribbed Knit Tops",
+      "storedPrice": 9.85,
+      "mismatches": []
+    },
+    {
+      "asin": "B0DJ2WDQKT",
+      "url": "https://www.amazon.com/dp/B0DJ2WDQKT",
+      "landedUrl": "https://www.amazon.com/dp/B0DJ2WDQKT",
+      "title": "Amazon.com: OLANLY Bathroom Runner Rugs 40x24, Extra Soft Absorbent Chenille Bath Rugs | Black, Quick-Drying Rubber Backing, Machine Washable Long Bath Mat for Bathroom Floor, Tub and Shower, Home Decor Accessories : Home & Kitchen",
+      "gate": "ok",
+      "jobId": "a74ed827-84e8-416a-860e-cf0cb9022365",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 19,
+        "missing": 5,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "MISSING",
+          "reason": "no weight row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "OLANLY Bathroom Runner Rugs 40x24, Extra Soft Absorbent Chenille Bath Rugs",
+      "storedPrice": 32.3,
+      "mismatches": []
+    },
+    {
+      "asin": "B0DKVDZXSN",
+      "url": "https://www.amazon.com/dp/B0DKVDZXSN",
+      "landedUrl": "https://www.amazon.com/dp/B0DKVDZXSN",
+      "title": "Amazon.com: Deco 7 Dual-Band BE5000 WiFi 7 Mesh Wi-Fi System 4-Stream 5 Gbps, 240 Mhz | Up to 6,600 Sq.Ft | 2X 2.5G Ports Wired Backhaul | VPN,MLO, AI-Roaming, HomeShield, Deco BE25 3-Pack : Electronics",
+      "gate": "ok",
+      "jobId": "8d024e8f-4bea-4f1b-a93c-02af977ad55e",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 22,
+        "missing": 2,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#merchant-info a",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDescription span",
+          "validated": true
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Deco 7 Dual-Band BE5000 WiFi 7 Mesh Wi-Fi System 4-Stream 5 Gbps, 240 Mhz",
+      "storedPrice": 69.58,
+      "mismatches": []
+    },
+    {
+      "asin": "B0DH1MKVQV",
+      "url": "https://www.amazon.com/dp/B0DH1MKVQV",
+      "landedUrl": "https://www.amazon.com/dp/B0DH1MKVQV",
+      "title": "Amazon.com: Lexar D40E 128GB Dual USB 3.2 Gen 1 Type-C Jump Drive, Champagne Silver | USB-C Flash, Metal Housing, Swivel Design, Thumb Drive : Electronics",
+      "gate": "ok",
+      "jobId": "9affdce7-a369-4699-b2ff-3b5094d1f781",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 21,
+        "missing": 3,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Lexar D40E 128GB Dual USB 3.2 Gen 1 Type-C Jump Drive, Champagne Silver",
+      "storedPrice": 26.99,
+      "mismatches": []
+    },
+    {
+      "asin": "B0D7N2KWLH",
+      "url": "https://www.amazon.com/dp/B0D7N2KWLH",
+      "landedUrl": "https://www.amazon.com/dp/B0D7N2KWLH",
+      "title": "Amazon.com: iRestore Red Light Therapy for Face, LED Face Mask for Wrinkles, 360 LEDs | Advanced Anti-Aging LED Light Therapy for Fine Lines, Wrinkles, Dark Spots & Uneven Skin Tone, Cordless : Beauty & Personal Care",
+      "gate": "ok",
+      "jobId": "5f642f79-ad59-4716-86c5-ce75c7568497",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "iRestore Red Light Therapy for Face, LED Face Mask for Wrinkles, 360 LEDs",
+      "storedPrice": 379,
+      "mismatches": []
+    },
+    {
+      "asin": "B09BVXT8TJ",
+      "url": "https://www.amazon.com/dp/B09BVXT8TJ",
+      "landedUrl": "https://www.amazon.com/dp/B09BVXT8TJ",
+      "title": "Amazon.com: SHOKZ OpenRun Pro - Open-Ear Bluetooth Bone Conduction Sport Headphones - Sweat Resistant Wireless Earphones for Workouts and Running with Premium Deep Base - Built-in Mic, with Hair Band : Electronics",
+      "gate": "ok",
+      "jobId": "c075e29f-9d53-4207-b9ae-613383f214b5",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 21,
+        "missing": 3,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthLeftSections",
+          "validated": true
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "SHOKZ OpenRun Pro - Open-Ear Bluetooth Bone Conduction Sport Headphones - Sweat Resistant Wireless Earphones for Workouts and Running with Premium Deep Base - Built-in Mic, with Hair Band",
+      "storedPrice": 109.95,
+      "mismatches": []
+    },
+    {
+      "asin": "B0G66ZJG3Y",
+      "url": "https://www.amazon.com/dp/B0G66ZJG3Y",
+      "landedUrl": "https://www.amazon.com/dp/B0G66ZJG3Y",
+      "title": "Amazon.com: Philips Sonicare 7300 Rechargeable Electric Toothbrush, 3 Brush Heads, Navy | 2000% More Plaque Removal¹, Visual Pressure Sensor, 12 Brush Settings, App Connected, 21-Day Battery, Travel Case, HX7423/05 : Health & Household",
+      "gate": "ok",
+      "jobId": "f868cb9d-ea93-4797-b144-8fe7650513b8",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "MISSING",
+          "reason": "no seller/merchant node in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDescription p",
+          "validated": true
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Philips Sonicare 7300 Rechargeable Electric Toothbrush, 3 Brush Heads, Navy",
+      "storedPrice": 46.65,
+      "mismatches": []
+    },
+    {
+      "asin": "B01LW1983J",
+      "url": "https://www.amazon.com/dp/B01LW1983J",
+      "landedUrl": "https://www.amazon.com/dp/B01LW1983J",
+      "title": "Amazon.com : Julep Eyeshadow 101 Crème-to-Powder Eyeshadow Stick, Champagne Shimmer : Beauty & Personal Care",
+      "gate": "ok",
+      "jobId": "40538db8-7de0-4514-9589-2f4809d3076d",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Julep Eyeshadow 101 Crème-to-Powder Eyeshadow Stick, Champagne Shimmer",
+      "storedPrice": 11.59,
+      "mismatches": []
+    },
+    {
+      "asin": "B0D7NXSQ44",
+      "url": "https://www.amazon.com/dp/B0D7NXSQ44",
+      "landedUrl": "https://www.amazon.com/dp/B0D7NXSQ44",
+      "title": "Amazon.com: ASUS ROG PG27AQDP 27 Inch 1440p 480Hz OLED Gaming Monitor | Custom Heatsink, 0.03ms, G-SYNC Compatible, WOLED, DisplayHDR 400, AI Assistant, True 10-bit, 99% DCI-P3, for PS5 and Xbox : Electronics",
+      "gate": "ok",
+      "jobId": "bac43b97-a4fe-4e8b-b518-d70550b680fc",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 22,
+        "missing": 2,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "tr.po-brand td.a-span9 span",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#merchant-info a",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDescription p",
+          "validated": true
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthRightSections",
+          "validated": true
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthLeftSections",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "ASUS ROG PG27AQDP 27 Inch 1440p 480Hz OLED Gaming Monitor",
+      "storedPrice": 679,
+      "mismatches": []
+    },
+    {
+      "asin": "B0946MVWGD",
+      "url": "https://www.amazon.com/dp/B0946MVWGD",
+      "landedUrl": "https://www.amazon.com/dp/B0946MVWGD",
+      "title": "Amazon.com: 100% Organic Cotton King Size Sheets Set 4pc Percale Cooling Soft - White | GOTS Certified Organic Cotton Percale King Sheet Set - For Hot Sleepers, All-Season Comfort, For Master Bedrooms : Home & Kitchen",
+      "gate": "ok",
+      "jobId": "75971b00-a05d-43b9-9cfc-e90836f21124",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#prodDetails",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_expanderTables_depthLeftSections",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "100% Organic Cotton King Size Sheets Set 4pc Percale Cooling Soft - White",
+      "storedPrice": 44.99,
+      "mismatches": []
+    },
+    {
+      "asin": "B00AHAWWO0",
+      "url": "https://www.amazon.com/dp/B00AHAWWO0",
+      "landedUrl": "https://www.amazon.com/dp/B00AHAWWO0",
+      "title": "Amazon.com: Crest Teeth Whitening Strips, Crest 3D Whitestrips Professional Effects, Enamel Safe Teeth Whitening Kit, 22 Treatments (44 Strips), Professional-Level Whitening, 19 Levels Whiter : Health & Household",
+      "gate": "ok",
+      "jobId": "9726f296-95fc-4d7a-bef7-3093abb47de5",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 19,
+        "missing": 5,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "MISSING",
+          "reason": "no seller/merchant node in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDescription p",
+          "validated": true
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "MISSING",
+          "reason": "singleton product (no multi-option variations)",
+          "source": "dom"
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Crest Teeth Whitening Strips, Crest 3D Whitestrips Professional Effects, Enamel Safe Teeth Whitening Kit, 22 Treatments (44 Strips), Professional-Level Whitening, 19 Levels Whiter",
+      "storedPrice": 0.8,
+      "mismatches": []
+    },
+    {
+      "asin": "B07MJL8NXR",
+      "url": "https://www.amazon.com/dp/B07MJL8NXR",
+      "landedUrl": "https://www.amazon.com/dp/B07MJL8NXR",
+      "title": "Amazon.com: Premier Protein 30g High Protein Shake, Chocolate, 12 Pack | 160 Calories, 24 Vitamins & Minerals, No Added Sugar, Supports Muscle Health, Gluten-Free, 11.5 oz : Health & Household",
+      "gate": "ok",
+      "jobId": "6eaecc06-fecf-4731-875a-3aeaa1363fed",
+      "stage": "detail-page",
+      "counts": {
+        "extracted": 20,
+        "missing": 4,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "discountPercentage",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "validated": true
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "MISSING",
+          "reason": "no seller/merchant node in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDescription p",
+          "validated": true
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "script[twister-js-init-dpx-data]",
+          "validated": true
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#detailBulletsWrapper_feature_div",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Premier Protein 30g High Protein Shake, Chocolate, 12 Pack",
+      "storedPrice": 0.14,
+      "mismatches": []
+    },
+    {
+      "listing": "https://www.amazon.com/s?k=wireless+earbuds",
+      "gate": "ok",
+      "driftLine": "[PPHunt][Amazon][Diagnostics] drift {\"stage\":\"search-results\",\"cardsInspected\":28,\"cardsExtracted\":28,\"fieldCoverage\":{\"asin\":1,\"title\":1,\"price\":0.93,\"rating\":0.96,\"reviewCount\":0.96,\"imageUrl\":1},\"tierBreakdown\":{\"tier1_json\":0,\"tier2_semantic\":140,\"tier3_structural\":16,\"tier4_selector\":8,\"missing\":4},\"isDriftDetected\":false,\"driftReasons\":[]}",
+      "driftLineSeen": true,
+      "pageConsoleSample": [
+        "[PPHunt][Amazon][Diagnostics] drift {\"stage\":\"search-results\",\"cardsInspected\":28,\"cardsExtracted\":28,\"fieldCoverage\":{\"asin\":1,\"title\":1,\"price\":0.93,\"rating\":0.96,\"reviewCount\":0.96,\"imageUrl\":1},\"tierBreakdown\":{\"tier1_json\":0,\"tier2_semantic\":140,\"tier3_structural\":16,\"tier4_selector\":8,\"missing\":4},\"isDriftDetected\":false,\"driftReasons\":[]}"
+      ]
+    }
+  ]
+}

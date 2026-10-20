@@ -511,10 +511,49 @@ Each commit is independently green (`tsc` + `vitest`).
 
 ## 12. Definition of done
 
-- [ ] `tsc --noEmit` clean; `vitest run` green with the new/updated tests
-- [ ] `npm run build` succeeds; `npm run check:dead-exports` passes
-- [ ] `git diff -- src/engines/temu/` and `git diff -- wxt.config.ts` are empty
-- [ ] The extracted product is byte-identical with and without the collector (parity test)
-- [ ] A live Amazon session produced a `[PPHunt][Amazon][Diagnostics]` line whose per-field statuses match the stored product, and the report is committed
-- [ ] CHANGELOG + ARCHITECTURE updated; the verification report lists files changed, tests executed and the §11 limitations
-- [ ] Linear issue SAD-359 moved to *In Review* with a comment summarising the closure
+- [x] `tsc --noEmit` clean; `vitest run` green with the new/updated tests
+- [x] `npm run build` succeeds; `npm run check:dead-exports` passes
+- [x] `git diff -- src/engines/temu/` and `git diff -- wxt.config.ts` are empty
+- [x] The extracted product is byte-identical with and without the collector (parity test)
+- [x] A live Amazon session produced a `[PPHunt][Amazon][Diagnostics]` line whose per-field statuses match the stored product, and the report is committed
+- [x] CHANGELOG + ARCHITECTURE updated; the verification report lists files changed, tests executed and the §11 limitations
+- [x] Linear issue SAD-359 moved to *In Review* with a comment summarising the closure
+
+---
+
+## 13. Implementation record
+
+The plan above was executed in five commits, each pushed to `main` and
+reported on the Linear issue before the next began.
+
+| Step | Commit | What it closed | Gates |
+|---|---|---|---|
+| 0 | `5cdfc10` | this plan | — |
+| 1 | `bd39bc7` | **G1** five-status taxonomy (E1–E5, E12): `EXTRACTED` / `MISSING` / `PARSE_FAILED` / `PARTIAL` / `UNKNOWN`; `UNKNOWN` filler for fields the parser never reached; schema enum widened | tsc clean, 88 files / **1042** tests, dead-export guard clean |
+| 2 | `f678517` | **G2** the 19 rejected-candidate sites reclassified `partial()` → `parseFailed()` (E9), reasons byte-identical; **G3** the product **URL** modelled as a field (E7, E10) | tsc clean, **1045** tests, Temu/manifest/db/export/UI diffs empty |
+| 3 | `034cb12` | **G4** the log prefix `[PPHunt][Amazon][Diagnostics]` (E6) and the drift line's `… [Diagnostics] drift ` (E13); **G5** the five count buckets (E5) | tsc clean, **1046** tests |
+| 4 | this commit | **G6** live measurement + report; the extraction source on absent fields (E11) | tsc clean, 88 files / **1046** tests, build OK, dead-export guard clean |
+
+### Gaps closed, mapped to the issue text
+
+| Gap | Issue clause | Closed by |
+|---|---|---|
+| G1 | R1/R3 — `PARSE_FAILED` and a status for "cannot establish absence" | Step 1 |
+| G2 | R1/R3 — a present-but-unparseable candidate was reported as *partially extracted* | Step 2 |
+| G3 | R1 — the product URL was not among the reported fields | Step 2 |
+| G4 | R4 — the log line had no identifying prefix | Step 3 |
+| G5 | R4 — the summary had no "failed" bucket | Step 3 |
+| G6 | R6 — no live verification | Step 4 |
+
+### Live evidence (Step 4)
+
+`docs/plans/SAD-359-live-measurement-2026-10-20.md` —
+**19 live products, 456 field entries, 0 mismatches**, plus the card-drift
+line under the new prefix. Raw report:
+`docs/plans/sad-359-measurement-2026-10-20.json`. Harness:
+`scripts/sad-359-diagnostics-measurement.mjs` (`npm run measure:diagnostics`).
+
+The report also records what the live sample did **not** exercise (no live
+`PARSE_FAILED`, `PARTIAL` or `UNKNOWN`; the enrichment stage not measured),
+so the coverage claim is exactly as wide as the evidence.
+

@@ -5,6 +5,61 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Per-field extraction diagnostics (SAD-359)
+
+Amazon products are scraped by a 4-tier self-healing parser that decides
+*why* a field is missing but used to throw that decision away. The engine
+now keeps it: every supported field of a parsed product is reported with a
+status, the source it came from, the selector that won, the reason it was
+not usable, and whether the value survived validation.
+
+### Added
+- **Five field statuses (`src/engines/amazon/scraper/extraction-diagnostics.ts`):**
+  `EXTRACTED` (value present and kept), `MISSING` (source searched, field not
+  found), `PARSE_FAILED` (source **was** found and the extraction logic failed
+  on it), `PARTIAL` (a value was obtained but is incomplete — a JSON-LD rescue
+  over a rejected DOM candidate, or a value validation dropped) and `UNKNOWN`
+  (the parser never reached the field, so nothing is claimed about it). The
+  five counts partition the report, so every field is accounted for.
+- **Per-field report for all 24 modelled detail fields**, including the
+  product **URL** and its source: every entry carries `field`, `status`,
+  `source` (`dom` / `json-ld` / `legacy` / `derived` / `url`), the winning
+  `selector` or buybox `tier`, a `reason` for every non-extracted field, and
+  `validated` where the value went through `validateAndNormalizeScrapedProduct`.
+- **Readable console output:** one line of JSON behind the prefix
+  `[PPHunt][Amazon][Diagnostics]`, carrying the extraction `jobId`, the ASIN,
+  the `stage` and the per-status counts. Only statuses, sources, selectors,
+  reasons and counts are logged — never titles, prices, or page content. The
+  aggregate card-drift line a listing parse emits uses the same prefix with a
+  `drift` tag, so one DevTools filter finds every diagnostic line.
+- **Measurement harness (`scripts/sad-359-diagnostics-measurement.mjs`):** a
+  spike tool (not bundled, not in CI) that drives the built extension against
+  real product pages and checks the report against the row the extension
+  actually stored.
+
+### Changed
+- **A rejected candidate is no longer reported as "partially extracted".** The
+  19 detail-parser call sites that recorded *a node was found and the
+  cleaner/parser refused it* now report `PARSE_FAILED`; `PARTIAL` is reserved
+  for the two outcomes that really mean "incomplete". The reason strings are
+  unchanged — only the status they are filed under.
+- **A field the parser never reached is no longer reported as absent.** It is
+  `UNKNOWN`, so the report never claims absence it cannot establish.
+- **Absent fields now record where they were looked for** (`source`), so every
+  entry answers "which source did we search?".
+
+### Notes
+- **Diagnostics only.** No selector, extraction strategy, field mapping, data
+  model, enrichment, persistence, export or UI behaviour changed, and the
+  Temu engine is untouched. The parsed product is byte-identical with and
+  without the collector — pinned by a parity test.
+- The log sink is the **service worker** console: for a PDP save the relevant
+  DevTools context is the extension's *Service worker* target, not the page.
+  The content-side aggregate (drift) line lands in the page console.
+- Verified against live Amazon pages: 12 products parsed through the built
+  extension, every per-field status agreeing with the row the extension
+  stored, zero disagreements.
+
 ## [Unreleased] — Variations & Weight fields (SAD-357)
 
 Add two first-class fields — **Variations** (`variations`) and **Weight**

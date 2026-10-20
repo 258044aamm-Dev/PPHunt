@@ -4,6 +4,18 @@ Status: Steps 0–5 implemented and verified locally on 2026-10-20; GitHub push
 pending a working token. Diagnostics only — no extraction, merge,
 persistence, schema-of-record, manifest or UI behaviour change. Temu untouched.
 
+> **Gap closure (2026-10-20).** This document records the original plan and
+> its implementation. A later audit of the issue text against the shipped code
+> found five requirement clauses the implementation did not satisfy (`PARSE_FAILED`
+> and `UNKNOWN` statuses, the product URL field, the log prefix, the "failed"
+> count bucket) plus one additive refinement (the extraction source on absent
+> fields). Those are closed in
+> [`SAD-359-diagnostics-gap-closure-plan.md`](SAD-359-diagnostics-gap-closure-plan.md),
+> with the live verification in
+> [`SAD-359-live-measurement-2026-10-20.md`](SAD-359-live-measurement-2026-10-20.md).
+> The decisions and classification rules below still stand; the gap-closure
+> plan refines them.
+
 ## What the audit found (all verified at `3c3cbe2`)
 
 - **PDP detail parser has zero diagnostics.** `parseAmazonProductDetail`
