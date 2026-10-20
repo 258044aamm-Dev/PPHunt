@@ -197,12 +197,35 @@ export const SaveExtractionContextSchema = z.object({
   sectionLabel: z.string().optional(),
 });
 
+/**
+ * SAD-359: per-field extraction diagnostics collected when the product was
+ * parsed on a PDP in the content script. Diagnostics only (the worker logs
+ * them; nothing branches on them), so `source`/`tier` stay loose strings
+ * rather than enums that would couple this schema to the scraper.
+ */
+export const FieldDiagnosticSchema = z.object({
+  field: z.string().min(1),
+  status: z.enum(['EXTRACTED', 'MISSING', 'PARTIAL']),
+  source: z.string().optional(),
+  selector: z.string().optional(),
+  tier: z.string().optional(),
+  reason: z.string().optional(),
+  validated: z.boolean().optional(),
+});
+
+export const ExtractionDiagnosticsReportSchema = z.object({
+  asin: z.string().nullable(),
+  fields: z.array(FieldDiagnosticSchema).max(64),
+});
+
 export const SaveProductMessageSchema = z.object({
   type: z.literal('SAVE_PRODUCT'),
   payload: z.object({
     jobId: z.string().min(1),
     product: AmazonScrapedProductSchema,
     context: SaveExtractionContextSchema,
+    // SAD-359: optional, so a message from an older content script still validates.
+    extractionDiagnostics: ExtractionDiagnosticsReportSchema.optional(),
   }),
 });
 

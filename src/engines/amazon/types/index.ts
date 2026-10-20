@@ -370,6 +370,11 @@ export type AmazonExtensionMessage =
         jobId: string;
         product: ScrapedAmazonProduct;
         context: SaveExtractionContext;
+        /**
+         * SAD-359 (optional): per-field extraction diagnostics when the
+         * product was parsed on a PDP. Logged by the worker; never stored.
+         */
+        extractionDiagnostics?: import('../scraper/extraction-diagnostics').ExtractionDiagnosticsReport;
       };
     }
   | {

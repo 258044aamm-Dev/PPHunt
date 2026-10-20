@@ -11,7 +11,10 @@ import {
   saveMissMessage,
   SUBFRAME_SAVE_MISS_MESSAGE,
 } from '@/engines/amazon/content/save-product';
-import { SaveContextProductMessageSchema } from '@/engines/amazon/schemas/messages';
+import {
+  SaveContextProductMessageSchema,
+  SaveProductMessageSchema,
+} from '@/engines/amazon/schemas/messages';
 import { captureSaveTarget } from '@/engines/amazon/content/save-target';
 import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
 
@@ -127,6 +130,9 @@ describe('resolveSaveCandidate', () => {
     expect(result?.product.asin).toBe('B0BBBBBBBB');
     expect(result?.context.triggeredBy).toBe('context-menu');
     expect(result?.context.searchPosition).toBe(2);
+    // SAD-359's per-field report is a PDP-detail-parser diagnostic; card saves
+    // intentionally do not fabricate one from the card tiers.
+    expect(result?.extractionDiagnostics).toBeUndefined();
   });
 
   it('resolves nothing when the right-click missed every card', () => {
@@ -155,6 +161,61 @@ describe('resolveSaveCandidate', () => {
     expect(result?.product.title).toContain('Delta Widget');
     expect(result?.context.pageType).toBe('product-detail');
     expect(result?.context.searchPosition).toBeUndefined();
+
+    // SAD-359: the live-DOM detail parse carries its full per-field report
+    // back on the candidate, ready to ride along with SAVE_PRODUCT.
+    expect(result?.extractionDiagnostics?.asin).toBe('B0DDDDDDDD');
+    expect(result?.extractionDiagnostics?.fields).toHaveLength(21);
+    const fields = new Map(
+      (result?.extractionDiagnostics?.fields ?? []).map((entry) => [
+        entry.field,
+        entry,
+      ]),
+    );
+    expect(fields.get('title')).toMatchObject({
+      status: 'EXTRACTED',
+      selector: '#productTitle',
+    });
+    expect(fields.get('price')).toMatchObject({ status: 'EXTRACTED' });
+    expect(fields.get('seller')).toMatchObject({ status: 'MISSING' });
+  });
+
+  it('SAD-359: the SAVE_PRODUCT schema retains the optional PDP diagnostics', () => {
+    document.body.innerHTML = DETAIL_PAGE;
+    const result = resolveSaveCandidate({
+      capture: null,
+      pageUrl: 'https://www.amazon.com/Delta-Widget/dp/B0DDDDDDDD',
+      triggeredBy: 'context-menu',
+    });
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    const payload = {
+      jobId: 'job-sad359',
+      product: result.product,
+      context: result.context,
+      extractionDiagnostics: result.extractionDiagnostics,
+    };
+    const parsed = SaveProductMessageSchema.safeParse({
+      type: 'SAVE_PRODUCT',
+      payload,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.payload.extractionDiagnostics?.fields).toHaveLength(21);
+    }
+
+    // The same message from an older content script remains valid.
+    const legacy = SaveProductMessageSchema.safeParse({
+      type: 'SAVE_PRODUCT',
+      payload: {
+        jobId: 'job-legacy',
+        product: result.product,
+        context: result.context,
+      },
+    });
+    expect(legacy.success).toBe(true);
   });
 
   it('agrees with the parser when the same card is parsed twice', () => {

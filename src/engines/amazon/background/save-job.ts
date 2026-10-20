@@ -3,6 +3,10 @@ import {
   refreshCollectionCounts,
 } from '../db/collections';
 import { saveQuickProduct } from '../db/quick-save';
+import {
+  formatExtractionDiagnosticsLog,
+  type ExtractionDiagnosticsReport,
+} from '../scraper/extraction-diagnostics';
 import { rememberPendingAssignment } from './assignment';
 import { resolveCollectionTarget } from './collections';
 import type { JobStore } from './job-store';
@@ -41,6 +45,11 @@ export interface SaveProductPayload {
   jobId: string;
   product: ScrapedProduct;
   context: SaveExtractionContext;
+  /**
+   * SAD-359 (optional): PDP-parse field diagnostics from the content script.
+   * Logged beside the save-job line below; never stored or branched on.
+   */
+  extractionDiagnostics?: ExtractionDiagnosticsReport;
 }
 
 export interface EnrichmentStepInput {
@@ -219,6 +228,23 @@ export async function handleSaveProduct(
         triggeredBy: payload.context?.triggeredBy,
         pageUrl: payload.context?.pageUrl,
       });
+    } catch {
+      // Diagnostics only.
+    }
+
+    // SAD-359: PDP-parse field diagnostics, when the content script sent
+    // them — one-line JSON with the same jobId, so a live-DOM parse can be
+    // compared field-by-field with the enrichment parse of the same page.
+    try {
+      if (payload.extractionDiagnostics) {
+        console.info(
+          formatExtractionDiagnosticsLog(payload.extractionDiagnostics, {
+            jobId,
+            asin,
+            stage: 'detail-page',
+          }),
+        );
+      }
     } catch {
       // Diagnostics only.
     }

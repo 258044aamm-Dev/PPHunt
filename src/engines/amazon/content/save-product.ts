@@ -1,8 +1,10 @@
 import {
+  createFieldDiagnosticsCollector,
   detectAmazonPageType,
   parseAmazonCategoryCard,
   parseAmazonProductDetail,
   parseAmazonSearchCard,
+  type ExtractionDiagnosticsReport,
 } from '../scraper';
 import { AMAZON_SELECTORS } from '../scraper/selectors';
 import type { SaveExtractionContext, ScrapedProduct } from '../types';
@@ -17,6 +19,12 @@ import { resolveCapturedCard, type CapturedSaveTarget } from './save-target';
 export interface ResolvedSaveCandidate {
   product: ScrapedProduct;
   context: SaveExtractionContext;
+  /**
+   * SAD-359: per-field extraction diagnostics, set only when the product was
+   * parsed by the PDP detail parser. Rides along with SAVE_PRODUCT so the
+   * service worker can log them next to the save-job line; never stored.
+   */
+  extractionDiagnostics?: ExtractionDiagnosticsReport;
 }
 
 const SPONSORED_HINT_SELECTOR =
@@ -99,7 +107,10 @@ export function resolveSaveCandidate(
   const pageType = detectAmazonPageType(input.pageUrl, doc);
 
   if (pageType === 'product-detail') {
-    const product = parseAmazonProductDetail(doc, input.pageUrl);
+    // SAD-359: collect per-field diagnostics for this live-DOM parse. The
+    // collector only records outcomes; the product is unchanged.
+    const diagnostics = createFieldDiagnosticsCollector();
+    const product = parseAmazonProductDetail(doc, input.pageUrl, diagnostics);
     if (!product) return null;
     return {
       product,
@@ -108,6 +119,7 @@ export function resolveSaveCandidate(
         pageUrl: input.pageUrl,
         triggeredBy: input.triggeredBy,
       },
+      extractionDiagnostics: diagnostics.build(),
     };
   }
 

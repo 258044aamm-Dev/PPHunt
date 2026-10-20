@@ -24,6 +24,7 @@ import {
   type SaveJobUpdate,
 } from '@/engines/amazon/background/save-job';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
+import type { ExtractionDiagnosticsReport } from '@/engines/amazon/scraper/extraction-diagnostics';
 import type {
   SaveExtractionContext,
   ScrapedProduct,
@@ -344,6 +345,56 @@ describe('SAD-352 save-job diagnostics logging', () => {
         triggeredBy: 'context-menu',
         pageUrl: PAGE_URL,
       });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('SAD-359: logs PDP extraction diagnostics once as one-line JSON for the job', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const report: ExtractionDiagnosticsReport = {
+      asin: 'B08N5WRWNW',
+      fields: [
+        { field: 'asin', status: 'EXTRACTED', source: 'url' },
+        {
+          field: 'price',
+          status: 'PARTIAL',
+          source: 'json-ld',
+          reason: 'buybox present but no parseable DOM price; JSON-LD fallback used',
+        },
+        {
+          field: 'seller',
+          status: 'MISSING',
+          reason: 'no seller/merchant node in the fetched HTML',
+        },
+      ],
+    };
+
+    try {
+      const result = await handleSaveProduct({
+        ...payload('job-diag-359'),
+        extractionDiagnostics: report,
+      });
+
+      expect(result.state).toBe('completed');
+      const tag = '[PPHunt] extraction diagnostics ';
+      const lines = info.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (first): first is string =>
+            typeof first === 'string' && first.startsWith(tag),
+        );
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).not.toContain('\n');
+
+      const logged = JSON.parse(lines[0]!.slice(tag.length)) as Record<string, unknown>;
+      expect(logged).toMatchObject({
+        jobId: 'job-diag-359',
+        asin: 'B08N5WRWNW',
+        stage: 'detail-page',
+        counts: { extracted: 1, missing: 1, partial: 1 },
+      });
+      expect(logged.fields).toEqual(report.fields);
     } finally {
       info.mockRestore();
     }

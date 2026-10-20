@@ -188,7 +188,15 @@ export default defineContentScript({
       pendingSaveJobId = jobId;
       sendRuntimeMessageSafe({
         type: 'SAVE_PRODUCT',
-        payload: { jobId, product: candidate.product, context: candidate.context },
+        payload: {
+          jobId,
+          product: candidate.product,
+          context: candidate.context,
+          // SAD-359: PDP-parse diagnostics ride along for the worker to log.
+          ...(candidate.extractionDiagnostics
+            ? { extractionDiagnostics: candidate.extractionDiagnostics }
+            : {}),
+        },
       });
       showSaveToast({ state: 'queued', message: 'Saving product…' });
     };
