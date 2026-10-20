@@ -738,7 +738,7 @@ byte-identical.
 - [ ] A real live collection of more than 50 products emits exactly 50 lines (L6); not exercised because the pages served only 30 products. Automated 60-card cap test passes.
 - [x] Live verification report and raw evidence committed, including checks not exercised
 - [x] CHANGELOG + ARCHITECTURE updated
-- [ ] Linear SAD-369 moved to **In Review** with summary and limitations (final step-4 Linear update)
+- [x] Linear SAD-369 moved to **In Review** with summary and limitations (final step-4 Linear update)
 
 ---
 
@@ -754,7 +754,7 @@ pushed to `main`:
 | 1 — setting and log gates | SAD-371 (In Review) | `e4f71a7` | 90 files / 1059 tests; `tsc`, build and dead-export checks clean |
 | 2 — card report and both save paths | SAD-372 (In Review) | `b9d895b` | 92 files / 1071 tests; parity invariant green; Temu diff empty |
 | 3 — collection reports/cap, E9, drift to worker | SAD-373 (In Review) | `982993d` | 96 files / 1092 tests; T23–T29/E9/D10 tests green; Temu diff empty |
-| 4 — live verification, docs, record | SAD-374 (In Review) | this record's commit: `SAD-369 step 4: live verification, changelog and implementation record` | final gates as above; live L1–L5/L7–L8 pass; live L6 explicitly not exercised; limitations recorded below and in the report |
+| 4 — live verification, docs, record | SAD-374 (In Review) | `bc57b8f` | final gates as above; live L1–L5/L7–L8 pass; live L6 explicitly not exercised; limitations recorded below and in the report |
 
 ### Deviations and corrections recorded
 
