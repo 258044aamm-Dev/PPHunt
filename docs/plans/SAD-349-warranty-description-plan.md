@@ -621,6 +621,53 @@ These cost real cycles and are not obvious from the code:
    `@/` alias, which is declared only in `vitest.config.ts`. Drop a temporary
    `tests/*.test.ts(x)`, run it, then delete it.
 
+### 10.1.1 Pre-existing BSR bug found while writing SAD-349 tests — NOT fixed here
+
+Extending `tests/pricing-deals-bsr.test.tsx`'s `#productDetails_detailBullets_sections1`
+fixture with a `Warranty Description` row broke its BSR assertion:
+
+```
+Expected: "#5 in Electronics (#1 in Over-Ear Headphones)"
+Received: "#5 in Electronics (#1 in Over-Ear Headphones Warranty Description 2 year manufacturer)"
+```
+
+**This is not caused by SAD-349.** Proven by substituting the added row:
+
+| Row placed after BSR | Resulting `bestSellersRank` |
+|---|---|
+| *(none — BSR last)* | `#5 in Electronics (#1 in Over-Ear Headphones)` ✓ |
+| `Date First Available` / `October 1, 2023` | `… Headphones Date First AvailableOctober 1, 2023)` ✗ |
+| `Manufacturer` / `Bose Corporation` | `… Headphones ManufacturerBose Corporation)` ✗ |
+| `Warranty Description` / `2 year manufacturer` | `… Headphones Warranty Description2 year manufacturer)` ✗ |
+
+Any following row corrupts the value identically. The existing fixture only passes
+because BSR happens to be its last row.
+
+**Root cause** — `extractDetailBsr` (`scraper/product-detail.ts:190`) runs its rank
+regex over `container.textContent`, i.e. the **whole table's** concatenated text,
+rather than the BSR row's own cell. Its character class
+`/#\d[\d,]*\s+in\s+[A-Za-z0-9 &,'/-]+/g` is greedy over letters, digits, spaces,
+`&`, `,`, `'`, `/` and `-`, so the second match runs straight across the row
+boundary into whatever follows.
+
+**Why it matters on live pages:** BSR is frequently *not* the last row of
+`#productDetails_detailBullets_sections1` — `Date First Available` and
+`Manufacturer` commonly follow it. So this is a live data-quality bug, not a
+fixture artefact.
+
+**Why it is not fixed in this ticket:** the fix means rewriting another feature's
+parser (SAD-140) and re-baselining its expectations, which is out of scope for a
+warranty ticket and would mix two unrelated changes in one review. The fixture
+addition was reverted so this ticket's diff stays clean; `pricing-deals-bsr`
+passes unchanged.
+
+**Note the contrast:** `iterDetailSpecRows`, written for SAD-349, is row-scoped —
+it walks `tr, li` and reads each row's own cells — which is exactly why warranty
+extraction is immune to this. Any BSR fix should adopt the same row-scoped walk.
+
+**Recommended follow-up:** a separate issue to scope `extractDetailBsr` to the BSR
+row, with the four rows above as its regression fixtures.
+
 ### 10.2 Product risks
 
 | Risk | Mitigation |
