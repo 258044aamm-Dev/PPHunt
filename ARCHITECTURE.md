@@ -307,17 +307,58 @@ parsed product is byte-identical with and without it.
 
 The report reaches the console as one line of JSON behind the prefix
 `[PPHunt][Amazon][Diagnostics]` — in the **service worker** console for a
-PDP save (`stage: "detail-page"`) and for an enrichment parse
-(`stage: "enrichment-parse"`), and in the **page** console for the aggregate
-card-drift line a listing parse emits. One-line JSON is deliberate: console
-objects collapse to `…` when pasted out of DevTools, one-line JSON survives
-copy-paste and stays greppable. Only statuses, sources, selectors, reasons
-and counts are logged — never titles, prices, or page content.
+PDP save (`stage: "detail-page"`), an enrichment parse
+(`stage: "enrichment-parse"`), a card save (`stage: "card"`) and each
+collected product (`stage: "collection-card"`). The aggregate card-drift line
+is also printed in the **service-worker** console (D10); the content script
+sends a counts-only `DRIFT_REPORT` message rather than writing to the page
+console. One-line JSON is deliberate: console objects collapse to `…` when
+pasted out of DevTools, one-line JSON survives copy-paste and stays greppable.
+Only statuses, sources, selectors, reasons and counts are logged — never
+titles, prices, or page content.
+
+### Diagnostics in every situation + setting (SAD-369)
+
+Amazon diagnostics are controlled by the independent local-storage key
+`pphuntDiagnosticsEnabled`, which defaults to **false** (off). The switch is
+in Amazon Settings; a cached, fail-closed reader and `storage.onChanged`
+subscription make it effective without reloading the Amazon page. The key is
+not part of `AmazonSettingsSchema` or IndexedDB, so there is no settings
+migration/version bump. "Restore defaults" resets the flag explicitly.
+
+Diagnostics are a **side channel**. Card and product-detail parsers only
+create collectors when a sink is supplied; the extracted object must remain
+byte-identical with and without that observer. The shared card recorder
+models all 24 fields: **20 card-extractable** fields and **4 card-inapplicable**
+fields (`description`, `features`, `weight`, `warrantyDescription`), which
+are `MISSING` with an explicit card-only reason (D4). Card cascade reports
+carry `tier`, not `selector`. The price cascade's additive
+`unparseablePriceTier` marks a present-but-unparseable card price as
+`PARSE_FAILED` only when no price tier succeeds; price, currency and
+`priceTier` remain unchanged (D9).
+
+A per-run collection sink keys the first report by normalized ASIN, accepts
+at most 50 **unique** products with reports (D7), resets at the collection
+boundary, and sends each report only once even when an `updatedExisting`
+batch re-sends products (D11). It does not participate in either save path,
+so the cap never applies to saves (D8). A collection started on a product
+page uses the same `collection-card` stage (G10). Collection reports are an
+optional ASIN-identified subset on `PRODUCTS_COLLECTED`, never a parallel
+array.
+
+The four per-field stages are `detail-page`, `enrichment-parse`, `card`, and
+`collection-card`; the aggregate stage is `drift`. All lines are gated by the
+same switch and emitted to the **single service-worker console**. Drift keeps
+its previous prefix and JSON shape, but the content script now routes it via
+`DRIFT_REPORT` to the worker; the Amazon page console receives no diagnostics
+lines (D10).
 
 `scripts/sad-359-diagnostics-measurement.mjs` is the measurement harness
 (spike tool, not bundled, not in CI): it drives the built extension against
-real product pages and checks the report against the row the extension
-actually stored.
+real pages, checks product reports against the stored row, supports the
+`--flag on|off` diagnostic gate check, captures worker lines separately from
+page lines (including drift), can exercise a listing card save (`--l3`), the
+card icon (`--l4`), a cap run (`--target`), and live switch flips (`--l8`).
 
 ### 4. Deduplication
 

@@ -1,7 +1,11 @@
 # SAD-369 — Diagnostics in every situation + an enable/disable setting (design plan)
 
-**Status:** plan only — nothing implemented. Written 2026-10-20, after the
-SAD-359 gap-closure work reached **In Review** (commit `6f168df`).
+**Status:** implementation steps 0–4 are pushed to `main` and in Linear
+review as of 2026-10-20. The live >50-product check (L6) was not exercised
+because the live pages returned only 30 distinct products; that limitation is
+explicitly reported, and the automated 60-card cap test passes. The original
+design analysis remains below; the final gates, live checks, deviations and
+limitations are recorded in §14.
 **Scope:** the Amazon engine only. The Temu engine is not touched.
 **Linear:** [SAD-369](https://linear.app/sad-mod/issue/SAD-369) · origin
 [SAD-368](https://linear.app/sad-mod/issue/SAD-368).
@@ -85,6 +89,14 @@ guess.
 | **D6** | Collection logs go to the **service worker** console. | One DevTools target for the per-product reports. |
 | **D7** | The **50-item cap** is based on the **number of products actually scraped so far** in the run: the first 50 log, the rest of that run does not. | A run can end up partly logged. |
 | **D8** | The cap applies to **collection runs only**, not to saves. | The owner scoped it to "automatic collection and manual collection mode". |
+
+### Follow-up decisions locked during implementation (2026-10-20)
+
+| # | Decision | Implementation rule |
+|---|---|---|
+| **D9 / E9** | Owner approved the additive-only unparseable-price observation. | Add optional `unparseablePriceTier` only when no tier yields a price; keep `{ price, currency, priceTier }` unchanged; report `PARSE_FAILED` rather than claiming absence. |
+| **D10** | Move the aggregate drift line to the service-worker console too. | Route counts-only `DRIFT_REPORT` through the worker; preserve the exact prefix and JSON shape; the page console is no longer a production destination. |
+| **D11** | Collection reports are sent once per product per run, not as a parallel array. | First report per normalized ASIN wins; a `sentReportAsins` set filters reports from resend batches; each message carries only unsent reports as an ASIN-identified subset. |
 
 ### Two consequences worth stating explicitly
 
@@ -337,12 +349,12 @@ diagnosticsEnabled?: () => boolean;
 Both production call sites (`handler.ts:800-811` and
 `save-job-recovery.ts:196-206`) pass the shared reader.
 
-**The drift line's location is unchanged** — it stays in the page console.
-Reason: it is emitted at the end of *every* listing parse, including parses
-that happen outside a collection, and there is no message to ride it on. D6
-applies to the new per-product collection reports, which do travel to the
-worker. **If the owner would rather have one console for everything, moving
-the drift line to the worker is a small follow-up — say so and it is added.**
+**D10 supersedes the original location decision:** production drift lines
+are routed to the service-worker console through `DRIFT_REPORT`, including
+listing parses outside collections. The message is counts-only; the content
+script injects the transport and disposes it during cleanup. Direct-call tests
+and non-extension contexts retain the `console.info` default. The page console
+is not a production destination after SAD-369.
 
 ### The card-level report
 
@@ -460,71 +472,40 @@ Without it, a card price that exists but will not parse is reported
 `MISSING`, which is the one thing R3 forbids. With it, the card report can
 say `PARSE_FAILED`, which is the distinction the whole taxonomy exists for.
 
-**If the owner declines this change**, the card report reports a failed price
-as `MISSING` with the reason *"the pricing cascade found no price it could
-parse"* and §10 records that card-level `PARSE_FAILED` is then unavailable.
-The change is listed separately in §9 because it touches a function shared
-with the product-page buybox.
+**Owner-approved (D9, 2026-10-20):** E9 belongs to step 3/SAD-373. The
+change is additive-only and returns the first tier that found an unparseable
+price node only when no tier produced a price. Existing extracted price,
+currency and `priceTier` stay identical; the card report says `PARSE_FAILED`
+for this proven-present-but-unparseable case.
 
 **E10 — carry the reports to the worker.**
-`ProductsCollectedMessageSchema` (`messages.ts:112-119`) gains:
+`ProductsCollectedMessageSchema` (`messages.ts:112-119`) and the matching
+`AmazonExtensionMessage` member in `types/index.ts` gain an optional
+`extractionDiagnostics` array. The registry-sync test protects the type/schema
+pairing. `processProductsCollected` and `handleProductsCollected`
+(`handler.ts:422, 554`) receive it and log each valid report at
+`collection-card`, with the active collection `sessionKey` as job id. The
+existing `pendingProductsChain` preserves collection order.
 
-```ts
-/** SAD-359: one report per collected product, in the same order as `products`. */
-extractionDiagnostics: z.array(ExtractionDiagnosticsReportSchema).optional(),
-```
-
-`handleProductsCollected` / `processProductsCollected`
-(`handler.ts:422, 554`) receive the array and log each report at the new
-stage **`collection-card`**, using the collection's `sessionKey` as the job
-id:
-
-```
-[PPHunt][Amazon][Diagnostics] {"jobId":"<sessionKey>","asin":"B0…","stage":"collection-card","counts":{…},"fields":[…]}
-```
-
-`processProductsCollected` is already a serialized chain
-(`pendingProductsChain`), so the logs are emitted in collection order.
-
-**E11 — keep the payload aligned.** The reports array is **parallel to the
-`products` array** — `reports[i]` describes `products[i]`. The content script
-must therefore build both arrays together. The batch is either all the run's
-products (`updatedExisting`) or only the new ones (`newProducts`)
-(`amazon.content.ts:352-357`); the parallel array follows the same rule.
+**E11 — one report per ASIN, exactly once (D11).** The reports array is **not
+parallel** to `products`. It is a subset whose entries identify themselves by
+ASIN. A batch may contain all run products (`updatedExisting`) or only new
+ones; the content script sends only reports not already sent in this run,
+in batch order. This prevents duplicate logs on resend and allows products
+past the cap to have no report.
 
 **E12 — one sink for the whole run.** The content script keeps a
-`Map<asin, ExtractionDiagnosticsReport>` for the current run, cleared when a
-new collection starts (`handleCollectProducts` resets `collectedProducts`).
-The sink passed to the listing parsers writes into it. The `SAVE_PRODUCT`
-path uses its own single-report sink — the two never mix.
+`Map<normalized ASIN, ExtractionDiagnosticsReport>` plus a set of sent ASINs
+for the current run. The first report for an ASIN wins; both sink and lookup
+keys use the same ASIN normalizer. The map, sent set, and counter reset at the
+same `handleCollectProducts` boundary as `collectedProducts`. The
+`SAVE_PRODUCT` path uses its own single-report sink — the two never mix.
 
-**E13 — the 50-item cap (D7, D8).** The cap counts the products **actually
-scraped so far in the run**, and applies to collection runs only.
-
-The content script knows the run count: `collectedProducts.length` is the
-number of products already in the run. Before a parse it is the run offset.
-The sink then applies the cap:
-
-```ts
-let accepted = 0;
-// runOffset = collectedProducts.length before this batch
-const sink: ExtractionDiagnosticsSink = {
-  accept(report) {
-    if (runOffset + accepted >= COLLECTION_DIAGNOSTICS_LIMIT) return;  // 50
-    accepted += 1;
-    reportsByAsin.set(report.asin!, report);
-  },
-};
-```
-
-Because the sink counts as it goes, the **first 50 products of the run log
-and the rest do not**, exactly as D7 specifies — a run can be partly logged.
-
-`COLLECTION_DIAGNOSTICS_LIMIT = 50` is a named constant next to the other
-Amazon constants, with the rule in a comment.
-
-**The cap does not apply to saves** (D8): a right-click save and a card-icon
-save always attach their report.
+**E13 — the 50-item cap (D7, D8).** `COLLECTION_DIAGNOSTICS_LIMIT = 50` is a
+named constant. Count unique products for which a report was accepted; check
+the cap before accepting a new ASIN so duplicates and re-parses never consume
+a slot. The first 50 reportable unique products in a run can be logged; the
+rest of that run do not. The cap applies only to collection runs, not saves.
 
 ### Summary of the four stages
 
@@ -534,7 +515,7 @@ save always attach their report.
 | `card` | worker | the live card, at save time | service worker |
 | `collection-card` | worker | the live card, during a collection run | service worker |
 | `enrichment-parse` | worker | fetched product-page HTML | service worker |
-| *(drift)* | content script | a whole listing parse | page console |
+| *(drift)* | worker | a whole listing parse | service worker (D10) |
 
 ---
 
@@ -615,7 +596,7 @@ One line per product, in collection order, up to 50 per run.
 | T24 | A collection of 60 cards → **exactly 50** reports (D7) | same |
 | T25 | The 51st product of a run is not logged, but the run's first 50 are | same |
 | T26 | A second collection run resets the cap | same |
-| T27 | The reports array stays parallel to the products array in every batch shape | same |
+| T27 | An `updatedExisting` resend does not re-log reports; each report is logged once per run and its ASIN belongs to the run (D11) | same |
 | T28 | A collection started on a product page produces a report (G10) | same |
 | T29 | The 50-item cap does **not** apply to a save (D8) | `tests/save-job-pipeline.test.ts` |
 
@@ -657,7 +638,7 @@ Manual checks in a real browser (the owner's own machine, normal connection):
 | L4 | Toggle ON → the card icon | one `card` line |
 | L5 | Toggle ON → a manual collection of N ≤ 50 cards | N `collection-card` lines in the **service worker** console |
 | L6 | Toggle ON → a collection of more than 50 | exactly 50 lines, and the run continues collecting normally |
-| L7 | Toggle ON → the drift line | still in the **page** console, under the same prefix |
+| L7 | Toggle ON → the drift line | in the **service-worker** console, same prefix and JSON shape (D10) |
 | L8 | Toggle flipped while a page is open | takes effect without a reload |
 
 L6 is the expensive one — a real collection of 51+ products needs a long
@@ -672,7 +653,7 @@ scroll. It may be run once, on a slow connection, and recorded in the report.
   makes), the card-level report, the collection reports, the 50-item cap, and
   the four stages.
 * `ARCHITECTURE.md` — extend the SAD-359 section with the setting, the sink,
-  the card field split (20 + 4), the four stages and the two sinks.
+  the card field split (20 + 4), the four stages and the single service-worker console (D10).
 * `docs/plans/SAD-359-live-measurement-2026-10-20.md` — a follow-up
   "Scope extension" section, or a new measurement document.
 * The new plan document, renamed to the new issue's number.
@@ -689,7 +670,7 @@ before the next begins — the workflow established for SAD-359.
 | 0 | plan | this document | — |
 | 1 | the setting | E1–E4: the key, the accessor, the Settings UI, and the gating of all four log sites | tsc clean, suite green, Temu/`wxt.config.ts` diffs empty |
 | 2 | the card report | E5–E7: the shared recorder, the sink, the card parsers, the card save path, the `card` stage | tsc clean, suite green, parity test green |
-| 3 | the collection path | E8–E13: the collection sink, the `PRODUCTS_COLLECTED` payload, the 50-item cap, the `collection-card` stage, E9 | tsc clean, suite green |
+| 3 | the collection path | E8–E13: the collection sink, optional `PRODUCTS_COLLECTED` subset, the 50-item cap, `collection-card`, E9, and D10 drift routing (3 message registries) | tsc clean, suite green |
 | 4 | live + docs | the live verification, the CHANGELOG, the ARCHITECTURE, the report | tsc clean, suite green, build OK, live checks L1–L8 |
 
 **E9 (the shared pricing cascade) is called out separately in step 3**
@@ -707,43 +688,114 @@ byte-identical.
 | R2 | The 50-item cap hides problems in a large collection. | Medium | The cap is the owner's explicit instruction; the CHANGELOG states it, and the collection still *runs* normally. |
 | R3 | The card report adds cost to every card parse. | Low | No collector is allocated when the sink is absent (the toggle is off). |
 | R4 | The `PRODUCTS_COLLECTED` payload grows by ~24 entries per product. | Low | Bounded at 50 products per run by the cap. |
-| R5 | E9 touches the shared pricing extractor. | Low | Additive-only; a test pins byte-identical output; called out for explicit approval. |
-| R6 | The reports array drifts out of alignment with the products array. | Medium | The schema and the content script build both together; T27 pins the alignment in every batch shape. |
+| R5 | E9 touches the shared pricing extractor. | Low | Owner-approved (D9); additive-only and the parity pin keeps `{ price, currency, priceTier }` byte-identical. |
+| R6 | Reports could be re-logged or attached to the wrong product on a resend. | Medium | Reports self-identify by ASIN; `sentReportAsins` enforces once-per-run delivery; T27 pins the rule (D11). |
 | R7 | The content script's flag read races the first action. | Low | The content script awaits the read before the first save or collection action; the cache fails closed. |
 
 ---
 
-## 12. Limitations (to be reported, per R6)
+## 12. Limitations (reported, per R6)
 
 1. **A card report has 4 permanently-absent rows** (`description`, `features`,
    `weight`, `warrantyDescription`) and does **not** include `badge`, because
    D3 fixes the model at the same 24 fields.
 2. **A card report carries `tier`, not `selector`** — the card extractors
    resolve by a cascade, not a single selector.
-3. **Card-level `PARSE_FAILED` depends on E9.** Without it, a card price that
-   exists but will not parse is reported `MISSING` with a reason that says the
-   cascade found nothing parseable.
-4. **The drift line stays in the page console**; the per-product reports are in
-   the service worker console. Two DevTools targets for a collection run.
-5. **The cap is per collection run**, not per page or per session.
+3. **Card-level `PARSE_FAILED` is implemented for price only** (E9/D9).
+   Rating/reviewCount extractors retain their existing absent-vs-unparseable
+   ambiguity.
+4. **Drift lines now require the service worker to be alive** (D10); if the
+   worker cannot receive the message, the diagnostics-only line is dropped
+   rather than printed in the page console.
+5. **The cap is per collection run**, not per page or per session; a run can
+   end up partly logged (D7).
 6. **The `enrichment-parse` stage still depends on the background fetch
    succeeding.** A card save logs its `card` line regardless, but the
    product-page view of that product is missing when the fetch fails.
-7. **A sample is not a census** — the live check covers a handful of products.
-8. **The Temu engine is not covered** (D2).
+7. **Live L6 (>50 products) was not exercised**: Amazon listing pages served
+   at most 30 distinct products in the headed Chromium runs even after normal
+   scroll input. The 60-card automated cap test passes, but it does not replace
+   the live >50-product acceptance check. See
+   `docs/plans/SAD-369-live-verification-2026-10-20.md`.
+8. The live browser checks used a fresh sandbox Chromium profile, not the
+   owner's normal Chrome profile. The side-panel product table was not
+   visually compared against a separate baseline build, and automatic mode
+   was not separately run live. The automated parity suite and live product
+   detail-to-IndexedDB comparison passed.
+9. **The Temu engine is not covered** (D2).
 
 ---
 
 ## 13. Definition of done
 
-- [ ] `tsc --noEmit` clean; `vitest run` green with the new and updated tests
-- [ ] `npm run build` succeeds; `npm run check:dead-exports` passes
-- [ ] `git diff -- src/engines/temu/` and `git diff -- wxt.config.ts` are empty
-- [ ] The extracted product is byte-identical with and without the collector
-- [ ] The setting defaults to **off** and is reachable in Settings
-- [ ] **Off** → no `[PPHunt][Amazon][Diagnostics]` line from any path (T7, T9, T11, L1)
-- [ ] **On** → a log in every one of the four situations (L2–L5)
-- [ ] A collection of more than 50 products emits exactly 50 lines (L6, T24)
-- [ ] The live verification report is committed, including what it did **not** exercise
-- [ ] CHANGELOG + ARCHITECTURE updated
-- [ ] The Linear issue is moved to **In Review** with a summary comment
+- [x] `tsc --noEmit` clean; full suite **96 files / 1092 tests** green
+- [x] `npm run build` succeeds; `npm run check:dead-exports` passes
+- [x] Diffs from baseline `804da50` for `src/engines/temu/` and `wxt.config.ts` are empty
+- [x] Extracted product byte-identical with and without collectors/sinks (parity tests + E9 pin)
+- [x] Setting defaults to **off**, reachable in Settings, and live without reload (L8)
+- [x] **Off** → no diagnostics line from any path in the live save check (L1)
+- [x] **On** → live detail save, right-click card save, card-icon save, manual collection, and worker-side drift observed (L2–L5, L7)
+- [ ] A real live collection of more than 50 products emits exactly 50 lines (L6); not exercised because the pages served only 30 products. Automated 60-card cap test passes.
+- [x] Live verification report and raw evidence committed, including checks not exercised
+- [x] CHANGELOG + ARCHITECTURE updated
+- [ ] Linear SAD-369 moved to **In Review** with summary and limitations (final step-4 Linear update)
+
+---
+
+## 14. Implementation record (2026-10-20)
+
+The plan's locked decisions and correction log are binding; implementation did
+not use assumptions where the plan/tickets differed. One commit per code step,
+pushed to `main`:
+
+| Step | Issue | Commit | Verification |
+|---|---|---|---|
+| 0 — plan, guide, verified baseline | SAD-370 (Done) | `d46c08f` (plan), `804da50` (guide + verified baseline) | baseline: 88 files / 1046 tests; `tsc`, build and dead-export checks clean |
+| 1 — setting and log gates | SAD-371 (In Review) | `e4f71a7` | 90 files / 1059 tests; `tsc`, build and dead-export checks clean |
+| 2 — card report and both save paths | SAD-372 (In Review) | `b9d895b` | 92 files / 1071 tests; parity invariant green; Temu diff empty |
+| 3 — collection reports/cap, E9, drift to worker | SAD-373 (In Review) | `982993d` | 96 files / 1092 tests; T23–T29/E9/D10 tests green; Temu diff empty |
+| 4 — live verification, docs, record | SAD-374 (In Review) | this record's commit: `SAD-369 step 4: live verification, changelog and implementation record` | final gates as above; live L1–L5/L7–L8 pass; live L6 explicitly not exercised; limitations recorded below and in the report |
+
+### Deviations and corrections recorded
+
+- **D9/E9 sequencing:** §6.1 of the original plan placed the unparseable-price
+  branch in step 2, while §7.1 and SAD-373 assigned E9/T15 to step 3. The
+  SAD-372 ticket scope controlled: step 2 used the no-price-node `MISSING`
+  branch; step 3 added `unparseablePriceTier` and `PARSE_FAILED`. This is
+  documented on SAD-372 and SAD-373. Product output is parity-pinned.
+- **D11:** reports are an ASIN-identified subset of each `PRODUCTS_COLLECTED`
+  message, not a parallel array. The worker's pre-validation envelope fast
+  path also rebuilt the payload and dropped unknown fields; it was updated to
+  carry the optional report array, with per-report schema validation still at
+  the print site. The evidence test caught this before the step-3 push.
+- **D10:** the drift line's destination changed from the page console to the
+  service-worker console. `DRIFT_REPORT` is in all three registries; the
+  content-script transport is reset during cleanup. Prefix and serialized JSON
+  shape are preserved.
+- The collection sink is a small separately testable module, rather than
+  closures inside `amazon.content.ts`; this keeps the D7/D11 rules directly
+  testable without widening production behavior.
+- **Live L6 limitation:** normal scrolling on the tested live search/category
+  pages yielded at most 30 distinct products. No claim is made that the live
+  >50 run passed; the 60-card automated test passes. An owner-browser run on a
+  listing that actually yields >50 products remains the appropriate follow-up.
+- The first live L3 harness attempt dispatched a synthetic contextmenu event
+  and did not capture a save target; it was replaced by a real Playwright
+  right-click. The corrected run produced exactly one `card` line and one
+  `enrichment-parse` line with the same jobId. The harness now uses a normal,
+  unforced click on the visible closed-shadow card-icon host for L4.
+- The live runner initially treated a numeric price substring as a possible
+  product-value leak; a legitimate collision with count data demonstrated
+  that test could false-positive. The final privacy check uses structural
+  value-key checks plus actual stored title/URL comparisons.
+
+### Verification artifacts
+
+- Human-readable L1–L8 results and limitations:
+  `docs/plans/SAD-369-live-verification-2026-10-20.md`.
+- Machine-readable live runs:
+  `docs/plans/sad-369-live-off-2026-10-20.json`,
+  `docs/plans/sad-369-live-on-2026-10-20.json`, and
+  `docs/plans/sad-369-live-l6-2026-10-20.json`.
+
+---

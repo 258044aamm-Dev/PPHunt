@@ -136,7 +136,7 @@ is the one thing this job must never do.** Every step must leave it green.
 
 ### B.1 Step 1 — the on/off switch, and gating every log line
 
-**Linear:** SAD-370 · **Design:** plan §5 "The setting" (E1–E4) ·
+**Linear:** SAD-371 · **Design:** plan §5 "The setting" (E1–E4) ·
 **What you are building:** a single setting in Settings that turns the
 diagnostics on and off, and making every existing log line respect it.
 
@@ -317,18 +317,19 @@ printed":
 ```bash
 git add -A
 git commit -m "SAD-369 step 1: add the diagnostics on/off setting and gate every log site"
-/tmp/gpush.sh main
+git push origin main
 ```
 
-Then comment on **SAD-370** with: the files changed, the test results, and
-the command output. Then move SAD-370 to **Done** and SAD-369 to **In
-Progress** if it is not already.
+Then comment on **SAD-371** with: the files changed, the test results, and
+the command output. Move **SAD-371** to **In Review** after the step is
+complete; SAD-370 is the separate step-0 issue and remains **Done**. Keep the
+parent SAD-369 **In Progress** until step 4 is complete.
 
 ---
 
 ### B.2 Step 2 — the card-level report, and the card save path
 
-**Linear:** SAD-371 · **Design:** plan §5 "The card-level report" (E5–E7)
+**Linear:** SAD-372 · **Design:** plan §6 "The card-level report" (E5–E7)
 **What you are building:** the ability to say "here is what happened to every
 field of **this one listing card**", and to print it when a card is saved.
 
@@ -495,14 +496,14 @@ New tests (plan §7, T13–T22). The ones that matter most:
 
 ```bash
 git commit -m "SAD-369 step 2: add the card-level diagnostics report and the card save path"
-/tmp/gpush.sh main
+git push origin main
 ```
 
 ---
 
-### B.3 Step 3 — the collection path and the 50-item cap
+### B.3 Step 3 — the collection path, 50-item cap, E9 and drift move
 
-**Linear:** SAD-372 · **Design:** plan §5 "The collection path" (E8–E13)
+**Linear:** SAD-373 · **Design:** plan §7 "The collection path" (E8–E13, E9, D10)
 **What you are building:** one diagnostics line **per collected product**, and
 the rule that a run stops printing after 50 products.
 
@@ -519,23 +520,36 @@ the rule that a run stops printing after 50 products.
 
 `src/entrypoints/amazon.content.ts`:
 
-- Keep a `Map<string, ExtractionDiagnosticsReport>` for the current run.
-- Clear it in `handleCollectProducts`, right where `collectedProducts` is
-  reset to `[]` — that is where a new run begins.
-- Build a sink that counts as it goes:
+- Keep a `Map<normalized ASIN, ExtractionDiagnosticsReport>` for the current
+  run, a `Set<normalized ASIN>` for reports already sent, and a `loggedThisRun`
+  counter. Normalize both the report ASIN and the product ASIN with the same
+  `normalizeASIN` helper.
+- Clear the map, set, and counter in `handleCollectProducts`, right where
+  `collectedProducts` is reset to `[]` — that is where a new run begins.
+- Keep the first report per unique ASIN. Re-parses of the same card do not
+  burn cap slots; check the cap **before** accepting a new ASIN:
 
 ```ts
-const runOffset = collectedProducts.length;  // products already in this run
-let accepted = 0;
+const runReports = new Map<string, ExtractionDiagnosticsReport>();
+const sentReportAsins = new Set<string>();
+let loggedThisRun = 0;
 
 const sink: ExtractionDiagnosticsSink = {
   accept(report) {
-    if (runOffset + accepted >= COLLECTION_DIAGNOSTICS_LIMIT) return;
-    accepted += 1;
-    reportsByAsin.set(report.asin!, report);
+    const key = normalizeASIN(report.asin);
+    if (!key || runReports.has(key)) return; // duplicate/re-parse
+    if (loggedThisRun >= COLLECTION_DIAGNOSTICS_LIMIT) return; // first 50
+    loggedThisRun += 1;
+    runReports.set(key, report); // first report wins
   },
 };
 ```
+
+When a batch is built, send only the reports for batch products not already
+sent this run, in batch order. Mark each report's normalized ASIN sent at the
+same time. An `updatedExisting` batch re-sends the whole product run, so a
+parallel array would misalign and repeat reports; reports are a subset that
+self-identify by ASIN (D11), not a parallel array.
 
 Put `COLLECTION_DIAGNOSTICS_LIMIT = 50` in
 `src/engines/amazon/constants/defaults.ts` next to the other constants, with
@@ -554,15 +568,19 @@ reports (currently it reports nothing at all).
 (line 112) gains:
 
 ```ts
-/** SAD-369: one report per collected product, in the same order as `products`. */
+/**
+ * SAD-369 D11: a subset of this message's products, self-identified by ASIN;
+ * not a parallel array. Only reports not sent earlier this run are included.
+ */
 extractionDiagnostics: z.array(ExtractionDiagnosticsReportSchema).optional(),
 ```
 
-`src/entrypoints/amazon.content.ts` — when the content script builds the
-`PRODUCTS_COLLECTED` message, attach the reports **in the same order as the
-products**. The batch is either all of the run's products or only the new
-ones; the report array must follow the same rule, or the two will not line
-up.
+The `AmazonExtensionMessage` member in `types/index.ts` gains the matching
+optional field (the registry-sync test protects the type/schema pairing).
+The content script attaches the reports not yet sent for the current batch,
+in batch order. Products after the cap or parsed while diagnostics are off
+have no report. A duplicate/re-sent product never causes the worker to log the
+same report twice in one run (D11).
 
 #### 3.4 Print them in the worker
 
@@ -574,11 +592,11 @@ collection's `sessionKey` as the job id.
 The background already serialises this work through `pendingProductsChain`,
 so the lines come out in collection order.
 
-#### 3.5 One optional extra: telling "absent" from "unparseable"
+#### 3.5 E9/D9: telling "absent" from "unparseable"
 
-> **This is the only part of this job that touches a function the product
-> page also uses. Read plan §3.6 and §5 E9 first. If you are unsure, ask
-> before doing it.**
+> **Owner-approved, required scope (D9):** this is diagnostics-only and
+> additive. Read plan §7.1 and SAD-373 before editing; preserve the exact
+> `{ price, currency, priceTier }` parity invariant.
 
 `extractCardPricingAndDiscounts` (`src/engines/amazon/scraper/field-parsers.ts`,
 around line 849) walks 4 tiers and falls through whether a price node is
@@ -597,41 +615,61 @@ ignores the new field.
 change and asserts the extracted product is byte-identical. If it is not, you
 have changed extraction — undo it.
 
-**If you would rather not touch the shared function**, skip this and report a
-failed card price as `MISSING` with the reason *"the pricing cascade found
-no price it could parse"*, and say so in the Linear comment. That is a
-worse answer, but it is an honest one, and it is recorded as a limitation.
+This E9 change is part of SAD-373, not an optional extra: the owner
+approved the additive `unparseablePriceTier` field. A price node present but
+unparseable is `PARSE_FAILED`; an actually absent node remains `MISSING`.
 
-#### 3.6 Check it worked
+#### 3.6 Move the drift line to the service worker (D10)
+
+`logDriftReport` keeps its emission points and exact one-line format, but
+production no longer prints drift in the Amazon page console. In
+`drift-telemetry.ts`, add a pure `formatDriftLogLine` and injectable
+`setDriftTransport`; the content script sets a transport that sends
+`DRIFT_REPORT` and resets it in `__PPHUNT_CONTENT_CLEANUP__`. The default
+transport remains `console.info` so direct-call tests and non-extension
+contexts keep their existing behavior.
+
+Register `DRIFT_REPORT` in **all three** places: the
+`AmazonExtensionMessage` union (`types/index.ts`), the Zod union
+(`schemas/messages.ts`), and `AMAZON_MESSAGE_TYPES` (`validate-message.ts`).
+The worker handles the message, checks its cached diagnostics switch, and
+prints `formatDriftLogLine(validated.payload)`. Keep the report counts-only;
+no product values cross the message boundary (C2).
+
+#### 3.7 Check it worked
 
 ```bash
 npx tsc --noEmit && npx vitest run && npm run build && npm run check:dead-exports
 ```
 
-New tests (plan §7, T23–T29):
+New tests (plan §7, T23–T29, adjusted for D11):
 
 - a collection of 10 cards → 10 reports reach the worker, printed as
-  `collection-card`
-- a collection of 60 cards → **exactly 50** reports
-- the 51st product is not printed, but the first 50 are
-- a **second** collection run resets the counter
-- the reports array stays the same length as the products array, in every
-  batch shape
-- a collection started on a product page produces a report
+  `collection-card` with the collection session key as jobId
+- a collection of 60 cards → **exactly 50** reports; the 51st is not printed
+- a **second** collection run resets the counter and sent-report set
+- re-parses do not consume cap slots; an `updatedExisting` resend does not
+  print any report a second time; every report ASIN belongs to the run
+- a collection started on a product page produces a `collection-card` report
 - the cap does **not** apply to a save
+- E9 parity: an unparseable price keeps `{ price, currency, priceTier }`
+  unchanged and the report says `PARSE_FAILED`
+- `DRIFT_REPORT`: transport sends the message with no page-console line; the
+  worker prints the byte-identical line when on and nothing when off; the
+  message-registry sync test covers the new type
 
-#### 3.7 Commit, push, comment
+#### 3.8 Commit, push, comment
 
 ```bash
-git commit -m "SAD-369 step 3: report every collected product, with the 50-item cap"
-/tmp/gpush.sh main
+git commit -m "SAD-369 step 3: per-product collection reports with the 50-item cap; drift line to the service worker"
+git push origin main
 ```
 
 ---
 
 ### B.4 Step 4 — live verification and documentation
 
-**Linear:** SAD-373 · **Design:** plan §8 and §9
+**Linear:** SAD-374 · **Design:** plan §8 and §9
 **What you are building:** proof that it works in a real browser, and the
 documentation.
 
@@ -653,8 +691,8 @@ git diff --stat <the commit before step 1> -- wxt.config.ts        # must be EMP
 2. Open the side panel → **Settings** → turn **Enable extraction diagnostics**
    **on**.
 3. Open `chrome://extensions` → PPHunt → the **"Service worker"** link. That
-   opens the console where the per-field lines appear. *(The drift line is
-   the exception — it appears in the page's own console.)*
+   opens the single console where the per-field and drift lines appear. The
+   page console receives no diagnostics lines (D10).
 4. Work through this table:
 
 | # | Do this | Expect |
@@ -665,7 +703,7 @@ git diff --stat <the commit before step 1> -- wxt.config.ts        # must be EMP
 | L4 | Switch on, the **card icon** | one `card` line |
 | L5 | Switch on, a **manual collection** of N ≤ 50 | N `collection-card` lines in the service-worker console |
 | L6 | Switch on, a collection of **more than 50** | **exactly 50** lines, and the collection still runs normally |
-| L7 | Switch on, any listing | the drift line still in the **page** console, same prefix |
+| L7 | Switch on, any listing | the drift line in the **service-worker** console, same prefix and JSON shape (D10) |
 | L8 | Flip the switch with the page open | it takes effect without a reload |
 
 > **L6 is slow** — it needs a real collection of 51+ products, which means
@@ -679,8 +717,8 @@ git diff --stat <the commit before step 1> -- wxt.config.ts        # must be EMP
   changes the behaviour shipped in SAD-359. Mention the card report, the
   collection reports, the 50-item cap and the four stages.
 * **`ARCHITECTURE.md`** — extend the SAD-369 section with the switch, the
-  sink, the 20 + 4 field split for cards, the four stages and the two
-  consoles.
+  sink, the 20 + 4 field split for cards, the four stages and the single
+  service-worker console (D10).
 * **The plan doc** — add an implementation record: one line per step with
   its commit, the final test count, and **any deviation and its reason**.
   Deviations are fine; undocumented ones are not.
@@ -689,12 +727,12 @@ git diff --stat <the commit before step 1> -- wxt.config.ts        # must be EMP
 
 ```bash
 git commit -m "SAD-369 step 4: live verification, changelog and implementation record"
-/tmp/gpush.sh main
+git push origin main
 ```
 
-Comment on **SAD-373**: the files changed, the tests added and run, the
-command output, the live-check results, and the limitations. Then move
-**SAD-369** to **In Review**.
+Comment on **SAD-374**: the files changed, the tests added and run, the
+command output, live-check results and limitations (including anything not
+exercised). Then move **SAD-369** to **In Review**.
 
 ---
 
@@ -727,8 +765,10 @@ behaviour on purpose, that is a red flag, not a licence.
 
 ### C.5 One commit per step, pushed, then commented on
 
-Push to `main` with `/tmp/gpush.sh main`, then comment on the step's Linear
-sub-issue. Do not start the next step until the push and the comment are
+Push to `main` with `git push origin main`, then comment on the step's Linear
+sub-issue. Authenticate through a secure Git credential mechanism; never write
+a personal access token into the repository, remote configuration or a
+committed file. Do not start the next step until the push and the comment are
 done.
 
 ### C.6 When you get stuck
@@ -756,3 +796,4 @@ work" is not.
 | The message schemas | `src/engines/amazon/schemas/messages.ts` |
 | The design plan | `docs/plans/SAD-369-diagnostics-everywhere-and-toggle-plan.md` |
 | The live-measurement harness | `scripts/sad-359-diagnostics-measurement.mjs` |
+iagnostics-measurement.mjs` |

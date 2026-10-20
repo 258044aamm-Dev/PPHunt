@@ -1,0 +1,238 @@
+{
+  "tool": "scripts/sad-359-diagnostics-measurement.mjs",
+  "generatedAt": "2026-10-20T15:30:26.915Z",
+  "prefix": "[PPHunt][Amazon][Diagnostics]",
+  "flag": "on",
+  "target": 20,
+  "results": [
+    {
+      "asin": "B0D1XD1ZV3",
+      "url": "https://www.amazon.com/dp/B0D1XD1ZV3",
+      "landedUrl": "https://www.amazon.com/dp/B0D1XD1ZV3",
+      "title": "Amazon.com: Apple AirPods Pro 2 Wireless Earbuds, Active Noise Cancellation, Hearing Aid Feature, Bluetooth Headphones, Transparency, Personalized Spatial Audio, High-Fidelity Sound, H2 Chip, USB-C Charging : Electronics",
+      "gate": "ok",
+      "flag": "on",
+      "jobId": "64632de0-ed38-4343-898a-531bf859e3b6",
+      "stage": "detail-page",
+      "detailPageCount": 1,
+      "enrichmentParseLines": 0,
+      "counts": {
+        "extracted": 16,
+        "missing": 8,
+        "parseFailed": 0,
+        "partial": 0,
+        "unknown": 0
+      },
+      "fields": [
+        {
+          "field": "asin",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "url",
+          "status": "EXTRACTED",
+          "source": "url",
+          "validated": true
+        },
+        {
+          "field": "title",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productTitle",
+          "validated": true
+        },
+        {
+          "field": "brand",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#bylineInfo",
+          "validated": true
+        },
+        {
+          "field": "price",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#corePriceDisplay_desktop_feature_div",
+          "tier": "tier2_semantic",
+          "validated": true
+        },
+        {
+          "field": "listPrice",
+          "status": "MISSING",
+          "reason": "no list price shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "discountPercentage",
+          "status": "MISSING",
+          "reason": "no discount shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "dealBadge",
+          "status": "MISSING",
+          "reason": "no deal badge shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "coupon",
+          "status": "MISSING",
+          "reason": "no coupon shown on the page",
+          "source": "dom"
+        },
+        {
+          "field": "currency",
+          "status": "EXTRACTED",
+          "source": "derived",
+          "validated": true
+        },
+        {
+          "field": "pastMonthSales",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought",
+          "validated": true
+        },
+        {
+          "field": "rating",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrPopover, #averageCustomerReviews [data-action=\"acrStarsLink-click-metrics\"]",
+          "validated": true
+        },
+        {
+          "field": "reviewCount",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#acrCustomerReviewText",
+          "validated": true
+        },
+        {
+          "field": "availability",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#availability span",
+          "validated": true
+        },
+        {
+          "field": "delivery",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#mir-layout-DELIVERY_BLOCK-slot-PRIMARY_DELIVERY_MESSAGE_LARGE span[data-csa-c-delivery-price]",
+          "validated": true
+        },
+        {
+          "field": "seller",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#sellerProfileTriggerId",
+          "validated": true
+        },
+        {
+          "field": "features",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#feature-bullets ul li span.a-list-item",
+          "validated": true
+        },
+        {
+          "field": "description",
+          "status": "MISSING",
+          "reason": "no description node or JSON-LD description in the fetched HTML",
+          "source": "dom"
+        },
+        {
+          "field": "imageUrl",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#landingImage",
+          "validated": true
+        },
+        {
+          "field": "bestSellersRank",
+          "status": "MISSING",
+          "reason": "no Best Sellers Rank row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "warrantyDescription",
+          "status": "MISSING",
+          "reason": "no warranty row in the detail tables",
+          "source": "dom"
+        },
+        {
+          "field": "variations",
+          "status": "MISSING",
+          "reason": "singleton product (no multi-option variations)",
+          "source": "dom"
+        },
+        {
+          "field": "weight",
+          "status": "EXTRACTED",
+          "source": "dom",
+          "selector": "#productDetails_techSpec_section_1",
+          "validated": true
+        },
+        {
+          "field": "isPrime",
+          "status": "EXTRACTED",
+          "source": "derived"
+        }
+      ],
+      "storedProductPresent": true,
+      "storedTitle": "Apple AirPods Pro 2 Wireless Earbuds, Active Noise Cancellation, Hearing Aid Feature, Bluetooth Headphones, Transparency, Personalized Spatial Audio, High-Fidelity Sound, H2 Chip, USB-C Charging",
+      "storedPrice": 232.7,
+      "mismatches": []
+    },
+    {
+      "listing": "https://www.amazon.com/s?k=wireless+earbuds",
+      "gate": "ok",
+      "flag": "on",
+      "target": 20,
+      "scrolls": 0,
+      "l6Status": "not-requested",
+      "driftLineSeen": true,
+      "driftLineConsole": "service-worker",
+      "driftLine": "[PPHunt][Amazon][Diagnostics] drift {\"stage\":\"search-results\",\"cardsInspected\":21,\"cardsExtracted\":21,\"fieldCoverage\":{\"asin\":1,\"title\":1,\"price\":0.9,\"rating\":1,\"reviewCount\":1,\"imageUrl\":1},\"tierBreakdown\":{\"tier1_json\":0,\"tier2_semantic\":109,\"tier3_structural\":10,\"tier4_selector\":5,\"missing\":2},\"isDriftDetected\":false,\"driftReasons\":[]}",
+      "collectionCardLines": 19,
+      "collectionLinesJsonAndPrivacyPass": true,
+      "storedProducts": 19
+    },
+    {
+      "listingCardSave": "https://www.amazon.com/s?k=wireless+earbuds",
+      "l3": true,
+      "cardLines": 1,
+      "enrichmentParseLines": 1,
+      "jobId": "d86ebb12-68e9-42d9-9794-d384d775cad0"
+    },
+    {
+      "listingCardIcon": "https://www.amazon.com/s?k=wireless+earbuds",
+      "l4": true,
+      "iconMetadata": {
+        "asin": "B09DT48V16",
+        "rect": {
+          "x": 716.703125,
+          "y": 180,
+          "width": 28,
+          "height": 28
+        },
+        "inViewport": true
+      },
+      "cardLines": 1,
+      "jobId": "a427c88e-92ac-462e-a036-3a824bdbd902"
+    },
+    {
+      "l8": {
+        "asin": "B0D1XD1ZV3",
+        "gate": "ok",
+        "onCount": 1,
+        "offCount": 0,
+        "onAgainCount": 1
+      }
+    }
+  ],
+  "failures": [],
+  "limitations": []
+}

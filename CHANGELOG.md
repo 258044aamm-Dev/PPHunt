@@ -5,6 +5,44 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Diagnostics in every situation + an enable/disable setting (SAD-369)
+
+> **Behaviour change:** extraction diagnostics are now **off by default**.
+> This changes the unconditional logging shipped in SAD-359. Turn on
+> **Enable extraction diagnostics** in Amazon Settings to opt in.
+
+### Added
+- **Card-level reports** for both listing parsers and both card-save entry
+  points (right-click and the card icon). Each card report has the same 24
+  fields as a product-page report: 20 fields the card can carry and 4
+  card-inapplicable fields (`description`, `features`, `weight`,
+  `warrantyDescription`) reported `MISSING` with an explanatory reason.
+- **Per-product collection reports** sent to the service worker under the
+  `collection-card` stage. The first 50 unique products with a report in each
+  collection run are logged; re-parses do not consume slots, and the counter
+  resets for a new run. Saves are not subject to the collection cap.
+- **Explicit unparseable-price diagnostics**: when a card price node exists
+  but its text cannot be parsed and no fallback tier succeeds, the report
+  records `PARSE_FAILED` and the tier that first observed it; extracted price,
+  currency and price tier remain unchanged.
+- **A privacy-preserving, opt-in setting** in Amazon Settings. All four
+  diagnostics stages (`detail-page`, `enrichment-parse`, `card`,
+  `collection-card`) respect the switch.
+
+### Changed
+- The aggregate listing **drift line now prints in the service-worker
+  console**, alongside the other diagnostics (D10). It retains the same prefix
+  and JSON shape; it no longer prints in the page console.
+- Collection reports ride on `PRODUCTS_COLLECTED` as an optional,
+  ASIN-identified subset, not a parallel array. A report is delivered at most
+  once per product per run even when a collection batch re-sends existing
+  products.
+
+### Unchanged
+- Amazon extraction results, collection behavior, saves, enrichment, and
+  persisted product values. Diagnostics are a side channel. The Temu engine is
+  untouched; its diagnostics behavior remains independent.
+
 ## [Unreleased] — Per-field extraction diagnostics (SAD-359)
 
 Amazon products are scraped by a 4-tier self-healing parser that decides

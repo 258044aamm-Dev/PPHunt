@@ -1,0 +1,27 @@
+{
+  "tool": "scripts/sad-359-diagnostics-measurement.mjs",
+  "generatedAt": "2026-10-20T15:31:54.746Z",
+  "prefix": "[PPHunt][Amazon][Diagnostics]",
+  "flag": "on",
+  "target": 60,
+  "results": [
+    {
+      "listing": "https://www.amazon.com/gp/bestsellers/electronics/172282",
+      "gate": "ok",
+      "flag": "on",
+      "target": 60,
+      "scrolls": 15,
+      "l6Status": "not-exercised-target-unreached",
+      "driftLineSeen": true,
+      "driftLineConsole": "service-worker",
+      "driftLine": "[PPHunt][Amazon][Diagnostics] drift {\"stage\":\"category-page\",\"cardsInspected\":30,\"cardsExtracted\":30,\"fieldCoverage\":{\"asin\":1,\"title\":1,\"price\":1,\"rating\":1,\"reviewCount\":1,\"imageUrl\":1},\"tierBreakdown\":{\"tier1_json\":30,\"tier2_semantic\":30,\"tier3_structural\":30,\"tier4_selector\":90,\"missing\":0},\"isDriftDetected\":false,\"driftReasons\":[]}",
+      "collectionCardLines": 30,
+      "collectionLinesJsonAndPrivacyPass": true,
+      "storedProducts": 30
+    }
+  ],
+  "failures": [],
+  "limitations": [
+    "L6 not exercised: requested target 60, but this live Amazon page run stored only 30 products; no more than 50 distinct products were available/collected. The synthetic 60-card test still verifies the cap, but this does not replace L6's real >50 browser check."
+  ]
+}

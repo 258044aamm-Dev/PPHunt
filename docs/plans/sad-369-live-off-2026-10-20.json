@@ -1,0 +1,24 @@
+{
+  "tool": "scripts/sad-359-diagnostics-measurement.mjs",
+  "generatedAt": "2026-10-20T15:28:57.304Z",
+  "prefix": "[PPHunt][Amazon][Diagnostics]",
+  "flag": "off",
+  "target": 20,
+  "results": [
+    {
+      "asin": "B0D1XD1ZV3",
+      "url": "https://www.amazon.com/dp/B0D1XD1ZV3",
+      "landedUrl": "https://www.amazon.com/dp/B0D1XD1ZV3",
+      "title": "Amazon.com: Apple AirPods Pro 2 Wireless Earbuds, Active Noise Cancellation, Hearing Aid Feature, Bluetooth Headphones, Transparency, Personalized Spatial Audio, High-Fidelity Sound, H2 Chip, USB-C Charging : Electronics",
+      "gate": "ok",
+      "flag": "off",
+      "l1": true,
+      "linesDuringSave": 0,
+      "pagePrefixedDuringRun": 0,
+      "saveJobLogged": false,
+      "storedProductPresent": true
+    }
+  ],
+  "failures": [],
+  "limitations": []
+}
