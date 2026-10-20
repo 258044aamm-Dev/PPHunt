@@ -312,6 +312,10 @@ export function summarizeFieldDiagnostics(
  * console objects collapse to `…` when pasted out of DevTools, single-line
  * JSON survives copy-paste and stays greppable. Values themselves (titles,
  * prices) are never logged — statuses, selectors, reasons and counts only.
+ *
+ * The `[PPHunt][Amazon][Diagnostics]` prefix is the one filter that finds
+ * every diagnostic line this extension emits; the aggregate card-drift line
+ * uses the same prefix with a `drift` tag so both can be separated again.
  */
 export function formatExtractionDiagnosticsLog(
   report: ExtractionDiagnosticsReport,
@@ -324,5 +328,5 @@ export function formatExtractionDiagnosticsLog(
     counts: summarizeFieldDiagnostics(report.fields),
     fields: report.fields,
   };
-  return `[PPHunt] extraction diagnostics ${JSON.stringify(payload)}`;
+  return `[PPHunt][Amazon][Diagnostics] ${JSON.stringify(payload)}`;
 }

@@ -449,7 +449,7 @@ describe('SAD-359 diagnostics collector', () => {
       asin: 'B0DELTA123',
       stage: 'enrichment-parse',
     });
-    expect(line.startsWith('[PPHunt] extraction diagnostics {')).toBe(true);
+    expect(line.startsWith('[PPHunt][Amazon][Diagnostics] {')).toBe(true);
     expect(line).not.toContain('\n');
 
     const payload = JSON.parse(line.slice(line.indexOf('{'))) as {
@@ -462,5 +462,33 @@ describe('SAD-359 diagnostics collector', () => {
     expect(payload.stage).toBe('enrichment-parse');
     expect(payload.counts).toEqual(counts);
     expect(payload.fields).toHaveLength(24);
+  });
+
+  it('carries the issue prefix and a bucket for every status', () => {
+    const { report } = parseWithReport(NO_BUYBOX_HTML);
+    const line = formatExtractionDiagnosticsLog(report, {
+      jobId: 'job-1',
+      asin: 'B0DELTA123',
+      stage: 'detail-page',
+    });
+
+    // Requirement 4: an identifiable prefix, easy to filter in DevTools.
+    expect(line.startsWith('[PPHunt][Amazon][Diagnostics] {')).toBe(true);
+    // Requirement 4: no HTML, no values, one paste-safe line.
+    expect(line).not.toContain('\n');
+    expect(line).not.toContain('Delta Widget');
+
+    const payload = JSON.parse(line.slice(line.indexOf('{'))) as {
+      counts: Record<string, number>;
+    };
+    // Requirement 4: extracted / missing / partially extracted / failed —
+    // plus the unknown bucket, so the five partition the report.
+    expect(Object.keys(payload.counts).sort()).toEqual([
+      'extracted',
+      'missing',
+      'parseFailed',
+      'partial',
+      'unknown',
+    ]);
   });
 });

@@ -660,7 +660,7 @@ describe('SAD-359 extraction diagnostics logging', () => {
   function diagnosticLines(
     spy: { mock: { calls: unknown[][] } },
   ): Array<Record<string, unknown>> {
-    const tag = '[PPHunt] extraction diagnostics ';
+    const tag = '[PPHunt][Amazon][Diagnostics] ';
     return spy.mock.calls
       .map((call) => call[0])
       .filter(

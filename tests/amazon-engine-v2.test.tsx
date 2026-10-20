@@ -331,7 +331,7 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
       const info = vi.spyOn(console, 'info').mockImplementation(() => {});
       logDriftReport(telemetry, 'search-results');
 
-      const tag = '[PPHunt] drift report ';
+      const tag = '[PPHunt][Amazon][Diagnostics] drift ';
       const lines = info.mock.calls
         .map((call) => call[0])
         .filter(
@@ -404,7 +404,7 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
       );
       expect(categoryProducts).toHaveLength(1);
 
-      const tag = '[PPHunt] drift report ';
+      const tag = '[PPHunt][Amazon][Diagnostics] drift ';
       const reports = info.mock.calls
         .map((call) => call[0])
         .filter(

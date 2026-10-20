@@ -154,9 +154,10 @@ export const defaultAmazonDriftTelemetry = new AmazonDriftTelemetry();
  * reset it), so the line describes the content-script session so far for the
  * telemetry instance used by that parse. It is emitted in the parsing context
  * (the Amazon page console for listing collection), as one-line JSON that can
- * be filtered with `[PPHunt] drift report` and survives copy-paste. No product
- * values or page data are included. A logging failure is swallowed: telemetry
- * must never affect extraction.
+ * be filtered with `[PPHunt][Amazon][Diagnostics]` and survives copy-paste.
+ * The `drift` tag separates it from the per-field report, which is logged by
+ * the service worker. No product values or page data are included. A logging
+ * failure is swallowed: telemetry must never affect extraction.
  */
 export function logDriftReport(
   telemetry: AmazonDriftTelemetry,
@@ -166,7 +167,7 @@ export function logDriftReport(
     const report = telemetry.getReport();
     if (report.cardsInspected === 0) return;
     console.info(
-      `[PPHunt] drift report ${JSON.stringify({ stage, ...report })}`,
+      `[PPHunt][Amazon][Diagnostics] drift ${JSON.stringify({ stage, ...report })}`,
     );
   } catch {
     // Diagnostics only.

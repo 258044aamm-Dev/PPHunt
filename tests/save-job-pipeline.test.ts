@@ -384,7 +384,7 @@ describe('SAD-352 save-job diagnostics logging', () => {
       });
 
       expect(result.state).toBe('completed');
-      const tag = '[PPHunt] extraction diagnostics ';
+      const tag = '[PPHunt][Amazon][Diagnostics] ';
       const lines = info.mock.calls
         .map((call) => call[0])
         .filter(
