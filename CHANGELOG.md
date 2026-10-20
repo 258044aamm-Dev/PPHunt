@@ -5,6 +5,51 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Warranty Description field (SAD-349)
+
+Scrape, display and export a product's warranty, which Amazon publishes in the
+*Product information* block of the detail page and which PPHunt did not model
+before (flagged as a gap in `docs/plans/SAD-330-right-click-pdp-preview-audit.md`).
+
+### Added
+- **A `Warranty Description` data field**, toggleable in Settings → Data Fields
+  and on by default. Like `Description` and `Features` it can only come from the
+  product page, so hiding it by default would make a right-click save look like
+  data loss.
+- **Two stored values.** `warrantyDescription` holds a compact token
+  (`1-year`, `2-year`, `90-day`, `24-month`, `lifetime`); `warrantyDescriptionRaw`
+  holds the verbatim cell (`"2 year manufacturer"`). Amazon's real copy is
+  `<duration> <qualifier>`, so without the second field the qualifier would be
+  unrecoverable at export time.
+- **PDP extraction across all four Amazon spec-row shapes** —
+  `#productDetails_techSpec_section_1`/`_2`, `#productDetails_detailBullets_sections1`,
+  `#productDetails_db_sections`, `#detailBulletsWrapper_feature_div`,
+  `#productOverview_feature_div` and `#prodDetails` — reusing the container list
+  `detail.bsr` already ships.
+- **A `Warranty` table column** showing the token with the verbatim text as its
+  tooltip, and `No` when a listing states none.
+- **`Warranty Description` and `Warranty Details` export columns** in CSV,
+  clipboard TSV and XLSX.
+
+### Changed
+- Settings → Data Fields now has 24 toggles. The preview table gains one column
+  and the default export gains two.
+
+### Notes
+- **No database migration and no settings-version bump.** Descriptive fields are
+  unindexed, and `parseStoredSettings` already merges stored values over the
+  defaults, so an existing install gains the field on its next read.
+- **Amazon's warranty boilerplate is rejected structurally, not by blocklist.**
+  `Product Warranty: For warranty information about this product, please click
+  here` contains no duration, so it yields no token and the extractor keeps
+  scanning — a real warranty row later in the same table still wins.
+- **Labels are matched in English only**, as decided on the ticket. The other 22
+  supported marketplaces will return no warranty rather than a wrong one; the
+  label pattern is a single exported regex if localized labels are added later.
+- **Selectors are validated against documented DOM shapes and fixtures only.**
+  Live Amazon fetches are bot-blocked from CI, so a manual pass on a real product
+  page is required before merge.
+
 ## [Unreleased] — One-click product saving (SAD-141)
 
 Save a single Amazon product into History without leaving the page.

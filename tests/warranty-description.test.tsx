@@ -287,7 +287,10 @@ describe('G5: addProducts backfills warranty onto an existing row', () => {
  * ------------------------------------------------------------------------- */
 
 import { getSettings, updateSettings } from '@/engines/amazon/db/settings';
-import { CURRENT_SETTINGS_VERSION } from '@/engines/amazon/constants/defaults';
+import {
+  CURRENT_SETTINGS_VERSION,
+  DEFAULT_ENABLED_FIELDS,
+} from '@/engines/amazon/constants/defaults';
 import { Header } from '@/entrypoints/sidepanel/components/Header';
 import { SettingsOverlay } from '@/entrypoints/sidepanel/components/SettingsOverlay';
 import { useUIStore } from '@/entrypoints/sidepanel/store/uiStore';
@@ -366,6 +369,15 @@ describe('Settings > DATA FIELDS', () => {
 
     const box = screen.getByLabelText('Warranty Description') as HTMLInputElement;
     expect(box.checked).toBe(true);
+
+    // Pins the "24 data-field toggles" figure quoted in README.md and
+    // ARCHITECTURE.md: the grid holds exactly one label per enabledFields key,
+    // so a new field that forgets its toggle shows up here.
+    const grid = box.closest('label')?.parentElement;
+    expect(grid?.querySelectorAll('label > input[type="checkbox"]').length).toBe(
+      Object.keys(DEFAULT_ENABLED_FIELDS).length,
+    );
+    expect(Object.keys(DEFAULT_ENABLED_FIELDS)).toHaveLength(24);
 
     fireEvent.click(box);
 

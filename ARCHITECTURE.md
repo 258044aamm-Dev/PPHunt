@@ -198,7 +198,7 @@ A snapshot is one observation of a product — `source: 'listing' | 'detail'`,
 the price/availability at that moment, and the job that produced it — so a
 re-save or a delayed enrichment can never rewrite history. Product fields include optional
 metadata such as list price, discounts, delivery and page URL. Session status
-includes `interrupted`. Settings use 23 boolean field toggles, target bounds
+includes `interrupted`. Settings use 24 boolean field toggles, target bounds
 1–1000, in-panel toast notifications, and `exportImages: auto / always / never`.
 The legacy export-format value `xlsx` normalizes to `excel`.
 

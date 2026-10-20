@@ -24,7 +24,7 @@ What makes PPHunt different:
 - **Preview table** — Virtualized table with sorting, column resizing, row selection, and global search filter
 - **Export** — CSV (with UTF-8 BOM), Excel (.xlsx with auto-sized columns and optional embedded product images; auto mode has image-fetch budgets, while always mode bypasses those auto limits), or copy to clipboard (TSV)
 - **Export scope** — All products, selected rows, or filtered results
-- **Settings** — Default mode, target count, scroll behavior, 23 data-field toggles, export defaults, duplicate detection
+- **Settings** — Default mode, target count, scroll behavior, 24 data-field toggles, export defaults, duplicate detection
 - **Session persistence** — Products survive side panel close/reopen, tab reload, and browser restart
 - **History** — Past collection sessions with timestamps, product counts, and status
 - **Error handling** — CAPTCHA/sign-in detection with guided recovery, toast notifications
