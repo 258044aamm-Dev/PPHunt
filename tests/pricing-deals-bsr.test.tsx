@@ -7,6 +7,7 @@ import { parseSearchResults } from '@/lib/scraper/search-results';
 import { parseCategoryPage } from '@/lib/scraper/category-page';
 import { parseProductDetail } from '@/lib/scraper/product-detail';
 import { buildCSVContent } from '@/lib/export/csv';
+import { buildClipboardTSV } from '@/engines/amazon/export/clipboard';
 import { buildExcelWorkbookBuffer } from '@/lib/export/excel';
 import { DEFAULT_VISIBLE_COLUMNS } from '@/lib/export/types';
 import type { Product } from '@/types/product';
@@ -307,6 +308,27 @@ describe('Product pricing, deal badges, list price separation, BSR, and market i
       ).toBe('FREE delivery Tomorrow');
     });
 
+    // SAD-348: the no-discount product's optional fields render blank (no dash, no testid),
+    // while its populated core Price still renders.
+    for (const prefix of [
+      'product-list-price-',
+      'product-discount-',
+      'product-deal-',
+      'product-bsr-',
+      'product-monthly-sales-',
+      'product-coupon-',
+      'product-badge-',
+      'product-delivery-',
+    ]) {
+      expect(screen.queryByTestId(`${prefix}B0PRV00002`)).toBeNull();
+    }
+    expect(screen.getByTestId('product-price-B0PRV00002').textContent).toBe(
+      '$24.50'
+    );
+    expect(
+      screen.getByTestId('product-price-B0PRV00002').closest('tr')?.textContent
+    ).not.toContain('—');
+
     unmount();
 
     // Verify CSV export contains all new headers and values while leaving missing values empty
@@ -319,6 +341,12 @@ describe('Product pricing, deal badges, list price separation, BSR, and market i
       '31.99,99.99,68% off,Limited-time deal,USD,4.8,4120,#5 in Electronics,10K+ bought in past month,Save 15% with coupon,Amazon\'s Choice,FREE delivery Tomorrow'
     );
     expect(lines[2]).toContain('24.5,,,,USD,4.3,190,,,,,');
+
+    // SAD-348: clipboard TSV likewise leaves missing optional fields empty
+    const tsv = buildClipboardTSV(sampleProducts, DEFAULT_VISIBLE_COLUMNS);
+    const tsvLines = tsv.split('\n');
+    expect(tsvLines[2]).toContain('24.5\t\t\t\tUSD\t4.3\t190\t\t\t\t\t');
+    expect(tsv).not.toContain('—');
 
     // Verify XLSX export preserves numeric Price and List Price and all promotional/BSR strings
     const xlsxBytes = await buildExcelWorkbookBuffer(

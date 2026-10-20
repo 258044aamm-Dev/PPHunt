@@ -566,5 +566,25 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
     await waitFor(() => {
       expect(screen.getByTestId('table-sort-preset-select')).toBeTruthy();
     });
+
+    // SAD-348: Temu products seeded without coupon/badge/deal/list price/delivery
+    // render those cells blank (no testid, no dash), while Discount still renders.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('product-discount-601099000001').textContent
+      ).toBe('-15%');
+    });
+    for (const prefix of [
+      'product-list-price-',
+      'product-deal-',
+      'product-coupon-',
+      'product-badge-',
+      'product-delivery-',
+    ]) {
+      expect(screen.queryByTestId(`${prefix}601099000001`)).toBeNull();
+    }
+    expect(
+      screen.getByTestId('product-price-601099000001').closest('tr')?.textContent
+    ).not.toContain('—');
   });
 });

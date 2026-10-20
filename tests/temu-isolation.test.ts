@@ -388,4 +388,53 @@ describe('Engine Isolation: PPHuntDB (Amazon) vs PPHuntTemuDB (Temu) (SAD-223)',
     expect(tsv).toContain("'=CMD|");
     expect(tsv).toContain("'+MaliciousBrand");
   });
+
+  it('exports missing optional fields as blank in Temu CSV and clipboard (SAD-348)', () => {
+    const products = [
+      {
+        goodsId: '601099769178068',
+        asin: '601099769178068',
+        title: 'Plain Product',
+        price: 9.99,
+        listPrice: null,
+        discountPercentage: null,
+        dealBadge: null,
+        currency: 'USD',
+        rating: 4.1,
+        reviewCount: 12,
+        bestSellersRank: null,
+        pastMonthSales: null,
+        coupon: null,
+        badge: null,
+        delivery: null,
+        brand: null,
+        seller: null,
+        availability: null,
+        imageUrl: null,
+        url: 'https://www.temu.com/goods.html?goods_id=601099769178068',
+        isSponsored: false,
+        isPrime: false,
+        description: null,
+        features: [],
+        collectedAt: '2026-10-17T12:00:00.000Z',
+        source: 'search' as const,
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+      },
+    ];
+    const cols = [
+      'Price',
+      'List Price',
+      'Discount',
+      'Deal',
+      'Coupon',
+      'Badge',
+      'Delivery',
+    ];
+    const csvLines = buildTemuCSVContent(products, cols).split('\n');
+    expect(csvLines[1]).toBe('9.99,,,,,,');
+    const tsvLines = buildTemuClipboardTSV(products, cols).split('\n');
+    expect(tsvLines[1]).toBe('9.99\t\t\t\t\t\t');
+    expect(csvLines.join('\n')).not.toContain('—');
+    expect(tsvLines.join('\n')).not.toContain('—');
+  });
 });
