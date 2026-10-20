@@ -42,6 +42,10 @@ export const AmazonProductSchema = z.object({
   seller: z.string().nullable().optional().default(null),
   description: z.string().nullable().optional().default(null),
   features: z.array(z.string()).optional().default([]),
+  // SAD-349: optional with no default, matching listPrice/coupon/delivery, so an
+  // unscraped row simply lacks the key instead of carrying an explicit null.
+  warrantyDescription: z.string().nullable().optional(),
+  warrantyDescriptionRaw: z.string().nullable().optional(),
   source: ProductSourceSchema,
   listingCategory: AmazonListingCategorySchema.optional(),
   sectionLabel: z.string().nullable().optional(),

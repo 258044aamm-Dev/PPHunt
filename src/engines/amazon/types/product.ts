@@ -30,6 +30,18 @@ export interface ScrapedAmazonProduct {
   seller?: string | null;
   description?: string | null;
   features?: string[];
+  /**
+   * SAD-349: warranty period normalized to a compact token (`1-year`,
+   * `90-day`, `lifetime`), read from the PDP's structured detail tables.
+   * Omitted when the page states no duration, so snapshot shapes stay clean.
+   */
+  warrantyDescription?: string | null;
+  /**
+   * SAD-349: the verbatim warranty cell the token was derived from
+   * (e.g. `2 year manufacturer`). Kept so the normalized form is never the
+   * only surviving copy of what the page said.
+   */
+  warrantyDescriptionRaw?: string | null;
   source: ProductSource;
   listingCategory?: AmazonListingCategory;
   sectionLabel?: string | null;
