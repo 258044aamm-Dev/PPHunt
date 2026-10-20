@@ -329,6 +329,90 @@ export function normalizeWarrantyDescription(
 }
 
 /**
+ * SAD-351: a URL that plainly names an image file.
+ *
+ * Used only to *rank* `srcset` candidates against each other (and against
+ * `currentSrc`), never to reject one. A hard rule would have caught the
+ * deal-page bug, but it would also start dropping URLs that work today on page
+ * types this fix must not touch (PDP hero images, offscreen enrichment,
+ * one-click saves), so the guard stays a preference.
+ */
+const IMAGE_FILE_URL_RE = /\.(?:avif|gif|jpe?g|png|webp)(?:[?#]|$)/i;
+
+/**
+ * SAD-351: a comma separates `srcset` candidates only when the next token
+ * starts a URL.
+ *
+ * Amazon embeds commas *inside* the file name of its size token on the
+ * `/deals` `ProductCard` grid (`…_AC_SF226,226_QL85_.jpg`), so the usual
+ * `split(',')` shortcut truncates the file name and yields a URL the media CDN
+ * answers with HTTP 400 (`…_AC_SF452`). Splitting on "comma followed by a URL"
+ * keeps those names intact and is a no-op for the comma-free srcsets used by
+ * search and best-seller cards.
+ */
+const SRCSET_SEPARATOR_RE = /,\s*(?=(?:https?:)?\/\/)/i;
+
+/** `1x`, `1.5x`, `226w` — the optional candidate descriptor. */
+const SRCSET_DESCRIPTOR_RE = /^(\d+(?:\.\d+)?)(w|x)$/i;
+
+interface ImageCandidate {
+  url: string;
+  /** Higher wins within the same `renderable` class. `452w` → 452, `2x` → 2000. */
+  score: number;
+  /** The URL names an image file (`IMAGE_FILE_URL_RE`). */
+  renderable: boolean;
+}
+
+/**
+ * Parses one `srcset` attribute into candidates, keeping the commas that
+ * belong to a file name (SAD-351). Fragments that do not start with a URL are
+ * dropped, exactly as the previous `split(',')` implementation dropped them.
+ */
+function parseSrcsetCandidates(
+  raw: string | null | undefined,
+): ImageCandidate[] {
+  if (!raw) return [];
+  const candidates: ImageCandidate[] = [];
+  for (const part of raw.split(SRCSET_SEPARATOR_RE)) {
+    const [url, descriptor] = part.trim().split(/\s+/);
+    if (!url || !/^(?:https?:)?\/\//i.test(url)) continue;
+    const match = descriptor ? SRCSET_DESCRIPTOR_RE.exec(descriptor) : null;
+    const score = match
+      ? Number(match[1]) * (match[2]!.toLowerCase() === 'x' ? 1000 : 1)
+      : 1;
+    candidates.push({ url, score, renderable: IMAGE_FILE_URL_RE.test(url) });
+  }
+  return candidates;
+}
+
+/**
+ * Picks the candidate the browser would have shown: the highest descriptor,
+ * with "names a real image file" breaking every tie (SAD-351). Equal
+ * candidates keep the later one, which preserves the previous
+ * "last candidate wins" selection. When no candidate is renderable the best
+ * one is still returned, so permissive inputs keep their previous result.
+ */
+function pickBestImageCandidate(
+  candidates: readonly ImageCandidate[],
+): string | null {
+  let best: ImageCandidate | null = null;
+  for (const candidate of candidates) {
+    if (!best) {
+      best = candidate;
+      continue;
+    }
+    if (candidate.renderable !== best.renderable) {
+      if (candidate.renderable) best = candidate;
+      continue;
+    }
+    if (candidate.score >= best.score) {
+      best = candidate;
+    }
+  }
+  return best?.url ?? null;
+}
+
+/**
  * Picks the highest-resolution image URL from an `<img>` element (`data-old-hires`, `data-a-hires`,
  * `data-a-dynamic-image`, `srcset`, `<picture><source srcset>`, `src`, `data-src`, or `data-lazy-src`).
  */
@@ -390,15 +474,30 @@ export function extractBestImageUrl(
       srcset = sourceEl?.getAttribute('srcset')?.trim();
     }
   }
-  if (srcset) {
-    const urls = srcset
-      .split(',')
-      .map((part) => part.trim().split(/\s+/)[0])
-      .filter((u): u is string => Boolean(u && /^https?:\/\//i.test(u)));
-    const last = urls[urls.length - 1];
-    if (last) {
-      return upgradeAmazonImageUrl(last) || null;
-    }
+
+  // SAD-351: `currentSrc` is the URL the browser actually fetched, so it cannot
+  // contain a `srcset` split artefact. It is empty while an image is unladen
+  // (and always empty in jsdom), and it ranks below every parsed candidate so
+  // the existing `2x` selection on search / best-seller / PDP pages is kept.
+  const currentSrcValue =
+    typeof (img as Partial<HTMLImageElement>).currentSrc === 'string'
+      ? ((img as Partial<HTMLImageElement>).currentSrc as string).trim()
+      : '';
+
+  const bestImageUrl = pickBestImageCandidate([
+    ...parseSrcsetCandidates(srcset),
+    ...(/^https?:\/\//i.test(currentSrcValue)
+      ? [
+          {
+            url: currentSrcValue,
+            score: 0,
+            renderable: IMAGE_FILE_URL_RE.test(currentSrcValue),
+          },
+        ]
+      : []),
+  ]);
+  if (bestImageUrl) {
+    return upgradeAmazonImageUrl(bestImageUrl) || null;
   }
 
   const src =
