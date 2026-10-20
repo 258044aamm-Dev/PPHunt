@@ -254,7 +254,7 @@ const listPriceColumn = columnHelper.accessor('listPrice', {
   cell: (info) => {
     const listPrice = info.getValue();
     const currency = info.row.original.currency;
-    if (listPrice == null) return <span className="text-ink-subtle">—</span>;
+    if (listPrice == null) return null;
     return (
       <span
         className="font-mono text-xs text-ink-muted line-through tabular-nums"
@@ -275,7 +275,7 @@ const discountPercentageColumn = columnHelper.accessor('discountPercentage', {
   header: 'Discount',
   cell: (info) => {
     const discount = info.getValue();
-    if (!discount) return <span className="text-ink-subtle">—</span>;
+    if (!discount) return null;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-mono text-xs font-medium bg-clay/15 text-clay whitespace-nowrap"
@@ -296,7 +296,7 @@ const dealBadgeColumn = columnHelper.accessor('dealBadge', {
   header: 'Deal',
   cell: (info) => {
     const deal = info.getValue();
-    if (!deal) return <span className="text-ink-subtle">—</span>;
+    if (!deal) return null;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-crimson/15 text-crimson line-clamp-1"
@@ -377,7 +377,7 @@ const bestSellersRankColumn = columnHelper.accessor('bestSellersRank', {
   header: 'Best Sellers Rank',
   cell: (info) => {
     const bsr = info.getValue();
-    if (!bsr) return <span className="text-ink-subtle">—</span>;
+    if (!bsr) return null;
     return (
       <span
         className="font-sans text-xs text-ink line-clamp-1"
@@ -399,7 +399,7 @@ const pastMonthSalesColumn = columnHelper.accessor('pastMonthSales', {
   header: 'Monthly Sales',
   cell: (info) => {
     const sales = info.getValue();
-    if (!sales) return <span className="text-ink-subtle">—</span>;
+    if (!sales) return null;
     return (
       <span
         className="font-sans text-xs text-moss font-medium line-clamp-1"
@@ -421,7 +421,7 @@ const couponColumn = columnHelper.accessor('coupon', {
   header: 'Coupon',
   cell: (info) => {
     const coupon = info.getValue();
-    if (!coupon) return <span className="text-ink-subtle">—</span>;
+    if (!coupon) return null;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-moss/15 text-moss line-clamp-1"
@@ -443,7 +443,7 @@ const badgeColumn = columnHelper.accessor('badge', {
   header: 'Badge',
   cell: (info) => {
     const badge = info.getValue();
-    if (!badge) return <span className="text-ink-subtle">—</span>;
+    if (!badge) return null;
     return (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-golden/15 text-golden line-clamp-1"
@@ -465,7 +465,7 @@ const deliveryColumn = columnHelper.accessor('delivery', {
   header: 'Delivery',
   cell: (info) => {
     const delivery = info.getValue();
-    if (!delivery) return <span className="text-ink-subtle">—</span>;
+    if (!delivery) return null;
     return (
       <span
         className="font-sans text-xs text-ink-muted line-clamp-1"
@@ -487,7 +487,7 @@ const brandColumn = columnHelper.accessor('brand', {
   header: 'Brand',
   cell: (info) => {
     const brand = info.getValue();
-    if (!brand) return <span className="text-ink-subtle">—</span>;
+    if (!brand) return null;
     return (
       <span
         className="font-sans text-xs text-ink line-clamp-1"
@@ -508,7 +508,7 @@ const sellerColumn = columnHelper.accessor('seller', {
   header: 'Seller',
   cell: (info) => {
     const seller = info.getValue();
-    if (!seller) return <span className="text-ink-subtle">—</span>;
+    if (!seller) return null;
     return (
       <span
         className="font-sans text-xs text-ink-muted line-clamp-1"
@@ -529,7 +529,7 @@ const availabilityColumn = columnHelper.accessor('availability', {
   header: 'Availability',
   cell: (info) => {
     const availability = info.getValue();
-    if (!availability) return <span className="text-ink-subtle">—</span>;
+    if (!availability) return null;
     return (
       <span
         className="font-sans text-xs text-ink-muted line-clamp-1"
@@ -612,7 +612,7 @@ const descriptionColumn = columnHelper.accessor('description', {
   header: 'Description',
   cell: (info) => {
     const desc = info.getValue();
-    if (!desc) return <span className="text-ink-subtle">—</span>;
+    if (!desc) return null;
     return (
       <span
         className="font-serif text-xs text-ink-muted line-clamp-2"
@@ -633,7 +633,7 @@ const featuresColumn = columnHelper.accessor('features', {
   cell: (info) => {
     const features = info.getValue();
     if (!features || features.length === 0) {
-      return <span className="text-ink-subtle">—</span>;
+      return null;
     }
     const joined = features.join(' • ');
     return (
