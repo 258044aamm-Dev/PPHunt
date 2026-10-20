@@ -249,6 +249,23 @@ const WEIGHT_UNIT_TO_GRAMS: Record<string, number> = {
   pounds: 453.59237,
 };
 
+function parseWeightNumberForSort(rawNum: string): number {
+  let cleaned = rawNum.trim();
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    cleaned =
+      cleaned.lastIndexOf('.') > cleaned.lastIndexOf(',')
+        ? cleaned.replace(/,/g, '')
+        : cleaned.replace(/\./g, '').replace(',', '.');
+  } else if (cleaned.includes(',')) {
+    cleaned = /^[1-9]\d{0,2}(?:,\d{3})+$/.test(cleaned)
+      ? cleaned.replace(/,/g, '')
+      : /,\d{1,3}$/.test(cleaned)
+        ? cleaned.replace(',', '.')
+        : cleaned.replace(/,/g, '');
+  }
+  return Number.parseFloat(cleaned);
+}
+
 /**
  * SAD-357: parses a weight string (`0.19 kg`, `9.12 oz`, `1.73 lbs`, `1 lb 4 oz`)
  * into grams so ascending/descending sort orders accurately by physical mass.
@@ -262,8 +279,8 @@ export function parseSortableWeightGrams(value: unknown): number | null {
       value,
     );
   if (compound) {
-    const lbs = Number.parseFloat(compound[1]!.replace(/,/g, ''));
-    const oz = Number.parseFloat(compound[3]!.replace(/,/g, ''));
+    const lbs = parseWeightNumberForSort(compound[1]!);
+    const oz = parseWeightNumberForSort(compound[3]!);
     if (Number.isFinite(lbs) && Number.isFinite(oz)) {
       return lbs * WEIGHT_UNIT_TO_GRAMS.lb! + oz * WEIGHT_UNIT_TO_GRAMS.oz!;
     }
@@ -274,7 +291,7 @@ export function parseSortableWeightGrams(value: unknown): number | null {
       value,
     );
   if (!single) return null;
-  const num = Number.parseFloat(single[1]!.replace(/,/g, ''));
+  const num = parseWeightNumberForSort(single[1]!);
   const factor = WEIGHT_UNIT_TO_GRAMS[single[2]!.toLowerCase()];
   if (!Number.isFinite(num) || !factor) return null;
   return num * factor;
