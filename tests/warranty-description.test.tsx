@@ -133,7 +133,34 @@ describe('parseAmazonProductDetail — warranty shapes', () => {
  * ------------------------------------------------------------------------- */
 
 import React, { StrictMode } from 'react';
-import { beforeEach } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+
+/**
+ * jsdom reports every scroll container as 0px tall, so the real
+ * `useVirtualizer` returns no virtual items and the table body renders empty.
+ * This is the same mock the pricing-deals-bsr suite installs; without it a
+ * rendered-row assertion cannot pass in this environment at all.
+ */
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 52,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        index,
+        key: index,
+        start: index * 52,
+        end: (index + 1) * 52,
+        size: 52,
+      })),
+  }),
+}));
 import { db } from '@/engines/amazon/db/database';
 import { addProducts } from '@/engines/amazon/db/products';
 import { mergeScrapedProductFields } from '@/engines/amazon/scraper/dedup';
@@ -259,14 +286,6 @@ describe('G5: addProducts backfills warranty onto an existing row', () => {
  * Bumping settingsVersion here would be the unnecessary change.
  * ------------------------------------------------------------------------- */
 
-import { afterEach, vi } from 'vitest';
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
 import { getSettings, updateSettings } from '@/engines/amazon/db/settings';
 import { CURRENT_SETTINGS_VERSION } from '@/engines/amazon/constants/defaults';
 import { Header } from '@/entrypoints/sidepanel/components/Header';
@@ -354,5 +373,101 @@ describe('Settings > DATA FIELDS', () => {
       const row = await db.settings.get('default');
       expect(row?.enabledFields.warrantyDescription).toBe(false);
     });
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * The Preview table. All four surfaces — side panel, full-width preview modal,
+ * dedicated preview tab and History preview — render through this one
+ * component, so this is the whole UI acceptance surface.
+ * ------------------------------------------------------------------------- */
+
+import { ProductTable } from '@/entrypoints/sidepanel/table/ProductTable';
+import { getColumnsForSettings } from '@/entrypoints/sidepanel/table/columns';
+
+function row(asin: string, over: Partial<Product> = {}): Product {
+  return {
+    asin,
+    url: `https://www.amazon.com/dp/${asin}`,
+    title: `Widget ${asin}`,
+    price: 10,
+    currency: 'USD',
+    rating: 4.5,
+    reviewCount: 10,
+    imageUrl: 'https://m.media-amazon.com/images/I/x.jpg',
+    isSponsored: false,
+    isPrime: false,
+    brand: 'Acme',
+    availability: 'In Stock',
+    seller: 'Amazon.com',
+    description: null,
+    features: [],
+    source: 'detail',
+    collectedAt: '2026-10-20T00:00:00.000Z',
+    sessionKey: 'sess-warranty-ui',
+    ...over,
+  };
+}
+
+describe('Preview table', () => {
+  // NOT db.delete(): destroying the database tears down Dexie's observable that
+  // useLiveQuery subscribes to, so the table would render its empty state no
+  // matter what was inserted. Matches the pricing-deals-bsr suite.
+  beforeEach(async () => {
+    await db.open();
+    await db.products.clear();
+    await db.settings.clear();
+  });
+
+  afterEach(() => cleanup());
+
+  it('shows the token, carries the verbatim text as its tooltip, and says No when absent', async () => {
+    await db.products.bulkAdd([
+      row('B0WARANTY1', {
+        warrantyDescription: '2-year',
+        warrantyDescriptionRaw: '2 year manufacturer',
+      }),
+      row('B0WARANTY2'),
+    ]);
+
+    render(<ProductTable fullHeight sessionKey="sess-warranty-ui" />);
+
+    await waitFor(() => {
+      const withWarranty = screen.getByTestId('product-warranty-B0WARANTY1');
+      expect(withWarranty.textContent).toBe('2-year');
+      // The raw cell must still be reachable — that is the whole point of
+      // storing warrantyDescriptionRaw alongside the token.
+      expect(withWarranty.getAttribute('title')).toBe('2 year manufacturer');
+    });
+
+    // Absent renders "No" and, like the other promotional cells, has no testid.
+    expect(screen.queryByTestId('product-warranty-B0WARANTY2')).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Warranty' })).toBeTruthy();
+  });
+
+  it('is a column the settings toggle can remove on its own', () => {
+    const on = getColumnsForSettings({
+      title: true, asin: true, url: true, price: true, listPrice: true,
+      discountPercentage: true, dealBadge: true, currency: true, rating: true,
+      reviewCount: true, bestSellersRank: true, pastMonthSales: true,
+      coupon: true, badge: true, delivery: true, imageUrl: true,
+      isSponsored: true, isPrime: true, brand: true, availability: true,
+      seller: true, description: true, features: true, warrantyDescription: true,
+    });
+    const off = getColumnsForSettings({
+      title: true, asin: true, url: true, price: true, listPrice: true,
+      discountPercentage: true, dealBadge: true, currency: true, rating: true,
+      reviewCount: true, bestSellersRank: true, pastMonthSales: true,
+      coupon: true, badge: true, delivery: true, imageUrl: true,
+      isSponsored: true, isPrime: true, brand: true, availability: true,
+      seller: true, description: true, features: true, warrantyDescription: false,
+    });
+    const ids = (cols: unknown[]) =>
+      (cols as Array<{ id?: string; accessorKey?: string }>).map(
+        (c) => c.id ?? c.accessorKey,
+      );
+    expect(ids(on)).toContain('warrantyDescription');
+    expect(ids(off)).not.toContain('warrantyDescription');
+    expect(ids(off).length).toBe(ids(on).length - 1);
   });
 });

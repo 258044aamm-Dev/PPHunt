@@ -651,6 +651,38 @@ const featuresColumn = columnHelper.accessor('features', {
   enableSorting: false,
 });
 
+/**
+ * SAD-349: the normalized warranty token, with the verbatim cell it was derived
+ * from as the tooltip — the same pattern every other truncated cell here uses,
+ * so the full text is readable without widening the column for it.
+ *
+ * Renders `No` when absent, matching Discount/Deal/Coupon/Badge rather than the
+ * blank used by purely descriptive fields: "this product states no warranty" is
+ * a finding, not missing data.
+ */
+const warrantyDescriptionColumn = columnHelper.accessor('warrantyDescription', {
+  header: 'Warranty',
+  cell: (info) => {
+    const warranty = info.getValue();
+    if (!warranty) return <span className="text-ink-subtle">No</span>;
+    const raw = info.row.original.warrantyDescriptionRaw;
+    return (
+      <span
+        className="font-mono text-xs text-ink whitespace-nowrap"
+        title={raw ?? warranty}
+        data-testid={`product-warranty-${info.row.original.asin}`}
+      >
+        {warranty}
+      </span>
+    );
+  },
+  size: 110,
+  minSize: 90,
+  maxSize: 160,
+  enableSorting: true,
+  sortFn: sortFn_alphanumeric,
+});
+
 const sourceColumn = columnHelper.accessor('source', {
   header: 'Source',
   cell: (info) => {
@@ -707,6 +739,8 @@ export const amazonColumns: Array<
   // (settings-not-loaded) column set and the defaults can never diverge.
   descriptionColumn,
   featuresColumn,
+  // SAD-349: PDP-only like the two above, and default-on for the same reason.
+  warrantyDescriptionColumn,
   sourceColumn,
 ];
 
@@ -750,6 +784,9 @@ export function getAmazonColumnsForSettings(
   if (enabledFields.url !== false) active.push(urlColumn);
   if (enabledFields.description) active.push(descriptionColumn);
   if (enabledFields.features) active.push(featuresColumn);
+  // SAD-349: truthy check, matching description/features (SAD-333), so a settings
+  // row predating the key does not silently drop the column.
+  if (enabledFields.warrantyDescription) active.push(warrantyDescriptionColumn);
   active.push(sourceColumn);
 
   return active;

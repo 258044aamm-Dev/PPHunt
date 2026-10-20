@@ -592,12 +592,43 @@ checking the table cell, the CSV header/value, and a right-click save.
 
 ## 10. Risks
 
+### 10.1 Environment gotchas actually hit while implementing (so the next run skips them)
+
+These cost real cycles and are not obvious from the code:
+
+1. **Rendering `ProductTable` in a test requires mocking `@tanstack/react-virtual`.**
+   jsdom reports every scroll container as 0px tall, so the real `useVirtualizer`
+   returns no virtual items and the table body renders only its empty state
+   (`No products match your filter.`) — even though the row is verifiably in
+   IndexedDB and the column header renders fine. `tests/pricing-deals-bsr.test.tsx`
+   installs this mock at the top of the file; any new rendered-row assertion needs
+   the same. Symptom to recognise: header present, `colspan` correct, body empty.
+
+2. **Do not use `db.delete()` in the `beforeEach` of a suite that renders a
+   live-query component.** Deleting the database tears down the Dexie observable
+   that `useLiveQuery` subscribes to, and the component then renders its empty
+   state regardless of what is inserted. Suites that call the db directly are
+   unaffected, which is why the pattern looks safe. Use
+   `await db.open(); await db.products.clear(); await db.settings.clear();` —
+   the pattern in `pricing-deals-bsr.test.tsx`.
+
+3. **Test ASINs must match `/^[A-Z0-9]{10}$/`** — `AmazonProductSchema` enforces it,
+   so a fixture like `B0WARRANTY1` (11 chars) fails validation and the resulting
+   error looks unrelated to the field under test.
+
+4. **Ad-hoc verification must run through vitest, not a standalone script.**
+   `vite-node -e` does not exist, and a file under `scripts/` cannot resolve the
+   `@/` alias, which is declared only in `vitest.config.ts`. Drop a temporary
+   `tests/*.test.ts(x)`, run it, then delete it.
+
+### 10.2 Product risks
+
 | Risk | Mitigation |
 |---|---|
 | **Selector drift / never verified live** (§3.5) | Four fixture shapes from §3.2; containers reuse the repo's already-shipped `detail.bsr` list; manual pass in §8 is a hard gate, not optional |
 | **Boilerplate pollution** (§3.3) | Structural: no duration token ⇒ no value. Pinned by a dedicated test |
 | **Silent drop at G2/G3/G6** — the SAD-330 failure mode | Three explicit pins in §7.1, one per gate |
-| **Contract-test churn** | Two files, extended exactly as SAD-333 extended them; `LEGACY_COLUMN_IDS` untouched |
+| **Contract-test churn** | Two files, but **four** pins total (§2.4, corrected during implementation — the original count of two missed the exact `enabledFields` literal and the SAD-333 "drops exactly those two" test). `LEGACY_COLUMN_IDS` untouched |
 | **Compact form loses the qualifier** | Review gate B; a one-line move to export-time normalization if you want the raw text kept |
 | **Non-English marketplaces return blank** | Review gate A; isolated to one exported regex |
 | **Temu expectations** (SAD-348 did both engines) | Decision recorded in §1/§1.1 with the evidence; §9 makes "Temu byte-identical" an acceptance criterion |

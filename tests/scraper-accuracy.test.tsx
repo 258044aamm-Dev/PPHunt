@@ -507,18 +507,20 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       getExportColumnsFromSettings(defaults.enabledFields)
     ).toEqual(DEFAULT_VISIBLE_COLUMNS);
 
-    // Table columns: select + rowNumber (#) + 21 core/pricing/deal/BSR/market fields
-    // + description + features + source = 26 columns by default (SAD-333).
-    expect(columns).toHaveLength(26);
-    expect(getColumnsForSettings(defaults.enabledFields)).toHaveLength(26);
+    // Table columns: select + rowNumber (#) + 21 core/pricing/deal/BSR/market
+    // fields + description + features + warrantyDescription + source
+    // = 27 columns by default (SAD-333 + SAD-349).
+    expect(columns).toHaveLength(27);
+    expect(getColumnsForSettings(defaults.enabledFields)).toHaveLength(27);
 
-    // Both stay ordinary per-field toggles: turning them off removes them again.
+    // All three stay ordinary per-field toggles: turning them off removes them.
     const allEnabled = {
       ...defaults.enabledFields,
       description: true,
       features: true,
+      warrantyDescription: true,
     };
-    expect(getColumnsForSettings(allEnabled)).toHaveLength(26);
+    expect(getColumnsForSettings(allEnabled)).toHaveLength(27);
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Description');
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Features');
 
@@ -527,9 +529,18 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       description: false,
       features: false,
     };
-    expect(getColumnsForSettings(bothOff)).toHaveLength(24);
+    expect(getColumnsForSettings(bothOff)).toHaveLength(25);
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Description');
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Features');
+
+    // SAD-349: the warranty toggle is independent of the other two, and turning
+    // all three off returns exactly the pre-SAD-333 column set.
+    expect(
+      getColumnsForSettings({ ...defaults.enabledFields, warrantyDescription: false }),
+    ).toHaveLength(26);
+    expect(
+      getColumnsForSettings({ ...bothOff, warrantyDescription: false }),
+    ).toHaveLength(24);
   });
 
   it('owns the default column list in exactly one module, and every listed export column exists (SAD-346)', async () => {
