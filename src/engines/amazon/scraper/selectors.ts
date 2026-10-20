@@ -26,6 +26,26 @@ export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.0.0';
 export const AMAZON_WARRANTY_LABEL_PATTERN =
   /^(?:product\s+|manufacturer(?:['\u2019]s)?\s+)?warranty(?:\s+(?:description|details?|policy|type|period|coverage|information|service|support|(?:&|and)\s+support))*\s*:?$/i;
 
+/**
+ * SAD-357: Priority-1 spec-row labels stating the item's own physical mass.
+ * Anchored on the full normalized label so non-mass spec rows (`Maximum Weight
+ * Recommendation`, `Supported Weight`, `Paper Weight`, `Line Weight`) cannot match.
+ */
+export const AMAZON_WEIGHT_ITEM_LABEL_PATTERN =
+  /^(?:item\s+weight|product\s+weight|weight|item\s+display\s+weight|net\s+weight|unit\s+weight|artikelgewicht|poids(?:\s+de\s+l['\u2019]article)?|peso(?:\s+del\s+producto|\s+articolo)?)\s*:?$/i;
+
+/**
+ * SAD-357: Priority-2 fallback labels used only when no item-weight row exists.
+ */
+export const AMAZON_WEIGHT_PACKAGE_LABEL_PATTERN =
+  /^(?:(?:item\s+)?package\s+weight|shipping\s+weight|boxed-product\s+weight|paketgewicht|poids\s+du\s+colis)\s*:?$/i;
+
+/**
+ * SAD-357: Priority-3 combined `L x W x H unit; Weight unit` rows.
+ */
+export const AMAZON_DIMENSIONS_LABEL_PATTERN =
+  /^(?:product\s+dimensions|item\s+dimensions(?:\s+lxwxh)?|package\s+dimensions|parcel\s+dimensions|dimensions)\s*:?$/i;
+
 export const AMAZON_SELECTORS = {
   search: {
     productCard:
@@ -144,10 +164,20 @@ export const AMAZON_SELECTORS = {
       '#productDetails_techSpec_section_2',
       '#productDetails_detailBullets_sections1',
       '#productDetails_db_sections',
+      '#productDetails_expanderTables_depthLeftSections',
+      '#productDetails_expanderTables_depthRightSections',
+      '#productDetails_expanderSectionTables',
+      '[data-feature-name="productDetailsHomeAndGarden_Updated"]',
       '#detailBulletsWrapper_feature_div',
       '#productOverview_feature_div',
       '#prodDetails',
     ],
+    twister: {
+      inlineRows: 'div[id^="inline-twister-row-"]',
+      inlineDimTitle: '[id^="inline-twister-dim-title-"]',
+      classicRows: '#twister [id^="variation_"]',
+      mediaSwatches: '#tmmSwatches .swatchElement',
+    },
     description: [
       '#productDescription p',
       '#productDescription span',
@@ -333,6 +363,13 @@ export const AMAZON_SELECTORS = {
       'img[src*="images-amazon.com/images/"]',
       'img[src*="ssl-images-amazon.com/images/"]',
     ],
+    variationSwatches: {
+      containers: '.s-color-swatch-container',
+      swatchLinks:
+        '[data-csa-c-content-id="color-swatch-link"] a[aria-label], .s-color-swatch-container a[aria-label]:not(.s-color-swatch-link)',
+      moreLinks:
+        '[data-csa-c-content-id="color-swatch-more-link"], .s-color-swatch-container a.s-color-swatch-link',
+    },
   },
 } as const;
 

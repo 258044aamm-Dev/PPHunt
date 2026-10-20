@@ -146,6 +146,8 @@ export interface EnabledFieldsConfig {
   seller: boolean;
   description: boolean;
   features: boolean;
+  variations: boolean;
+  weight: boolean;
   /** SAD-349: gates both the warranty token and its verbatim source column. */
   warrantyDescription: boolean;
 }

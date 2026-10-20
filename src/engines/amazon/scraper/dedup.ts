@@ -27,6 +27,9 @@ const MERGEABLE_NULLABLE_FIELDS = [
   'availability',
   'seller',
   'description',
+  // SAD-357: variations (upgraded when source === 'detail') and PDP weight.
+  'variations',
+  'weight',
   // SAD-349: a collection run started ON a product page parses the detail
   // parser, so warranty can reach the dedup merge today, not hypothetically.
   'warrantyDescription',
@@ -71,6 +74,18 @@ export function mergeScrapedProductFields(
       (target as unknown as Record<string, unknown>)[key] = sourceVal;
       changed = true;
     }
+  }
+
+  // SAD-357: an authoritative PDP (`detail`) variations breakdown upgrades
+  // partial search/category card swatch hints even when `preferSource` is false.
+  if (
+    source.source === 'detail' &&
+    target.source !== 'detail' &&
+    source.variations &&
+    target.variations !== source.variations
+  ) {
+    target.variations = source.variations;
+    changed = true;
   }
 
   if (

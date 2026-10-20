@@ -79,6 +79,8 @@ export const EXPORT_COLUMNS: Record<
   URL: 'url',
   Description: 'description',
   Features: (p) => (p.features ?? []).join('; '),
+  Variations: 'variations',
+  Weight: 'weight',
   /**
    * SAD-349: the `|| 'No'` lives in the accessor, not in the writers, so CSV,
    * clipboard TSV and XLSX all render an absent warranty identically without
@@ -144,6 +146,8 @@ const FIELD_KEY_TO_HEADER: Record<string, string> = {
   url: 'URL',
   description: 'Description',
   features: 'Features',
+  variations: 'Variations',
+  weight: 'Weight',
   // SAD-349: property-key alias so a caller may pass either form, like every
   // other field here. The raw-text column is header-only by design — it has no
   // independent settings toggle and no table column of its own.
@@ -190,6 +194,9 @@ export const DEFAULT_VISIBLE_COLUMNS = [
   'URL',
   'Description',
   'Features',
+  // SAD-357: variations summary and physical weight (blank when absent).
+  'Variations',
+  'Weight',
   // SAD-349: both columns ship together, gated by the one toggle.
   'Warranty Description',
   'Warranty Details',
@@ -234,6 +241,8 @@ export function getExportColumnsFromSettings(
   columns.push('URL');
   if (enabledFields.description) columns.push('Description');
   if (enabledFields.features) columns.push('Features');
+  if (enabledFields.variations) columns.push('Variations');
+  if (enabledFields.weight) columns.push('Weight');
   // SAD-349: one toggle pushes both columns — the same precedent as `listPrice`
   // pushing 'List Price', 'Discount' and 'Deal' above. Truthy check rather than
   // `!== false`, matching description/features, so a settings row predating the

@@ -17,16 +17,22 @@ import {
   extractBestImageUrl,
   extractCardPastMonthSales,
   extractCardPricingAndDiscounts,
+  formatVariationDimensionsSummary,
   normalizeDiscountBadge,
   normalizeWarrantyDescription,
+  normalizeWeightValue,
   normalizeWhitespace,
   parseRating,
   parseReviewCount,
   validateAndNormalizeScrapedProduct,
+  type VariationDimensionSummaryInput,
 } from './field-parsers';
 import {
+  AMAZON_DIMENSIONS_LABEL_PATTERN,
   AMAZON_SELECTORS,
   AMAZON_WARRANTY_LABEL_PATTERN,
+  AMAZON_WEIGHT_ITEM_LABEL_PATTERN,
+  AMAZON_WEIGHT_PACKAGE_LABEL_PATTERN,
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
@@ -289,7 +295,9 @@ function* iterDetailSpecRows(
   container: Element,
 ): Generator<{ label: string; value: string }> {
   for (const row of safeQuerySelectorAll(container, 'tr, li')) {
-    const header = row.querySelector('th, .a-text-bold');
+    const header = row.querySelector(
+      'th, .a-text-bold, td:first-child strong, td:first-child b',
+    );
     if (!header) continue;
 
     const label = normalizeWhitespace(header.textContent).replace(/:+$/, '').trim();
@@ -358,6 +366,343 @@ function extractDetailWarranty(
       'no warranty row in the detail tables',
     );
   }
+  return undefined;
+}
+
+/**
+ * SAD-357: extracts product weight from structured PDP detail containers
+ * using a 4-tier specificity waterfall:
+ *   1. Direct item mass rows (`Item Weight`, `Product Weight`, `Weight`, ...)
+ *   2. Packaged/shipping mass rows when no item-weight row exists
+ *   3. Combined `Product Dimensions: L x W x H; Weight` rows
+ *   4. A+ manufacturer spec tables (`#aplus`), direct mass labels only
+ */
+function extractDetailWeight(doc: Document): string | undefined {
+  let packageWeightFallback: string | undefined;
+  let dimensionsWeightFallback: string | undefined;
+
+  for (const selector of AMAZON_SELECTORS.detail.warrantyContainers) {
+    const container = safeQuerySelector(doc, selector);
+    if (!container || isInsideExcludedDetailSubtree(container)) continue;
+
+    for (const { label, value } of iterDetailSpecRows(container)) {
+      if (AMAZON_WEIGHT_ITEM_LABEL_PATTERN.test(label)) {
+        const normalized = normalizeWeightValue(value);
+        if (normalized) return normalized;
+        continue;
+      }
+
+      if (
+        packageWeightFallback === undefined &&
+        AMAZON_WEIGHT_PACKAGE_LABEL_PATTERN.test(label)
+      ) {
+        const normalized = normalizeWeightValue(value);
+        if (normalized) packageWeightFallback = normalized;
+        continue;
+      }
+
+      if (
+        dimensionsWeightFallback === undefined &&
+        AMAZON_DIMENSIONS_LABEL_PATTERN.test(label) &&
+        value.includes(';')
+      ) {
+        const weightSegment = value.split(';').slice(1).join(';');
+        const normalized = normalizeWeightValue(weightSegment);
+        if (normalized) dimensionsWeightFallback = normalized;
+      }
+    }
+  }
+
+  if (packageWeightFallback !== undefined) return packageWeightFallback;
+  if (dimensionsWeightFallback !== undefined) return dimensionsWeightFallback;
+
+  const aplusContainer = safeQuerySelector(doc, '#aplus');
+  if (aplusContainer && !isInsideExcludedDetailSubtree(aplusContainer)) {
+    for (const { label, value } of iterDetailSpecRows(aplusContainer)) {
+      if (!AMAZON_WEIGHT_ITEM_LABEL_PATTERN.test(label)) continue;
+      const normalized = normalizeWeightValue(value);
+      if (normalized) return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function extractBalancedJsonAfterKey(
+  source: string,
+  key: string,
+): unknown | undefined {
+  const keyPattern = new RegExp(
+    `["']${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']\\s*:\\s*`,
+  );
+  const match = keyPattern.exec(source);
+  if (!match) return undefined;
+
+  const startIdx = match.index + match[0].length;
+  const openChar = source[startIdx];
+  if (openChar !== '[' && openChar !== '{') return undefined;
+  const closeChar = openChar === '[' ? ']' : '}';
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIdx; i < source.length; i += 1) {
+    const ch = source[i]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === openChar) {
+      depth += 1;
+    } else if (ch === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(startIdx, i + 1)) as unknown;
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function humanizeDimensionKey(rawKey: string): string {
+  const cleaned = rawKey
+    .replace(/^inline-twister-row-|^variation_/, '')
+    .replace(/_name$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+function extractTwisterScriptVariations(doc: Document): string | null {
+  for (const script of safeQuerySelectorAll<HTMLScriptElement>(doc, 'script')) {
+    const text = script.textContent;
+    if (!text || !text.includes('twister-js-init-dpx-data')) continue;
+    if (isInsideExcludedDetailSubtree(script)) continue;
+
+    const rawDims = extractBalancedJsonAfterKey(text, 'dimensions');
+    const rawLabels = extractBalancedJsonAfterKey(
+      text,
+      'variationDisplayLabels',
+    );
+    const rawValues = extractBalancedJsonAfterKey(text, 'variationValues');
+    const rawDisplayData = extractBalancedJsonAfterKey(
+      text,
+      'dimensionValuesDisplayData',
+    );
+    const totalMatch = /["']num_total_variations["']\s*:\s*(\d+)/.exec(text);
+    const explicitTotal = totalMatch
+      ? Number.parseInt(totalMatch[1]!, 10)
+      : null;
+
+    const dimKeys = Array.isArray(rawDims)
+      ? rawDims.filter((k): k is string => typeof k === 'string')
+      : [];
+    const labelsMap =
+      rawLabels && typeof rawLabels === 'object' && !Array.isArray(rawLabels)
+        ? (rawLabels as Record<string, unknown>)
+        : {};
+    const valuesMap =
+      rawValues && typeof rawValues === 'object' && !Array.isArray(rawValues)
+        ? (rawValues as Record<string, unknown>)
+        : {};
+    const displayMatrix =
+      rawDisplayData &&
+      typeof rawDisplayData === 'object' &&
+      !Array.isArray(rawDisplayData)
+        ? (rawDisplayData as Record<string, unknown>)
+        : null;
+
+    const matrixEntries = displayMatrix ? Object.values(displayMatrix) : [];
+    const inferredTotal =
+      explicitTotal ??
+      (matrixEntries.length > 0 ? matrixEntries.length : null);
+
+    const effectiveKeys =
+      dimKeys.length > 0 ? dimKeys : Object.keys(valuesMap);
+    const dimensions: VariationDimensionSummaryInput[] = [];
+
+    effectiveKeys.forEach((key, dimIdx) => {
+      const displayLabel =
+        typeof labelsMap[key] === 'string' && labelsMap[key].trim()
+          ? labelsMap[key]
+          : humanizeDimensionKey(key);
+      if (!displayLabel) return;
+
+      const directArr = Array.isArray(valuesMap[key])
+        ? (valuesMap[key] as unknown[]).filter(
+            (v): v is string => typeof v === 'string',
+          )
+        : [];
+
+      let optionValues = directArr;
+      if (optionValues.length === 0 && matrixEntries.length > 0) {
+        const collected: string[] = [];
+        for (const tuple of matrixEntries) {
+          if (Array.isArray(tuple) && typeof tuple[dimIdx] === 'string') {
+            collected.push(tuple[dimIdx]);
+          }
+        }
+        optionValues = collected;
+      }
+
+      if (optionValues.length > 0) {
+        dimensions.push({ label: displayLabel, values: optionValues });
+      }
+    });
+
+    const formatted = formatVariationDimensionsSummary(
+      dimensions,
+      inferredTotal,
+    );
+    if (formatted) return formatted;
+    // If `twister-js-init-dpx-data` explicitly declared a singleton (`<= 1`), stop cleanly.
+    if (inferredTotal !== null && inferredTotal <= 1) return null;
+  }
+  return null;
+}
+
+function extractTwisterOptionLabel(optionEl: Element): string {
+  const aria = normalizeWhitespace(optionEl.getAttribute('aria-label'));
+  if (aria && !/^select\b/i.test(aria)) {
+    return aria.replace(/^click to select\s+/i, '').trim();
+  }
+
+  const titleAttr = normalizeWhitespace(optionEl.getAttribute('title'));
+  if (titleAttr) {
+    const cleaned = titleAttr.replace(/^click to select\s+/i, '').trim();
+    if (cleaned) return cleaned;
+  }
+
+  const imgAlt = normalizeWhitespace(
+    optionEl.querySelector('img[alt]')?.getAttribute('alt'),
+  );
+  if (imgAlt) return imgAlt;
+
+  const textTarget = optionEl.querySelector(
+    '.swatch-title-text-display, .twisterTextDiv p, .twisterTextDiv',
+  );
+  if (textTarget) {
+    return normalizeWhitespace(textTarget.textContent);
+  }
+
+  if (optionEl.tagName === 'OPTION') {
+    const valAttr = optionEl.getAttribute('value');
+    if (valAttr === '-1' || valAttr === '') return '';
+    return normalizeWhitespace(optionEl.textContent);
+  }
+
+  const buttonText = optionEl.querySelector('.a-button-text');
+  const sourceNode = buttonText ?? optionEl;
+  const clone = sourceNode.cloneNode(true) as Element;
+  for (const noise of safeQuerySelectorAll(
+    clone,
+    '.twisterSwatchPrice, .a-price, .a-color-price, script, style',
+  )) {
+    noise.remove();
+  }
+  return normalizeWhitespace(clone.textContent);
+}
+
+/**
+ * SAD-357: extracts product variations using a 3-tier waterfall:
+ *   Tier 1: Embedded `twister-js-init-dpx-data` JSON payload (exact counts + all dimensions)
+ *   Tier 2: Inline twister (`#inline-twister-row-*`) and classic `#twister` DOM rows
+ *   Tier 3: Media/Book format swatches (`#tmmSwatches .swatchElement`)
+ */
+function extractDetailVariations(doc: Document): string | undefined {
+  const scriptSummary = extractTwisterScriptVariations(doc);
+  if (scriptSummary) return scriptSummary;
+
+  const domRows = [
+    ...safeQuerySelectorAll(doc, AMAZON_SELECTORS.detail.twister.inlineRows),
+    ...safeQuerySelectorAll(doc, AMAZON_SELECTORS.detail.twister.classicRows),
+  ].filter((row) => !isInsideExcludedDetailSubtree(row));
+
+  if (domRows.length > 0) {
+    const dims: VariationDimensionSummaryInput[] = [];
+    for (const row of domRows) {
+      const labelNode = row.querySelector(
+        '.a-form-label, [id^="inline-twister-dim-title-"] .a-color-secondary',
+      );
+      let label = normalizeWhitespace(labelNode?.textContent)
+        .replace(/:+$/, '')
+        .trim();
+      if (!label) {
+        const headerFallback = normalizeWhitespace(
+          row.querySelector(AMAZON_SELECTORS.detail.twister.inlineDimTitle)
+            ?.textContent,
+        );
+        if (headerFallback) {
+          label = headerFallback.split(':')[0]!.trim();
+        }
+      }
+      if (!label && row.id) {
+        label = humanizeDimensionKey(row.id);
+      }
+      if (!label) continue;
+
+      const optionEls = safeQuerySelectorAll(
+        row,
+        'li[data-asin], li[data-defaultasin], li[id], select option',
+      );
+      const values = optionEls
+        .map(extractTwisterOptionLabel)
+        .filter((v) => Boolean(v) && !/^select\b/i.test(v));
+
+      if (values.length > 0) {
+        dims.push({ label, values });
+      }
+    }
+
+    const total =
+      dims.length > 1
+        ? dims.reduce((acc, d) => acc * d.values.length, 1)
+        : dims[0]?.values.length ?? null;
+    const domSummary = formatVariationDimensionsSummary(dims, total);
+    if (domSummary) return domSummary;
+  }
+
+  const mediaSwatches = safeQuerySelectorAll(
+    doc,
+    AMAZON_SELECTORS.detail.twister.mediaSwatches,
+  ).filter((el) => !isInsideExcludedDetailSubtree(el));
+  if (mediaSwatches.length >= 2) {
+    const formats: string[] = [];
+    for (const swatch of mediaSwatches) {
+      const slotTitle = swatch.querySelector(
+        '.slot-title span, .slot-title, a.a-button-text > span:first-child',
+      );
+      const text = normalizeWhitespace(slotTitle?.textContent)
+        .replace(/\s+format$/i, '')
+        .trim();
+      if (text && !formats.includes(text)) {
+        formats.push(text);
+      }
+    }
+    const mediaSummary = formatVariationDimensionsSummary(
+      [{ label: 'Format', values: formats }],
+      formats.length,
+    );
+    if (mediaSummary) return mediaSummary;
+  }
+
   return undefined;
 }
 
@@ -990,6 +1335,10 @@ export function parseAmazonProductDetail(
     // Warranty (SAD-349) — structured detail tables only, PDP-exclusive.
     const warranty = extractDetailWarranty(doc, diag);
 
+    // Variations & Weight (SAD-357)
+    const variations = extractDetailVariations(doc);
+    const weight = extractDetailWeight(doc);
+
     // Prime
     const isPrime = Boolean(
       safeQuerySelector(
@@ -1038,6 +1387,8 @@ export function parseAmazonProductDetail(
     }
     if (coupon !== undefined) candidate.coupon = coupon;
     if (delivery !== undefined) candidate.delivery = delivery;
+    if (variations !== undefined) candidate.variations = variations;
+    if (weight !== undefined) candidate.weight = weight;
     // SAD-349: both halves or neither — a token with no source text would make
     // the normalized form the only surviving copy of what the page said.
     if (warranty) {

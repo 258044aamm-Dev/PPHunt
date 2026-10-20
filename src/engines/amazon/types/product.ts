@@ -31,6 +31,18 @@ export interface ScrapedAmazonProduct {
   description?: string | null;
   features?: string[];
   /**
+   * SAD-357: human-readable variation count and full dimension breakdown
+   * (e.g. `10 (Size: 1 Pack, 6 Pack; Color: Black, White)`), extracted from PDP
+   * twister data/DOM or search-card swatches and upgraded on PDP enrichment.
+   * Omitted when the product is a singleton or states no variations.
+   */
+  variations?: string | null;
+  /**
+   * SAD-357: physical product weight with canonical unit
+   * (e.g. `0.19 kg`, `9.12 oz`, `1.73 lbs`), extracted from PDP spec tables.
+   */
+  weight?: string | null;
+  /**
    * SAD-349: warranty period normalized to a compact token (`1-year`,
    * `90-day`, `lifetime`), read from the PDP's structured detail tables.
    * Omitted when the page states no duration, so snapshot shapes stay clean.

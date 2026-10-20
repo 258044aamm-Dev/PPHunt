@@ -407,6 +407,8 @@ export function AmazonSettingsOverlay() {
                   seller: 'Seller',
                   description: 'Description',
                   features: 'Features',
+                  variations: 'Variations',
+                  weight: 'Weight',
                   warrantyDescription: 'Warranty Description',
                 };
                 const label =
