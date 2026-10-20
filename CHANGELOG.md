@@ -43,6 +43,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   persisted product values. Diagnostics are a side channel. The Temu engine is
   untouched; its diagnostics behavior remains independent.
 
+## [Unreleased] — Temu per-field extraction diagnostics (SAD-360)
+
+The Temu engine now reports, per product, which supported fields were extracted,
+missing, partially extracted, unparseable or never attempted — for both the PDP
+parser and the search/category card parser.
+
+### Added
+- **Temu-native diagnostics module (`src/engines/temu/scraper/extraction-diagnostics.ts`):**
+  five statuses (`EXTRACTED` / `MISSING` / `PARSE_FAILED` / `PARTIAL` /
+  `UNKNOWN`), stage-specific field sets (**22 PDP / 20 card**), validation
+  reconciliation, partitioning counts and a one-line formatter.
+- **Parser instrumentation:** `parseTemuProductDetail` and
+  `parseTemuSearchResults` accept an optional trailing collector;
+  `parseTemuCategoryPage` forwards it. The shared helpers in
+  `field-parsers.ts` record candidate-level evidence (a node existed but was
+  rejected vs. no node at all) without any new DOM query.
+- **Additive transport:** `TEMU_PRODUCTS_COLLECTED` accepts an optional
+  `productDiagnostics` array, so an older content script keeps working.
+- **Service-worker logging:** one `[PPHunt][Temu][Diagnostics]` line per product
+  the session actually holds, with the resolved `sessionId`, the stage and the
+  five counts. Suppressed per `(sessionId, goodsId, stage)` across worker
+  restarts via `browser.storage.session` (fail-open on storage errors).
+
+### Notes
+- **Diagnostics only.** No selector, extraction strategy, field mapping, data
+  model, persistence, export, UI or Amazon behaviour changed. Every fixture is
+  replayed with and without a collector and compared byte-for-byte.
+- Products rejected by the background get no diagnostic line; the existing
+  rejected-count path is unchanged. A PDP with no resolvable `goodsId` still
+  emits one line with `goodsId: null`; id-less card skips stay silent.
+
 ## [Unreleased] — Per-field extraction diagnostics (SAD-359)
 
 Amazon products are scraped by a 4-tier self-healing parser that decides

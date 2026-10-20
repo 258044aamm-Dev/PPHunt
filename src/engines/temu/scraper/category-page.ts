@@ -1,4 +1,5 @@
 import type { TemuProductSource, TemuScrapedProduct } from '../types';
+import type { ExtractionDiagnosticsReport } from './extraction-diagnostics';
 import type { TemuParseCache } from './parse-cache';
 import { parseTemuSearchResults } from './search-results';
 
@@ -14,7 +15,14 @@ export function parseTemuCategoryPage(
   document: Document,
   pageUrl?: string,
   source: TemuProductSource = 'category',
-  cache?: TemuParseCache
+  cache?: TemuParseCache,
+  diagnosticsByGoodsId?: Map<string, ExtractionDiagnosticsReport>
 ): TemuScrapedProduct[] {
-  return parseTemuSearchResults(document, pageUrl, cache, source);
+  return parseTemuSearchResults(
+    document,
+    pageUrl,
+    cache,
+    source,
+    diagnosticsByGoodsId
+  );
 }

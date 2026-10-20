@@ -6,6 +6,9 @@ export const TEMU_DB_NAME = 'PPHuntTemuDB';
 /** Isolated chrome.storage.session key for the active Temu collection session */
 export const TEMU_ACTIVE_SESSION_KEY = 'pphunt.temu.activeSession';
 
+/** SAD-360: isolated chrome.storage.session key for logged-diagnostic suppression */
+export const TEMU_DIAGNOSTICS_LEDGER_KEY = 'pphunt.temu.diagnosticsSeen';
+
 /** Isolated chrome.storage.local key for Temu theme sync */
 export const TEMU_THEME_STORAGE_KEY = 'pphunt.temu.theme';
 

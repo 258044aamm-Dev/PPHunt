@@ -10,6 +10,10 @@ import {
   normalizeGoodsId,
   resolveTemuProductUrl,
 } from '../utils/temu-url';
+import type {
+  FieldDiagnosticsCollector,
+  TemuDiagnosticField,
+} from './extraction-diagnostics';
 import { TEMU_SELECTORS } from './selectors';
 
 /**
@@ -359,56 +363,99 @@ export function discoverTemuProductCards(
  */
 export function extractTemuCardTitle(
   card: Element,
-  imageEl: HTMLImageElement | null
+  imageEl: HTMLImageElement | null,
+  diagnostics?: FieldDiagnosticsCollector
 ): string | null {
+  // SAD-360: candidate bookkeeping on the nodes this function already reads.
+  let sawTitleCandidate = false;
+
+  const hit = (
+    value: string | null,
+    selector: string
+  ): string | null => {
+    if (value) diagnostics?.extracted('title', { source: 'dom', selector });
+    return value;
+  };
+
   // 1. Direct or nested data-tooltip-title (emitted by Temu's bui-web-goods-list)
   const directTooltipTitle = cleanTemuText(
     card.getAttribute('data-tooltip-title')
   );
-  if (directTooltipTitle) return directTooltipTitle;
+  if (card.hasAttribute('data-tooltip-title')) sawTitleCandidate = true;
+  if (directTooltipTitle) {
+    return hit(directTooltipTitle, '[data-tooltip-title]');
+  }
 
   const tooltipTitleEl = card.querySelector(
     '[data-tooltip^="goodName-"][data-tooltip-title], [data-tooltip^="goodContainer-"][data-tooltip-title], [data-tooltip-title]'
   );
+  if (tooltipTitleEl) sawTitleCandidate = true;
   const nestedTooltipTitle = cleanTemuText(
     tooltipTitleEl?.getAttribute('data-tooltip-title')
   );
-  if (nestedTooltipTitle) return nestedTooltipTitle;
+  if (nestedTooltipTitle) {
+    return hit(nestedTooltipTitle, '[data-tooltip-title]');
+  }
 
   // 2. goodName element text or heading
   const goodNameEl = card.querySelector('[data-tooltip^="goodName-"]');
+  if (goodNameEl) sawTitleCandidate = true;
   const goodNameText =
     cleanTemuText(goodNameEl?.getAttribute('aria-label')) ??
     extractTemuElementText(goodNameEl);
-  if (goodNameText) return goodNameText;
+  if (goodNameText) {
+    return hit(goodNameText, '[data-tooltip^="goodName-"]');
+  }
 
   const headings = Array.from(card.querySelectorAll('h1, h2, h3, h4'));
+  if (headings.length > 0) sawTitleCandidate = true;
   for (const h of headings) {
     const t =
       cleanTemuText(h.getAttribute('aria-label')) ?? extractTemuElementText(h);
-    if (t && t.length >= 3) return t;
+    if (t && t.length >= 3) return hit(t, 'h1, h2, h3, h4');
   }
 
   // 3. Product anchor aria-label / title / text
   const links = Array.from(
     card.querySelectorAll<HTMLAnchorElement>(TEMU_SELECTORS.listing.productLink)
   );
+  if (links.length > 0) sawTitleCandidate = true;
   for (const a of links) {
     const aria = cleanTemuText(a.getAttribute('aria-label'));
     if (aria && aria.length >= 4 && !/^\$?\d/.test(aria)) {
-      return aria.replace(/^item\s+picture\s+/i, '').trim();
+      return hit(
+        aria.replace(/^item\s+picture\s+/i, '').trim(),
+        TEMU_SELECTORS.listing.productLink
+      );
     }
     const text = extractTemuElementText(a);
     if (text && text.length >= 4 && !/^[\d,.\s$€£¥%-]+$/.test(text)) {
-      return text;
+      return hit(text, TEMU_SELECTORS.listing.productLink);
     }
   }
 
   // 4. Primary image alt attribute (Temu sets alt="item picture <Title>")
   const rawAlt = cleanTemuText(imageEl?.getAttribute('alt'));
   if (rawAlt) {
+    sawTitleCandidate = true;
     const stripped = rawAlt.replace(/^item\s+picture\s+/i, '').trim();
-    if (stripped.length >= 2) return stripped;
+    if (stripped.length >= 2) return hit(stripped, 'img[alt]');
+  }
+
+  if (diagnostics) {
+    if (sawTitleCandidate) {
+      diagnostics.parseFailed(
+        'title',
+        'title candidates present but all rejected',
+        { source: 'dom' }
+      );
+    } else {
+      diagnostics.missing(
+        'title',
+        'no title tooltip, heading, link text, or image alt',
+        { source: 'dom' }
+      );
+    }
   }
 
   return null;
@@ -438,7 +485,8 @@ function isTemuReferenceOrStrikePriceNode(el: Element | null): boolean {
  */
 export function extractTemuPricing(
   container: Element,
-  fallbackCurrency = 'USD'
+  fallbackCurrency = 'USD',
+  diagnostics?: FieldDiagnosticsCollector
 ): {
   price: number | null;
   currency: string | null;
@@ -450,12 +498,19 @@ export function extractTemuPricing(
   let listPrice: number | null = null;
   let discountPercentage: string | null = null;
 
+  // SAD-360: candidate bookkeeping only — no new queries, no reordering.
+  let sawPriceNode = false;
+  let priceSelector: string | null = null;
+  let sawListPriceNode = false;
+  let sawDiscountNode = false;
+
   // 1. Current selling price via semantic `[data-type="price"]`
   const priceNodes = Array.from(
     container.querySelectorAll('[data-type="price"]')
   );
   for (const priceNode of priceNodes) {
     if (isTemuReferenceOrStrikePriceNode(priceNode)) continue;
+    sawPriceNode = true;
 
     // Prefer accessible `.srOnly` or `aria-label` inside `[data-type="price"]`
     const srOnly = priceNode.querySelector('[class*="srOnly"], .sr-only');
@@ -480,6 +535,7 @@ export function extractTemuPricing(
     if (parsed.value !== null) {
       price = parsed.value;
       currency = parsed.currency;
+      priceSelector = '[data-type="price"]';
       break;
     }
 
@@ -494,6 +550,7 @@ export function extractTemuPricing(
       if (joinedParsed.value !== null) {
         price = joinedParsed.value;
         currency = joinedParsed.currency;
+        priceSelector = '[data-type="price"]';
         break;
       }
       const splitParsed = parseTemuSplitPrice(
@@ -505,6 +562,7 @@ export function extractTemuPricing(
       if (splitParsed.value !== null) {
         price = splitParsed.value;
         currency = splitParsed.currency;
+        priceSelector = '[data-type="price"]';
         break;
       }
     }
@@ -526,10 +584,12 @@ export function extractTemuPricing(
         /(?:US\$|CA\$|AU\$|[\$€£¥])\s*\d/.test(text) &&
         !/\b(?:original|regular|was|save|coupon|unit)\b/i.test(text)
       ) {
+        sawPriceNode = true;
         const parsed = parseTemuPrice(text, fallbackCurrency);
         if (parsed.value !== null) {
           price = parsed.value;
           currency = parsed.currency;
+          priceSelector = 'heuristic leaf price node';
           break;
         }
       }
@@ -542,6 +602,7 @@ export function extractTemuPricing(
   );
   for (const el of listPriceCandidates) {
     if (el.closest('[data-type="unitPrice"], [data-type="discount"]')) continue;
+    sawListPriceNode = true;
     const raw =
       cleanTemuText(el.getAttribute('aria-label')) ??
       extractTemuElementText(el);
@@ -561,6 +622,7 @@ export function extractTemuPricing(
     container.querySelectorAll(TEMU_SELECTORS.listing.discountPercentage)
   );
   for (const el of discountCandidates) {
+    sawDiscountNode = true;
     const normalized =
       normalizeTemuDiscountPercentage(el.getAttribute('aria-label')) ??
       normalizeTemuDiscountPercentage(el.textContent);
@@ -578,11 +640,73 @@ export function extractTemuPricing(
         cleanTemuText(el.getAttribute('aria-label')) ??
         cleanTemuText(el.textContent);
       if (!text || text.length > 24) continue;
+      if (/%/.test(text)) sawDiscountNode = true;
       const normalized = normalizeTemuDiscountPercentage(text);
       if (normalized) {
         discountPercentage = normalized;
         break;
       }
+    }
+  }
+
+  // SAD-360: record what this helper already decided. Candidate presence is the
+  // only new information; no branch, order or return value changes.
+  if (diagnostics) {
+    if (price !== null) {
+      diagnostics.extracted('price', {
+        source: 'dom',
+        selector: priceSelector ?? '[data-type="price"]',
+      });
+    } else if (sawPriceNode) {
+      diagnostics.parseFailed(
+        'price',
+        'price node present but no parseable price',
+        { source: 'dom', selector: '[data-type="price"]' }
+      );
+    } else {
+      diagnostics.missing('price', 'no price node in the price scope', {
+        source: 'dom',
+      });
+    }
+
+    if (listPrice !== null) {
+      diagnostics.extracted('listPrice', {
+        source: 'dom',
+        selector: TEMU_SELECTORS.listing.listPrice,
+      });
+    } else if (sawListPriceNode) {
+      diagnostics.parseFailed(
+        'listPrice',
+        'list-price node present but no parseable value',
+        { source: 'dom', selector: TEMU_SELECTORS.listing.listPrice }
+      );
+    } else {
+      diagnostics.missing('listPrice', 'no original/list price node', {
+        source: 'dom',
+      });
+    }
+
+    if (discountPercentage !== null) {
+      diagnostics.extracted('discountPercentage', {
+        source: 'dom',
+        selector: TEMU_SELECTORS.listing.discountPercentage,
+      });
+    } else if (sawDiscountNode) {
+      diagnostics.parseFailed(
+        'discountPercentage',
+        'discount node present but not a valid percentage',
+        { source: 'dom', selector: TEMU_SELECTORS.listing.discountPercentage }
+      );
+    } else {
+      diagnostics.missing('discountPercentage', 'no discount badge', {
+        source: 'dom',
+      });
+    }
+
+    // Currency always rides along with a parsed price and may be the fallback,
+    // so it is reported as a derived value (Amazon SAD-359 precedent).
+    if (currency !== null) {
+      diagnostics.extracted('currency', { source: 'derived' });
     }
   }
 
@@ -592,16 +716,28 @@ export function extractTemuPricing(
 /**
  * Extracts sales velocity (`10K+ sold`) from `[data-type="saleTips"]` or leaf spans.
  */
-export function extractTemuSalesVolume(container: Element): string | null {
+export function extractTemuSalesVolume(
+  container: Element,
+  diagnostics?: FieldDiagnosticsCollector
+): string | null {
+  let sawSalesTip = false;
+
   const saleTipNodes = Array.from(
     container.querySelectorAll(TEMU_SELECTORS.listing.salesTips)
   );
   for (const node of saleTipNodes) {
+    sawSalesTip = true;
     const text =
       cleanTemuText(node.getAttribute('aria-label')) ??
       extractTemuElementText(node);
     const normalized = normalizeTemuSalesText(text);
-    if (normalized) return normalized;
+    if (normalized) {
+      diagnostics?.extracted('pastMonthSales', {
+        source: 'dom',
+        selector: TEMU_SELECTORS.listing.salesTips,
+      });
+      return normalized;
+    }
   }
 
   const allSpans = Array.from(container.querySelectorAll('span, div'));
@@ -611,8 +747,29 @@ export function extractTemuSalesVolume(container: Element): string | null {
       cleanTemuText(el.getAttribute('aria-label')) ??
       cleanTemuText(el.textContent);
     if (!text || text.length > 48) continue;
+    if (/[KkMm]\+?\s*sold\b/.test(text)) sawSalesTip = true;
     const normalized = normalizeTemuSalesText(text);
-    if (normalized) return normalized;
+    if (normalized) {
+      diagnostics?.extracted('pastMonthSales', {
+        source: 'dom',
+        selector: 'heuristic sales leaf',
+      });
+      return normalized;
+    }
+  }
+
+  if (diagnostics) {
+    if (sawSalesTip) {
+      diagnostics.parseFailed(
+        'pastMonthSales',
+        'sales-tip node present but no sales token',
+        { source: 'dom' }
+      );
+    } else {
+      diagnostics.missing('pastMonthSales', 'no sales-tip node', {
+        source: 'dom',
+      });
+    }
   }
 
   return null;
@@ -621,18 +778,25 @@ export function extractTemuSalesVolume(container: Element): string | null {
 /**
  * Extracts star rating (0–5) and review count from a Temu card or PDP review block.
  */
-export function extractTemuRatingAndReviews(container: Element): {
+export function extractTemuRatingAndReviews(
+  container: Element,
+  diagnostics?: FieldDiagnosticsCollector
+): {
   rating: number | null;
   reviewCount: number | null;
 } {
   let rating: number | null = null;
   let reviewCount: number | null = null;
+  // SAD-360: candidate bookkeeping only — no new queries, no reordering.
+  let sawRatingNode = false;
+  let sawReviewCandidate = false;
 
   // 1. Check semantic rating nodes (`[role="img"][aria-label*="out of five stars" i]`)
   const ratingNodes = Array.from(
     container.querySelectorAll(TEMU_SELECTORS.listing.rating)
   );
   for (const el of ratingNodes) {
+    sawRatingNode = true;
     const r =
       parseTemuRating(el.getAttribute('aria-label')) ??
       parseTemuRating(el.getAttribute('title')) ??
@@ -665,6 +829,7 @@ export function extractTemuRatingAndReviews(container: Element): {
       if (el.children.length > 2) continue;
       const aria = cleanTemuText(el.getAttribute('aria-label'));
       if (aria && /\b(?:reviews?|ratings?)\b/i.test(aria)) {
+        sawReviewCandidate = true;
         const rc = parseTemuReviewCount(aria);
         if (rc !== null) {
           reviewCount = rc;
@@ -677,12 +842,47 @@ export function extractTemuRatingAndReviews(container: Element): {
         /^\(\s*\d[\d,.]*\s*[KkMm]?\+?\s*\)$/.test(text) ||
         /\b\d[\d,.]*\s*[KkMm]?\+?\s*reviews?\b/i.test(text)
       ) {
+        sawReviewCandidate = true;
         const rc = parseTemuReviewCount(text);
         if (rc !== null) {
           reviewCount = rc;
           break;
         }
       }
+    }
+  }
+
+  if (diagnostics) {
+    if (rating !== null) {
+      diagnostics.extracted('rating', {
+        source: 'dom',
+        selector: TEMU_SELECTORS.listing.rating,
+      });
+    } else if (sawRatingNode) {
+      diagnostics.parseFailed(
+        'rating',
+        'rating element present but not a 0-5 value',
+        { source: 'dom', selector: TEMU_SELECTORS.listing.rating }
+      );
+    } else {
+      diagnostics.missing('rating', 'no rating element', { source: 'dom' });
+    }
+
+    if (reviewCount !== null) {
+      diagnostics.extracted('reviewCount', {
+        source: 'dom',
+        selector: TEMU_SELECTORS.listing.reviewRegion,
+      });
+    } else if (sawReviewCandidate) {
+      diagnostics.parseFailed(
+        'reviewCount',
+        'review-count node present but not a count',
+        { source: 'dom' }
+      );
+    } else {
+      diagnostics.missing('reviewCount', 'no review-count node', {
+        source: 'dom',
+      });
     }
   }
 
@@ -755,8 +955,23 @@ export function extractTemuBestImageUrl(
 export function findBestTemuCardImage(
   card: Element,
   goodsId?: string | null,
-  baseUrl = 'https://www.temu.com'
+  baseUrl = 'https://www.temu.com',
+  diagnostics?: FieldDiagnosticsCollector
 ): { imageUrl: string | null; imageEl: HTMLImageElement | null } {
+  // SAD-360: candidate bookkeeping only.
+  let sawImageElement = false;
+
+  const selectorFor = (img: HTMLImageElement, url: string): string => {
+    if (img.getAttribute('data-js-main-img') === 'true') {
+      return 'img[data-js-main-img="true"]';
+    }
+    if (img.classList.contains('goods-img-external')) {
+      return 'img.goods-img-external';
+    }
+    if (/kwcdn\.com/i.test(url)) return 'img[src*="kwcdn.com"]';
+    return 'img';
+  };
+
   const searchIn = (
     container: Element
   ): { imageUrl: string | null; imageEl: HTMLImageElement | null } => {
@@ -765,6 +980,7 @@ export function findBestTemuCardImage(
     );
     const allImgs = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
     const candidates = Array.from(new Set([...primaryImgs, ...allImgs]));
+    if (candidates.length > 0) sawImageElement = true;
 
     let fallbackUrl: string | null = null;
     let fallbackEl: HTMLImageElement | null = null;
@@ -777,6 +993,10 @@ export function findBestTemuCardImage(
         img.classList.contains('goods-img-external') ||
         /kwcdn\.com/i.test(url)
       ) {
+        diagnostics?.extracted('imageUrl', {
+          source: 'dom',
+          selector: selectorFor(img, url),
+        });
         return { imageUrl: url, imageEl: img };
       }
       if (!fallbackUrl) {
@@ -785,6 +1005,9 @@ export function findBestTemuCardImage(
       }
     }
 
+    if (fallbackUrl) {
+      diagnostics?.extracted('imageUrl', { source: 'dom', selector: 'img' });
+    }
     return { imageUrl: fallbackUrl, imageEl: fallbackEl };
   };
 
@@ -794,17 +1017,42 @@ export function findBestTemuCardImage(
   if (goodsId) {
     const expanded = resolveSingleGoodsCardContainer(card, goodsId);
     if (expanded !== card) {
-      return searchIn(expanded);
+      const expandedResult = searchIn(expanded);
+      if (expandedResult.imageUrl) return expandedResult;
+      recordCardImageAbsence(diagnostics, sawImageElement);
+      return expandedResult;
     }
   }
 
+  recordCardImageAbsence(diagnostics, sawImageElement);
   return direct;
+}
+
+function recordCardImageAbsence(
+  diagnostics: FieldDiagnosticsCollector | undefined,
+  sawImageElement: boolean
+): void {
+  if (!diagnostics) return;
+  if (sawImageElement) {
+    diagnostics.parseFailed(
+      'imageUrl',
+      'image element present but no valid http(s) URL',
+      { source: 'dom' }
+    );
+  } else {
+    diagnostics.missing('imageUrl', 'no image element in the card', {
+      source: 'dom',
+    });
+  }
 }
 
 /**
  * Extracts secondary promotional badges, seller/mall info, stock notices, and shipping tags from a Temu card or PDP.
  */
-export function extractTemuCardMetadata(container: Element): {
+export function extractTemuCardMetadata(
+  container: Element,
+  diagnostics?: FieldDiagnosticsCollector
+): {
   brand: string | null;
   seller: string | null;
   availability: string | null;
@@ -826,6 +1074,9 @@ export function extractTemuCardMetadata(container: Element): {
   let bestSellersRank: string | null = null;
   let isSponsored = false;
   let isPrime = false;
+  // SAD-360: label-prefix evidence only — the match rules are unchanged.
+  let sawBrandLabel = false;
+  let sawSellerLabel = false;
 
   const nodes = Array.from(container.querySelectorAll('span, div, a, p'));
   for (const el of nodes) {
@@ -909,6 +1160,11 @@ export function extractTemuCardMetadata(container: Element): {
       );
       if (soldByMatch?.[1]) {
         seller = cleanTemuText(soldByMatch[1]);
+        if (!seller) sawSellerLabel = true;
+      } else if (
+        /^(?:Sold\s+by|Provided\s+by|Shop|Store)\s*[:：]?\s*$/i.test(text)
+      ) {
+        sawSellerLabel = true;
       }
     }
 
@@ -917,7 +1173,70 @@ export function extractTemuCardMetadata(container: Element): {
       const brandMatch = text.match(/^Brand\s*[:：]\s*(.+)$/i);
       if (brandMatch?.[1]) {
         brand = cleanTemuText(brandMatch[1]);
+        if (!brand) sawBrandLabel = true;
+      } else if (/^Brand\s*[:：]?\s*$/i.test(text)) {
+        sawBrandLabel = true;
       }
+    }
+  }
+
+  // SAD-360: keyword/label outcomes, decided by the loop above.
+  if (diagnostics) {
+    const textField = (
+      field: TemuDiagnosticField,
+      value: string | null,
+      reason: string
+    ): void => {
+      if (value !== null) diagnostics.extracted(field, { source: 'dom' });
+      else diagnostics.missing(field, reason, { source: 'dom' });
+    };
+
+    if (brand !== null) {
+      diagnostics.extracted('brand', { source: 'dom' });
+    } else if (sawBrandLabel) {
+      diagnostics.parseFailed('brand', 'Brand label present but empty', {
+        source: 'dom',
+      });
+    } else {
+      diagnostics.missing('brand', 'no Brand label in the page metadata', {
+        source: 'dom',
+      });
+    }
+
+    if (seller !== null) {
+      diagnostics.extracted('seller', { source: 'dom' });
+    } else if (sawSellerLabel) {
+      diagnostics.parseFailed('seller', 'seller label present but empty', {
+        source: 'dom',
+      });
+    } else {
+      diagnostics.missing('seller', 'no seller label in the page metadata', {
+        source: 'dom',
+      });
+    }
+
+    textField('availability', availability, 'no stock phrase in the page metadata');
+    textField('dealBadge', dealBadge, 'no deal marker found');
+    textField('badge', badge, 'no recognition badge found');
+    textField('coupon', coupon, 'no coupon marker found');
+    textField('delivery', delivery, 'no shipping/delivery marker found');
+    textField('bestSellersRank', bestSellersRank, 'no best-seller rank text found');
+
+    // D6: a boolean is EXTRACTED on its marker and MISSING without it — a
+    // legitimate `false` is never a validation failure.
+    if (isSponsored) {
+      diagnostics.extracted('isSponsored', { source: 'derived' });
+    } else {
+      diagnostics.missing('isSponsored', 'no Ad/Sponsored marker found', {
+        source: 'derived',
+      });
+    }
+    if (isPrime) {
+      diagnostics.extracted('isPrime', { source: 'derived' });
+    } else {
+      diagnostics.missing('isPrime', 'no Local warehouse marker found', {
+        source: 'derived',
+      });
     }
   }
 

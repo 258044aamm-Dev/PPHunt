@@ -360,6 +360,57 @@ real pages, checks product reports against the stored row, supports the
 page lines (including drift), can exercise a listing card save (`--l3`), the
 card icon (`--l4`), a cap run (`--target`), and live switch flips (`--l8`).
 
+#### Temu engine diagnostics (SAD-360)
+
+The Temu engine mirrors the SAD-359 design with one important difference: it
+never touches transport in the parsers. `src/engines/temu/scraper/extraction-diagnostics.ts`
+is a DOM-free collector; both parsers accept an **optional trailing
+collector** (`parseTemuProductDetail(..., diagnostics?)`,
+`parseTemuSearchResults(..., diagnosticsByGoodsId?)`, forwarded by
+`parseTemuCategoryPage`). Passing one cannot change the collected product —
+every fixture is replayed with and without it and compared byte-for-byte.
+
+Field sets are stage-specific: **22 PDP fields**, and **20 card fields**
+(`description`/`features` are hardcoded on cards, so reporting them would be
+permanent `MISSING` noise). `asin`, `source` and `categoryBreadcrumb` are never
+reported: `goodsId` is the envelope identifier and `source` is the stage.
+
+Evidence precedence at the DOM → JSON-LD merge, strongest first:
+
+| Evidence | Status recorded |
+|---|---|
+| value kept from any source | `EXTRACTED` |
+| DOM candidate found, parser rejected it, JSON-LD rescued the field | `PARTIAL` |
+| DOM candidate found and rejected, nothing rescued it | `PARSE_FAILED` |
+| JSON-LD carried the property but its value was unusable | `PARSE_FAILED` (`source: json-ld`) |
+| JSON-LD block was malformed, so absence cannot be attributed | `UNKNOWN` |
+| helper searched and found nothing | `MISSING` with a field-specific reason |
+| parser never reached the field (aborted / goodsId-less PDP) | `UNKNOWN` |
+
+`validated:false` is reserved for a value the existing
+`validateAndNormalizeTemuScrapedProduct` dropped (e.g. a `listPrice` equal to
+`price`, a non-HTTP image URL). A legitimate `false` boolean or a `0` rating is
+an extracted value, never a validation failure.
+
+Transport stays additive: `TEMU_PRODUCTS_COLLECTED` gains an **optional**
+`productDiagnostics` array, so a message from an older content script still
+validates. The content script attaches reports only for the bounded products in
+the message it actually sends, and never on the `collectedSoFar` re-send branch.
+A later-stage visit (for example the PDP of a product collected from search)
+sends a diagnostics-only message with `products: []`; the background then
+verifies that the product is already persisted in the session before logging and
+never re-saves it.
+
+The background logs one line per product behind `[PPHunt][Temu][Diagnostics]`
+in the **service-worker** console, carrying `goodsId`, the resolved
+`sessionId`, the `stage`, the five counts and the per-field entries. Products
+rejected by the background get no line (the existing `rejectedCount` path is
+unchanged), and at most one line is emitted per
+`(sessionId, goodsId, stage)` — the ledger lives in memory and in
+`browser.storage.session` so suppression survives a worker restart. If that
+storage fails the logger **fails open** (it still logs): losing diagnostics is
+worse than a rare duplicate, and persistence is never affected.
+
 ### 4. Deduplication
 
 `DeduplicationEngine` maintains two Sets (ASINs and URLs):

@@ -17,7 +17,8 @@
     "postinstall": "wxt prepare",
     "check:dead-exports": "node scripts/check-dead-exports.mjs",
     "spike:enrichment": "vite-node scripts/enrichment-spike.ts",
-    "measure:diagnostics": "node scripts/sad-359-diagnostics-measurement.mjs"
+    "measure:diagnostics": "node scripts/sad-359-diagnostics-measurement.mjs",
+    "measure:diagnostics:temu": "node scripts/temu-diagnostics-measurement.mjs"
   },
   "dependencies": {
     "@tanstack/react-table": "^9.3.1",

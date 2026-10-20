@@ -3,6 +3,10 @@ import {
   isTemuMessage,
 } from '@/engines/temu/schemas/validate-message';
 import { detectTemuChallengeOrRestriction } from '@/engines/temu/scraper/captcha-detector';
+import {
+  createFieldDiagnosticsCollector,
+  type ExtractionDiagnosticsReport,
+} from '@/engines/temu/scraper/extraction-diagnostics';
 import { parseTemuCategoryPage } from '@/engines/temu/scraper/category-page';
 import { TemuDeduplicationEngine } from '@/engines/temu/scraper/dedup';
 import {
@@ -53,6 +57,8 @@ export default defineContentScript({
     let collectedSoFar: TemuScrapedProduct[] = [];
     let seededCount = 0;
     let duplicateDetectionEnabled = true;
+    /** SAD-360: goodsIds already sent with products from this page. */
+    let initialGoodsIds = new Set<string | null>();
 
     function sendRuntimeMessage(message: unknown): void {
       try {
@@ -65,51 +71,92 @@ export default defineContentScript({
       }
     }
 
-    function parseCurrentPage(): TemuScrapedProduct[] {
+    interface ParsedPage {
+      products: TemuScrapedProduct[];
+      /** SAD-360: reports for every product parsed on this pass. */
+      diagnostics: ExtractionDiagnosticsReport[];
+      /** A1: a PDP whose goodsId could not be resolved at all. */
+      nullIdReport?: ExtractionDiagnosticsReport;
+      pageType: TemuPageType;
+    }
+
+    function parsePdpPage(url: string): {
+      product: TemuScrapedProduct | null;
+      report: ExtractionDiagnosticsReport;
+    } {
+      const collector = createFieldDiagnosticsCollector('product_detail');
+      const product = parseTemuProductDetail(document, url, collector);
+      return { product, report: collector.build() };
+    }
+
+    function parseCurrentPage(): ParsedPage {
       const url = window.location.href;
       const detectedType = detectTemuPageType(url, document);
 
       let rawProducts: TemuScrapedProduct[] = [];
+      let diagnostics: ExtractionDiagnosticsReport[] = [];
+      let nullIdReport: ExtractionDiagnosticsReport | undefined;
+
       switch (detectedType) {
-        case 'search':
+        case 'search': {
+          const byGoodsId = new Map<string, ExtractionDiagnosticsReport>();
           rawProducts = parseTemuSearchResults(
             document,
             url,
             parseCache,
-            'search'
+            'search',
+            byGoodsId
           );
-          break;
-        case 'product_detail': {
-          const single = parseTemuProductDetail(document, url);
-          if (single) rawProducts = [single];
+          diagnostics = [...byGoodsId.values()];
           break;
         }
-        case 'category':
+        case 'product_detail': {
+          const parsed = parsePdpPage(url);
+          if (parsed.product) {
+            rawProducts = [parsed.product];
+            diagnostics = [parsed.report];
+          } else if (parsed.report.goodsId === null) {
+            nullIdReport = parsed.report;
+          }
+          break;
+        }
+        case 'category': {
+          const byGoodsId = new Map<string, ExtractionDiagnosticsReport>();
           rawProducts = parseTemuCategoryPage(
             document,
             url,
             'category',
-            parseCache
+            parseCache,
+            byGoodsId
           );
+          diagnostics = [...byGoodsId.values()];
           break;
+        }
         default: {
-          const detailFallback = parseTemuProductDetail(document, url);
-          if (detailFallback) {
-            rawProducts = [detailFallback];
+          const parsed = parsePdpPage(url);
+          if (parsed.product) {
+            rawProducts = [parsed.product];
+            diagnostics = [parsed.report];
           } else {
+            if (parsed.report.goodsId === null) {
+              nullIdReport = parsed.report;
+            }
+            const byGoodsId = new Map<string, ExtractionDiagnosticsReport>();
             rawProducts = parseTemuCategoryPage(
               document,
               url,
               'category',
-              parseCache
+              parseCache,
+              byGoodsId
             );
+            diagnostics = [...byGoodsId.values()];
           }
           break;
         }
       }
 
       if (!duplicateDetectionEnabled) {
-        return rawProducts;
+        return { products: rawProducts, diagnostics, nullIdReport, pageType: detectedType };
       }
 
       const { newProducts, updatedExisting } = dedup.mergeAndFilterNew(
@@ -129,10 +176,36 @@ export default defineContentScript({
         });
       }
 
-      return newProducts;
+      return { products: newProducts, diagnostics, nullIdReport, pageType: detectedType };
     }
 
-    function sendProductsToBackground(newProducts: TemuScrapedProduct[]): void {
+    /** SAD-360: reports already sent from this page, so re-parses stay quiet. */
+    const sentDiagnosticKeys = new Set<string>();
+
+    function diagnosticsKey(report: ExtractionDiagnosticsReport): string {
+      return `${report.goodsId ?? 'no-goods-id'}|${report.stage}`;
+    }
+
+    function freshDiagnostics(
+      reports: ExtractionDiagnosticsReport[],
+      allowedGoodsIds: Set<string | null> | null
+    ): ExtractionDiagnosticsReport[] {
+      const fresh: ExtractionDiagnosticsReport[] = [];
+      for (const report of reports) {
+        if (allowedGoodsIds && !allowedGoodsIds.has(report.goodsId)) continue;
+        const key = diagnosticsKey(report);
+        if (sentDiagnosticKeys.has(key)) continue;
+        sentDiagnosticKeys.add(key);
+        fresh.push(report);
+        if (fresh.length >= 200) break;
+      }
+      return fresh;
+    }
+
+    function sendProductsToBackground(
+      newProducts: TemuScrapedProduct[],
+      pageDiagnostics: ExtractionDiagnosticsReport[] = []
+    ): void {
       if (newProducts.length === 0) return;
 
       const remainingAllowance =
@@ -149,6 +222,15 @@ export default defineContentScript({
       collectedSoFar.push(...boundedProducts);
       const totalCollected = seededCount + collectedSoFar.length;
 
+      // Only the products actually in this message carry their report (D4/A3).
+      const boundedGoodsIds = new Set<string | null>(
+        boundedProducts.map((product) => product.goodsId)
+      );
+      const productDiagnostics = freshDiagnostics(
+        pageDiagnostics,
+        boundedGoodsIds
+      );
+
       sendRuntimeMessage({
         type: 'TEMU_PRODUCTS_COLLECTED',
         payload: {
@@ -156,6 +238,7 @@ export default defineContentScript({
           pageType: detectTemuPageType(window.location.href, document),
           pageUrl: window.location.href,
           totalOnPage: countTemuProductCardsOnPage(document),
+          ...(productDiagnostics.length > 0 ? { productDiagnostics } : {}),
         },
       });
 
@@ -180,6 +263,31 @@ export default defineContentScript({
       if (targetCount > 0 && totalCollected >= targetCount) {
         stopCollection('target_reached');
       }
+    }
+
+    /**
+     * SAD-360 A3: a stage parsed on a later visit (e.g. the PDP of a product
+     * collected from search) still has value, but it must never re-save the
+     * product. The background verifies persisted membership before logging.
+     */
+    function sendLaterStageDiagnostics(
+      pageDiagnostics: ExtractionDiagnosticsReport[],
+      alreadySent: Set<string | null>
+    ): void {
+      const laterStage = freshDiagnostics(pageDiagnostics, null).filter(
+        (report) => report.goodsId === null || !alreadySent.has(report.goodsId)
+      );
+      if (laterStage.length === 0) return;
+      sendRuntimeMessage({
+        type: 'TEMU_PRODUCTS_COLLECTED',
+        payload: {
+          products: [],
+          pageType: detectTemuPageType(window.location.href, document),
+          pageUrl: window.location.href,
+          totalOnPage: countTemuProductCardsOnPage(document),
+          productDiagnostics: laterStage,
+        },
+      });
     }
 
     function startCollection(
@@ -235,8 +343,18 @@ export default defineContentScript({
       seededCount = dedup.size;
       parseCache.clear();
 
+      sentDiagnosticKeys.clear();
       const initialProducts = parseCurrentPage();
-      sendProductsToBackground(initialProducts);
+      initialGoodsIds = new Set<string | null>(
+        initialProducts.products.map((product) => product.goodsId)
+      );
+      sendProductsToBackground(
+        initialProducts.products,
+        initialProducts.diagnostics
+      );
+      if (initialProducts.nullIdReport) {
+        sendLaterStageDiagnostics([initialProducts.nullIdReport], new Set());
+      }
 
       if (targetCount > 0 && seededCount + collectedSoFar.length >= targetCount) {
         return;
@@ -256,11 +374,17 @@ export default defineContentScript({
           countProducts: () => countTemuProductCardsOnPage(document),
           onNewProducts: () => {
             const newBatch = parseCurrentPage();
-            sendProductsToBackground(newBatch);
+            sendProductsToBackground(newBatch.products, newBatch.diagnostics);
+            if (newBatch.nullIdReport) {
+              sendLaterStageDiagnostics([newBatch.nullIdReport], new Set());
+            }
           },
           onEndOfPage: () => {
             const finalBatch = parseCurrentPage();
-            sendProductsToBackground(finalBatch);
+            sendProductsToBackground(finalBatch.products, finalBatch.diagnostics);
+            if (finalBatch.nullIdReport) {
+              sendLaterStageDiagnostics([finalBatch.nullIdReport], new Set());
+            }
             if (isCollecting) {
               stopCollection('no_more_results');
             }
@@ -342,7 +466,13 @@ export default defineContentScript({
         if (!isCollecting) return;
         if (typeof document === 'undefined' || !document.body) return;
         const newBatch = parseCurrentPage();
-        sendProductsToBackground(newBatch);
+        sendProductsToBackground(newBatch.products, newBatch.diagnostics);
+        // A3: cards that were already collected this page get a diagnostics-only
+        // message; the background re-checks persisted membership before logging.
+        sendLaterStageDiagnostics(newBatch.diagnostics, initialGoodsIds);
+        if (newBatch.nullIdReport) {
+          sendLaterStageDiagnostics([newBatch.nullIdReport], new Set());
+        }
       };
 
       mutationObserver = new MutationObserver((mutations) => {
