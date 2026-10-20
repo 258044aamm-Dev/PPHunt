@@ -8,7 +8,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { TARGET_QUICK_SELECT, TARGET_MIN, TARGET_MAX } from '@/constants/defaults';
+import {
+  DEFAULT_ENABLED_FIELDS,
+  TARGET_QUICK_SELECT,
+  TARGET_MIN,
+  TARGET_MAX,
+} from '@/constants/defaults';
 import { AMAZON_MARKETPLACE_DOMAINS } from '@/engines/amazon/utils/amazon-url';
 
 const root = join(__dirname, '..');
@@ -54,6 +59,12 @@ describe('docs consistency (SAD-152 / L-7)', () => {
 
   it("README's target range matches TARGET_MIN/TARGET_MAX", () => {
     expect(README).toContain(`(${TARGET_MIN}–${TARGET_MAX})`);
+  });
+
+  it('README and ARCHITECTURE toggle counts match DEFAULT_ENABLED_FIELDS (SAD-357)', () => {
+    const count = Object.keys(DEFAULT_ENABLED_FIELDS).length;
+    expect(README).toContain(`${count} data-field toggles`);
+    expect(ARCHITECTURE).toContain(`${count} boolean field toggles`);
   });
 
   it("every design-token hex in README's table exists in global.css", () => {

@@ -77,7 +77,10 @@ URL pattern: `amazon.{tld}/dp/{ASIN}` or `amazon.{tld}/gp/product/{ASIN}`
 | Seller (fallback) | `#tabular-buybox .tabular-buybox-text a` | Class chain | Medium | Alternative seller selector for newer layouts. |
 | Breadcrumb | `#wayfinding-breadcrumbs_feature_div a` | ID + element | Medium | Each `<a>` is one level of the category path. |
 | Details table | `#productDetails_techSpec_section_1 tr` | ID + element | Medium | Each `<tr>` is a key-value pair (th/td). |
-| Details (alt) | `#detailBullets_feature_div .a-list-item` | ID + class | Medium | Alternative format for product details. |
+| Details expander (2026) | `#productDetails_expanderTables_depthLeftSections tr`, `#productDetails_expanderTables_depthRightSections tr`, `#productDetails_expanderSectionTables tr` | ID + element | High | Primary spec table layout on modern apparel/electronics PDPs (`Item Weight`, `Warranty`, etc.). |
+| Details (alt) | `#detailBullets_feature_div .a-list-item` | ID + class | Medium | Alternative format for product details (strip bidi marks `\u200e`/`\u200f`). |
+| Variations (PDP) | `script` (`twister-js-init-dpx-data`) → `div[id^="inline-twister-row-"]` → `#twister [id^="variation_"]` → `#tmmSwatches .swatchElement` | Script + ID | High | Balanced-JSON extraction first, then Twister DOM rows, then book/media format matrix; singletons (`<= 1`) rejected. |
+| Variations (card) | `.s-color-swatch-container` (`[data-csa-c-content-id="color-swatch-link"]`, `[data-csa-c-content-id="color-swatch-more-link"]`) | Class + attribute | High | Scoped strictly to swatch container so sustainability badges cannot false-match; upgraded on PDP enrichment. |
 
 ### Parsing Notes for Product Detail
 
