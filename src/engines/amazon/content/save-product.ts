@@ -1,10 +1,12 @@
 import {
   createFieldDiagnosticsCollector,
+  createSingleReportSink,
   detectAmazonPageType,
   parseAmazonCategoryCard,
   parseAmazonProductDetail,
   parseAmazonSearchCard,
   type ExtractionDiagnosticsReport,
+  type ExtractionDiagnosticsSink,
 } from '../scraper';
 import { AMAZON_SELECTORS } from '../scraper/selectors';
 import type { SaveExtractionContext, ScrapedProduct } from '../types';
@@ -35,10 +37,15 @@ const SPONSORED_HINT_SELECTOR =
 export function extractProductFromCard(
   card: Element,
   pageUrl: string,
+  options: { diagnosticsSink?: ExtractionDiagnosticsSink } = {},
 ): ScrapedProduct | null {
+  // SAD-369 step 2: `options` is forwarded to both parsers; an empty object is
+  // a no-op, so existing callers are untouched. With the `??` fallback a
+  // failed search-card parse emits no report and the category parse emits the
+  // one report — exactly one report per saved card.
   return (
-    parseAmazonSearchCard(card, pageUrl) ??
-    parseAmazonCategoryCard(card, pageUrl)
+    parseAmazonSearchCard(card, pageUrl, options) ??
+    parseAmazonCategoryCard(card, pageUrl, options)
   );
 }
 
@@ -131,11 +138,20 @@ export function resolveSaveCandidate(
   const card = resolveCapturedCard(input.capture, input.now ?? Date.now());
   if (!card) return null;
 
-  const product = extractProductFromCard(card, input.pageUrl);
+  // SAD-369 step 2 (D5): a card save carries its own per-field report —
+  // opt-in like the PDP one, so with the switch off nothing is allocated and
+  // nothing rides along.
+  const sink = getDiagnosticsEnabled() ? createSingleReportSink() : undefined;
+  const product = extractProductFromCard(
+    card,
+    input.pageUrl,
+    sink ? { diagnosticsSink: sink } : {},
+  );
   if (!product) return null;
 
   return {
     product,
     context: buildSaveContext(card, input.pageUrl, input.triggeredBy, doc),
+    ...(sink?.report ? { extractionDiagnostics: sink.report } : {}),
   };
 }

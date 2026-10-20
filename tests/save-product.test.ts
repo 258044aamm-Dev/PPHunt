@@ -17,6 +17,7 @@ import {
 } from '@/engines/amazon/schemas/messages';
 import { captureSaveTarget } from '@/engines/amazon/content/save-target';
 import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
+import { CARD_INAPPLICABLE_REASON } from '@/engines/amazon/scraper/card-diagnostics';
 import { setDiagnosticsEnabled } from '@/engines/amazon/utils/diagnostics-flag';
 
 // SAD-369: the diagnostics switch is module state; keep every test starting
@@ -137,9 +138,36 @@ describe('resolveSaveCandidate', () => {
     expect(result?.product.asin).toBe('B0BBBBBBBB');
     expect(result?.context.triggeredBy).toBe('context-menu');
     expect(result?.context.searchPosition).toBe(2);
-    // SAD-359's per-field report is a PDP-detail-parser diagnostic; card saves
-    // intentionally do not fabricate one from the card tiers.
+    // SAD-369 step 2: a card save carries its own per-card report — but only
+    // with the switch on. The production default (off) sends nothing.
     expect(result?.extractionDiagnostics).toBeUndefined();
+  });
+
+  it('SAD-369 step 2: a card right-click carries the per-card report when the switch is on', () => {
+    void setDiagnosticsEnabled(true, {});
+    const capture = captureSaveTarget({ target: byId('price-b') } as unknown as Event);
+    const result = resolveSaveCandidate({
+      capture,
+      pageUrl: 'https://www.amazon.com/s?k=widget',
+      triggeredBy: 'context-menu',
+    });
+
+    expect(result?.product.asin).toBe('B0BBBBBBBB');
+    expect(result?.extractionDiagnostics?.asin).toBe('B0BBBBBBBB');
+    expect(result?.extractionDiagnostics?.fields).toHaveLength(24);
+
+    const fields = new Map(
+      (result?.extractionDiagnostics?.fields ?? []).map((entry) => [
+        entry.field,
+        entry,
+      ]),
+    );
+    expect(fields.get('title')).toMatchObject({ status: 'EXTRACTED' });
+    expect(fields.get('price')).toMatchObject({ status: 'EXTRACTED' });
+    expect(fields.get('description')).toMatchObject({
+      status: 'MISSING',
+      reason: CARD_INAPPLICABLE_REASON,
+    });
   });
 
   it('resolves nothing when the right-click missed every card', () => {

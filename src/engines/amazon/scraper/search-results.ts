@@ -27,6 +27,12 @@ import {
   validateAndNormalizeScrapedProduct,
 } from './field-parsers';
 import {
+  applyValidationResults,
+  createFieldDiagnosticsCollector,
+  type ExtractionDiagnosticsSink,
+} from './extraction-diagnostics';
+import { recordCardDiagnostics } from './card-diagnostics';
+import {
   AmazonParseCache,
   defaultAmazonParseCache,
 } from './parse-cache';
@@ -40,6 +46,8 @@ export interface SearchResultsParseOptions {
   cache?: AmazonParseCache;
   telemetry?: AmazonDriftTelemetry;
   extractPricing?: typeof extractCardPricingAndDiscounts;
+  /** SAD-369: receives one finished report per parsed card. Absent → no diagnostics, no per-card cost. */
+  diagnosticsSink?: ExtractionDiagnosticsSink;
 }
 
 function extractInlineCardBsr(card: Element): string | undefined {
@@ -66,6 +74,11 @@ export function parseAmazonSearchCard(
   try {
     const telemetry = options.telemetry ?? defaultAmazonDriftTelemetry;
     const pricingFn = options.extractPricing ?? extractCardPricingAndDiscounts;
+    // SAD-369 step 2: opt-in per-card report. No sink → no collector, no cost,
+    // and the extraction below is byte-identical.
+    const diagnostics = options.diagnosticsSink
+      ? createFieldDiagnosticsCollector()
+      : undefined;
 
     const asinResult = extractCardAsinWithTier(card);
     if (!asinResult.value) {
@@ -163,7 +176,34 @@ export function parseAmazonSearchCard(
       candidate.sectionLabel = sectionLabel;
     }
 
-    return validateAndNormalizeScrapedProduct(candidate, pageUrl);
+    const normalized = validateAndNormalizeScrapedProduct(candidate, pageUrl);
+    // SAD-369 step 2: record the per-card report AFTER validation so a
+    // validator-dropped value honestly shows PARTIAL. No report when the
+    // product was rejected — there is nothing for it to ride along with.
+    // Recording only: the returned product is identical with or without a sink.
+    if (diagnostics && normalized) {
+      diagnostics.setAsin(asin);
+      recordCardDiagnostics(diagnostics, {
+        asin: { value: asin, tier: asinResult.tier },
+        title: titleResult,
+        brand,
+        pricing,
+        rating: ratingResult,
+        reviewCount: reviewResult,
+        image: imageResult,
+        pastMonthSales,
+        delivery,
+        availability,
+        seller,
+        isPrime,
+        bestSellersRank,
+        variations,
+        url,
+      });
+      applyValidationResults(diagnostics, candidate, normalized);
+      options.diagnosticsSink!.accept(diagnostics.build());
+    }
+    return normalized;
   } catch (err) {
     console.warn('[PPHunt] Failed to parse search card:', err);
     return null;

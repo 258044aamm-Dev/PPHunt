@@ -74,6 +74,15 @@ export interface ExtractionDiagnosticsReport {
 }
 
 /**
+ * SAD-369: receives one finished report per parsed product. A listing parse
+ * produces many products and each needs its own collector, so reports are
+ * delivered through a sink rather than one shared collector.
+ */
+export interface ExtractionDiagnosticsSink {
+  accept(report: ExtractionDiagnosticsReport): void;
+}
+
+/**
  * Fields the PDP detail parser can extract, in parser order.
  *
  * `badge` is deliberately absent: the detail stage never extracts it (it is a

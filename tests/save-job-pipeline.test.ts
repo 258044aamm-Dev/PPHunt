@@ -16,6 +16,7 @@ import {
   readOneClickCollection,
   writeOneClickCollection,
 } from '@/engines/amazon/db/one-click-state';
+import { enrichSavedProduct } from '@/engines/amazon/background/enrich-saved-product';
 import {
   handleSaveProduct,
   isOneClickCollectionKey,
@@ -381,6 +382,10 @@ describe('SAD-352 save-job diagnostics logging', () => {
       const result = await handleSaveProduct(
         {
           ...payload('job-diag-359'),
+          // SAD-369 step 2: the stage is now derived from the payload's
+          // context — a detail report only ever rides a product-detail save,
+          // which is how the content script attaches it.
+          context: context({ pageType: 'product-detail' }),
           extractionDiagnostics: report,
         },
         // SAD-369: the diagnostics are opt-in; this test asserts the ON path.
@@ -435,6 +440,140 @@ describe('SAD-352 save-job diagnostics logging', () => {
             typeof first === 'string' && first.startsWith(tag),
         );
       expect(lines).toHaveLength(0);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('SAD-369 step 2: a card save logs its card line, and a successful enrichment adds a second line with the same jobId', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const cardReport: ExtractionDiagnosticsReport = {
+      asin: 'B08N5WRWNW',
+      fields: [
+        { field: 'asin', status: 'EXTRACTED', source: 'dom', tier: 'tier2_semantic' },
+      ],
+    };
+    const enrichReport: ExtractionDiagnosticsReport = {
+      asin: 'B08N5WRWNW',
+      fields: [
+        { field: 'title', status: 'EXTRACTED', source: 'dom', selector: '#productTitle' },
+      ],
+    };
+
+    try {
+      // A card save: context.pageType 'search' (the payload() default), so the
+      // stage derives to 'card' and the enrichment step runs.
+      const result = await handleSaveProduct(
+        {
+          ...payload('job-diag-369-card'),
+          extractionDiagnostics: cardReport,
+        },
+        {
+          diagnosticsEnabled: () => true,
+          // The real enrichment function with a stubbed fetch/parse — the
+          // same wiring handler.ts uses — so both print sites are the real ones.
+          enrich: (input) =>
+            enrichSavedProduct(input, {
+              fetchOptions: {
+                fetchImpl: vi.fn(async () => ({
+                  ok: true,
+                  status: 200,
+                  url: 'https://www.amazon.com/dp/B08N5WRWNW',
+                  headers: {
+                    get: (name: string) =>
+                      name.toLowerCase() === 'content-type'
+                        ? 'text/html'
+                        : null,
+                  },
+                  text: async () => '<html><body>page</body></html>',
+                })) as unknown as typeof fetch,
+                hasHostPermission: async () => true,
+              },
+              parse: async () => ({
+                ok: true as const,
+                product: product(),
+                fieldDiagnostics: enrichReport,
+              }),
+              diagnosticsEnabled: () => true,
+            }),
+        },
+      );
+
+      expect(result.state).toBe('completed');
+
+      const tag = '[PPHunt][Amazon][Diagnostics] ';
+      const logged = info.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (first): first is string =>
+            typeof first === 'string' && first.startsWith(tag),
+        )
+        .map(
+          (line) => JSON.parse(line.slice(tag.length)) as Record<string, unknown>,
+        );
+
+      // D5: two lines, one jobId — the card report and the enrichment parse.
+      expect(logged).toHaveLength(2);
+      expect(logged[0]).toMatchObject({
+        jobId: 'job-diag-369-card',
+        stage: 'card',
+      });
+      expect(logged[0]!.fields).toEqual(cardReport.fields);
+      expect(logged[1]).toMatchObject({
+        jobId: 'job-diag-369-card',
+        stage: 'enrichment-parse',
+      });
+      expect(logged[1]!.fields).toEqual(enrichReport.fields);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('SAD-369 step 2: a card save whose enrichment fails still prints its card line', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const cardReport: ExtractionDiagnosticsReport = {
+      asin: 'B08N5WRWNW',
+      fields: [
+        { field: 'asin', status: 'EXTRACTED', source: 'dom', tier: 'tier1_json' },
+      ],
+    };
+
+    try {
+      const result = await handleSaveProduct(
+        {
+          ...payload('job-diag-369-fail'),
+          extractionDiagnostics: cardReport,
+        },
+        {
+          diagnosticsEnabled: () => true,
+          // The point of requirement 3 / A6: before SAD-369 this save logged
+          // nothing at all when the fetch failed. The card line must survive
+          // the failed enrichment.
+          enrich: async () => ({
+            status: 'failed' as const,
+            errorCode: 'ENRICH_FETCH_FAILED' as const,
+          }),
+        },
+      );
+
+      expect(result.state).toBe('completed');
+
+      const tag = '[PPHunt][Amazon][Diagnostics] ';
+      const logged = info.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (first): first is string =>
+            typeof first === 'string' && first.startsWith(tag),
+        )
+        .map(
+          (line) => JSON.parse(line.slice(tag.length)) as Record<string, unknown>,
+        );
+
+      expect(logged).toHaveLength(1);
+      expect(logged[0]).toMatchObject({
+        jobId: 'job-diag-369-fail',
+        stage: 'card',
+      });
     } finally {
       info.mockRestore();
     }

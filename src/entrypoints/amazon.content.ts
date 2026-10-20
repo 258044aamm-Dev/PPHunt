@@ -14,9 +14,11 @@ import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/con
 import { removeSaveToast, showSaveToast } from '@/engines/amazon/content/toast';
 import { syncCardActionTheme } from '@/engines/amazon/content/card-action-theme';
 import {
+  getDiagnosticsEnabled,
   refreshDiagnosticsEnabled,
   subscribeDiagnosticsEnabled,
 } from '@/engines/amazon/utils/diagnostics-flag';
+import { createSingleReportSink } from '@/engines/amazon/scraper/card-diagnostics';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -630,7 +632,16 @@ export default defineContentScript({
           // first card-icon save is never skipped by the startup read race.
           await refreshDiagnosticsEnabled();
           const pageUrl = window.location.href;
-          const product = extractProductFromCard(card, pageUrl);
+          // SAD-369 step 2 (D5): the card-icon save carries its own per-field
+          // report — opt-in, like every other diagnostics site.
+          const sink = getDiagnosticsEnabled()
+            ? createSingleReportSink()
+            : undefined;
+          const product = extractProductFromCard(
+            card,
+            pageUrl,
+            sink ? { diagnosticsSink: sink } : {},
+          );
 
           if (!product) {
             cardActionLayer?.applyJobUpdate({
@@ -648,6 +659,9 @@ export default defineContentScript({
               jobId,
               product,
               context: buildSaveContext(card, pageUrl, 'card-button'),
+              ...(sink?.report
+                ? { extractionDiagnostics: sink.report }
+                : {}),
             },
           });
         },

@@ -244,12 +244,18 @@ export async function handleSaveProduct(
     try {
       // SAD-369: the diagnostics are opt-in; an absent dep means OFF, so this
       // site fails closed for any caller that does not pass the switch.
+      // Step 2: the report is a detail-page OR a card report — the stage is
+      // derived from the required context.pageType (the content script only
+      // attaches a detail report on the product-detail branch).
       if (payload.extractionDiagnostics && deps.diagnosticsEnabled?.()) {
         console.info(
           formatExtractionDiagnosticsLog(payload.extractionDiagnostics, {
             jobId,
             asin,
-            stage: 'detail-page',
+            stage:
+              payload.context?.pageType === 'product-detail'
+                ? 'detail-page'
+                : 'card',
           }),
         );
       }

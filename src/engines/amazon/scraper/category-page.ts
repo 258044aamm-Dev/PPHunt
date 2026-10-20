@@ -25,6 +25,12 @@ import {
   validateAndNormalizeScrapedProduct,
 } from './field-parsers';
 import {
+  applyValidationResults,
+  createFieldDiagnosticsCollector,
+  type ExtractionDiagnosticsSink,
+} from './extraction-diagnostics';
+import { recordCardDiagnostics } from './card-diagnostics';
+import {
   AmazonParseCache,
   defaultAmazonParseCache,
 } from './parse-cache';
@@ -39,6 +45,8 @@ export interface CategoryPageParseOptions {
   telemetry?: AmazonDriftTelemetry;
   extractPricing?: typeof extractCardPricingAndDiscounts;
   categoryName?: string | null;
+  /** SAD-369: receives one finished report per parsed card. Absent → no diagnostics, no per-card cost. */
+  diagnosticsSink?: ExtractionDiagnosticsSink;
 }
 
 export const filterLeafCandidateCards = (cards: readonly Element[]): Element[] =>
@@ -119,6 +127,10 @@ export function parseAmazonCategoryCard(
   try {
     const telemetry = options.telemetry ?? defaultAmazonDriftTelemetry;
     const pricingFn = options.extractPricing ?? extractCardPricingAndDiscounts;
+    // SAD-369 step 2: opt-in per-card report — see `search-results.ts`.
+    const diagnostics = options.diagnosticsSink
+      ? createFieldDiagnosticsCollector()
+      : undefined;
 
     const asinResult = extractCardAsinWithTier(card);
     if (!asinResult.value) {
@@ -208,7 +220,32 @@ export function parseAmazonCategoryCard(
       candidate.variations = variations;
     }
 
-    return validateAndNormalizeScrapedProduct(candidate, pageUrl);
+    const normalized = validateAndNormalizeScrapedProduct(candidate, pageUrl);
+    // SAD-369 step 2: record the per-card report AFTER validation — see
+    // `search-results.ts`. Recording only; the product is identical.
+    if (diagnostics && normalized) {
+      diagnostics.setAsin(asin);
+      recordCardDiagnostics(diagnostics, {
+        asin: { value: asin, tier: asinResult.tier },
+        title: titleResult,
+        brand,
+        pricing,
+        rating: ratingResult,
+        reviewCount: reviewResult,
+        image: imageResult,
+        pastMonthSales,
+        delivery,
+        availability,
+        seller,
+        isPrime,
+        bestSellersRank,
+        variations,
+        url,
+      });
+      applyValidationResults(diagnostics, candidate, normalized);
+      options.diagnosticsSink!.accept(diagnostics.build());
+    }
+    return normalized;
   } catch (err) {
     console.warn('[PPHunt] Failed to parse category card:', err);
     return null;
