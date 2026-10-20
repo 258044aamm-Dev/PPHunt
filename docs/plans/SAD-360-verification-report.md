@@ -61,11 +61,36 @@ a collector:
 | R5 no behaviour change, Amazon untouched | parity replays, empty Amazon diff |
 | R6 tests + report | 92 files / 1132 tests; this document |
 
+## Live measurement (harness shipped, run pending)
+
+`scripts/temu-diagnostics-measurement.mjs` (`npm run measure:diagnostics:temu`)
+drives the built extension against real Temu pages and checks every report
+against the rows the extension actually stored in `PPHuntTemuDB`.
+
+```bash
+npm run build
+xvfb-run -a --server-args="-screen 0 1600x1000x24" \
+  npm run measure:diagnostics:temu -- --pdps 601099769178067
+npm run measure:diagnostics:temu -- \
+  --listing "https://www.temu.com/search_result.html?search_key=earbuds"
+```
+
+It starts a **manual** collection by sending the same `TEMU_COLLECT_PRODUCTS`
+message the background sends, so no product is saved by a path a user cannot
+take. It reports a verification challenge instead of defeating it. A mismatch
+between a report and the stored row exits non-zero.
+
+The harness's comparison logic (the part that judges a live run) is covered by
+15 unit tests in `tests/temu-diagnostics-measurement.test.ts`; the browser parts
+cannot run in CI.
+
 ## Known limitations
 
-1. **Not verified against live Temu pages.** All evidence is jsdom fixtures
-   modelled on the selectors in `selectors.ts`. A live measurement pass (like
-   `scripts/sad-359-diagnostics-measurement.mjs` for Amazon) has not been run.
+1. **Live verification not yet executed.** The harness above exists and is
+   tested, but it has not been run against live Temu from this environment
+   (no browser with the built extension, and Temu challenges datacenter IPs).
+   Until it is, every fixture-level claim is jsdom-only evidence modelled on
+   the selectors in `selectors.ts`.
 2. Console output and the ledger write are not atomic: a crash between them can
    lose one line.
 3. `browser.storage.session` is cleared on a full browser restart; keys are
