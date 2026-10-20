@@ -374,9 +374,11 @@ function parsePositiveWeightNumber(rawNum: string): {
         ? cleaned.replace(/,/g, '')
         : cleaned.replace(/\./g, '').replace(',', '.');
   } else if (cleaned.includes(',')) {
-    cleaned = /,\d{1,3}$/.test(cleaned)
-      ? cleaned.replace(',', '.')
-      : cleaned.replace(/,/g, '');
+    cleaned = /^[1-9]\d{0,2}(?:,\d{3})+$/.test(cleaned)
+      ? cleaned.replace(/,/g, '')
+      : /,\d{1,3}$/.test(cleaned)
+        ? cleaned.replace(',', '.')
+        : cleaned.replace(/,/g, '');
   }
   const numeric = Number.parseFloat(cleaned);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
