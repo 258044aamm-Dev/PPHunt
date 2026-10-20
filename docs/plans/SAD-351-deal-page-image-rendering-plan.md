@@ -1,6 +1,7 @@
 # SAD-351 — Plan Only: product images not rendering for deal-page rows
 
-> **Status: PLAN ONLY (step 0). Implementation follows in steps 1-4.**
+> **Status: IMPLEMENTED — steps 0-4 done, verification green, ticket In Review.**
+> Outcome is recorded in §16; the analysis below is preserved as written at planning time.
 > Issue: https://linear.app/sad-mod/issue/SAD-351/image-not-rendering-in-deal-page-extracted-data
 > *"When collecting product data from a deal page, product images are not rendering in the
 > preview. Investigate the root cause and fix the issue so that all successfully extracted
@@ -633,3 +634,49 @@ with image base `https://m.media-amazon.com/images/I/91TX4I0i8DL.` and the same
 | G1 | Keep `currentSrc` *behind* a correctly-parsed srcset (preserves 2× resolution on search/PDP) or *ahead* of it (most literal reading of B, but downgrades to the 1× variant)? | **Behind** (§6.3), unless you say otherwise |
 | G2 | Commit straight to `main` one step at a time (SAD-348/349 history), or open a branch/PR? | Straight to `main` |
 | G3 | Do you want the manual browser pass handed off as a Linear comment with the three URLs from §10? | Yes |
+
+---
+
+## 16. Implementation outcome (filled in after the work — measured, not claimed)
+
+| Step | Commit | What landed |
+|---|---|---|
+| 0 | `45f00e9` | this plan |
+| 1 | `b48d2a0` | comma-aware `srcset` + `currentSrc` ranking in `field-parsers.ts` (+108 / −9, one file) |
+| 2 | `d072ecc` | `tests/deal-page-images-sad351.test.tsx` — 16 tests |
+| 3 | `d86b751` | CHANGELOG, ARCHITECTURE, `spec/10-amazon-selectors.md` |
+| 4 | (this commit) | verification record + Linear |
+
+**Live verification (headless Chromium, `amazon.com/deals`):**
+
+| | before the fix | after the fix |
+|---|---|---|
+| Cards parsed | 30 | 25 (session-dependent) |
+| `imageUrl` present | 30/30 | 25/25 |
+| URLs that are complete image files | **0/30** | **25/25** |
+| HTTP status when requested | `…_AC_SF452` → **400** | **25/25 → 200 `image/jpeg`** |
+
+**Parity harness — the same 14 scenarios run against `45f00e9` and against the fix:**
+
+| Result | Count | Scenarios |
+|---|---|---|
+| Byte-identical before and after | **9** | comma-free 2x search srcset, `data-old-hires`, `data-a-dynamic-image`, 1x1, `deal-badge`, `data-a-hires`, `data-lazy-src`, relative URL, extension-less candidates |
+| Changed (the intended fix) | **5** | comma `img[srcset]`, comma `<picture><source>`, malformed srcset + `currentSrc`, srcset-vs-`currentSrc` ranking, `currentSrc`-only |
+
+**Verification commands (step 4):**
+
+```
+npx tsc --noEmit                                   clean
+npm run verify                                     tsc + vitest + wxt build + npm audit → exit 0
+  vitest                                           85 files / 963 tests passed  (947 baseline + 16 new)
+  wxt build                                        1.90 MB, OK
+  npm audit --omit=dev                             0 vulnerabilities
+node scripts/check-dead-exports.mjs                all src/lib exports have consumers (42 files)
+```
+
+**Regression proof:** running the new suite against the pre-fix file (`45f00e9`)
+gives **7 failed / 9 passed**; against the fix **16 passed**. The 9 that pass in
+both runs are the parity guards.
+
+**Deliberately not done** (unchanged from §12): the `dcl-product` carousel cards
+are still excluded, and Temu's own `srcset` splitter was not touched.
