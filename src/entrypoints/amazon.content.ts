@@ -13,6 +13,10 @@ import { createCollectionChoiceQueue } from '@/engines/amazon/content/collection
 import { captureSaveTarget, type CapturedSaveTarget } from '@/engines/amazon/content/save-target';
 import { removeSaveToast, showSaveToast } from '@/engines/amazon/content/toast';
 import { syncCardActionTheme } from '@/engines/amazon/content/card-action-theme';
+import {
+  refreshDiagnosticsEnabled,
+  subscribeDiagnosticsEnabled,
+} from '@/engines/amazon/utils/diagnostics-flag';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -143,6 +147,8 @@ export default defineContentScript({
     let mutationObserver: MutationObserver | null = null;
     /** SAD-331: removes the theme listener; null on product-detail pages. */
     let stopCardActionThemeSync: (() => void) | null = null;
+    /** SAD-369: removes the diagnostics-flag listener on cleanup. */
+    let stopDiagnosticsSync: (() => void) | null = null;
     let lastKnownUrl = window.location.href;
     let lastSaveCapture: CapturedSaveTarget | null = null;
     let pendingSaveJobId: string | null = null;
@@ -168,7 +174,10 @@ export default defineContentScript({
      * `contextMenus.OnClickData`), so it asks and this resolves the product that
      * was under the pointer when the menu opened.
      */
-    const handleSaveContextProduct = (options: { fromSubframe?: boolean } = {}) => {
+    const handleSaveContextProduct = async (options: { fromSubframe?: boolean } = {}) => {
+      // SAD-369: resolve the diagnostics switch before the parse, so the
+      // first save of a session is never skipped by the startup read race.
+      await refreshDiagnosticsEnabled();
       const pageUrl = window.location.href;
       const candidate = resolveSaveCandidate({
         capture: lastSaveCapture,
@@ -414,7 +423,11 @@ export default defineContentScript({
       });
     };
 
-    const handleCollectProducts = (payload: CollectProductsCommandPayload) => {
+    const handleCollectProducts = async (payload: CollectProductsCommandPayload) => {
+      // SAD-369: resolve the diagnostics switch before the first scrape batch,
+      // so the first collection of a session is never skipped by the startup
+      // read race (plan R7).
+      await refreshDiagnosticsEnabled();
       debouncedManualScrape.cancel();
       stopMutationWatcher();
       if (scrollController) {
@@ -522,7 +535,7 @@ export default defineContentScript({
       switch (validMsg.type) {
         case 'COLLECT_PRODUCTS':
           sendResponse?.({ ok: true });
-          handleCollectProducts(
+          void handleCollectProducts(
             validMsg.payload as CollectProductsCommandPayload,
           );
           break;
@@ -534,7 +547,7 @@ export default defineContentScript({
 
         case 'SAVE_CONTEXT_PRODUCT':
           sendResponse?.({ ok: true });
-          handleSaveContextProduct({
+          void handleSaveContextProduct({
             fromSubframe: validMsg.payload.fromSubframe === true,
           });
           break;
@@ -612,7 +625,10 @@ export default defineContentScript({
     // and the right-click entry covers that page.
     if (detectAmazonPageType(window.location.href, document) !== 'product-detail') {
       cardActionLayer = createCardActionLayer({
-        onSave: ({ card, asin, jobId }) => {
+        onSave: async ({ card, asin, jobId }) => {
+          // SAD-369: resolve the diagnostics switch before the parse, so the
+          // first card-icon save is never skipped by the startup read race.
+          await refreshDiagnosticsEnabled();
           const pageUrl = window.location.href;
           const product = extractProductFromCard(card, pageUrl);
 
@@ -641,6 +657,12 @@ export default defineContentScript({
       stopCardActionThemeSync = syncCardActionTheme(cardActionLayer);
       cardActionLayer.start();
     }
+
+    // SAD-369: the diagnostics switch cache — read once, then kept in sync by
+    // storage.onChanged so flipping the setting in Settings takes effect on
+    // this page without a reload. Fails closed until the read resolves.
+    void refreshDiagnosticsEnabled();
+    stopDiagnosticsSync = subscribeDiagnosticsEnabled();
 
     browser.runtime.onMessage.addListener(runtimeListener);
     window.addEventListener('pphunt:command', domBridgeListener);
@@ -672,6 +694,8 @@ export default defineContentScript({
       collectionChoiceQueue.close();
       stopCardActionThemeSync?.();
       stopCardActionThemeSync = null;
+      stopDiagnosticsSync?.();
+      stopDiagnosticsSync = null;
       cardActionLayer?.stop();
       cardActionLayer = null;
       window.removeEventListener('pphunt:command', domBridgeListener);

@@ -16,6 +16,12 @@ import {
 } from '@/lib/ui/theme';
 import { modalAriaProps } from '@/lib/utils/a11y';
 import {
+  getDiagnosticsEnabled,
+  refreshDiagnosticsEnabled,
+  setDiagnosticsEnabled,
+  subscribeDiagnosticsEnabled,
+} from '../../utils/diagnostics-flag';
+import {
   SCROLL_INTERVAL_MAX,
   SCROLL_INTERVAL_MIN,
   SCROLL_SPEED_MAX,
@@ -46,6 +52,23 @@ export function AmazonSettingsOverlay() {
   const [uiMode, setUiMode] = useState<OpeningMode | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
   const [overlayWidth, setOverlayWidth] = useState(400);
+
+  // SAD-369: the diagnostics switch lives in storage.local (so the content
+  // script can read it), not in the settings row. This state mirrors the
+  // cached accessor; the effect below keeps it in sync on mount.
+  const [diagnosticsEnabled, setDiagnosticsEnabledState] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void refreshDiagnosticsEnabled().then(() => {
+      if (mounted) setDiagnosticsEnabledState(getDiagnosticsEnabled());
+    });
+    const disposeDiagnosticsSync = subscribeDiagnosticsEnabled();
+    return () => {
+      mounted = false;
+      disposeDiagnosticsSync();
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -128,6 +151,10 @@ export function AmazonSettingsOverlay() {
     });
     if (!ok) return;
     await restoreDefaults();
+    // SAD-369: the diagnostics switch lives in storage.local, not in the
+    // settings row, so the IndexedDB reset above does not touch it.
+    await setDiagnosticsEnabled(false);
+    setDiagnosticsEnabledState(false);
   }, [restoreDefaults, askConfirm]);
 
   if (!settingsOpen) return null;
@@ -343,6 +370,23 @@ export function AmazonSettingsOverlay() {
                   className="w-full bg-surface border border-hairline rounded-sm text-ink font-mono text-xs px-3 py-2 focus:border-ink focus:outline-none transition-colors"
                 />
               </div>
+            </div>
+          </SettingsSection>
+
+          {/* SAD-369: opt-in extraction diagnostics. The switch lives in
+              storage.local so the content script can read it; off by
+              default, and every log site fails closed while it is off. */}
+          <SettingsSection title="DIAGNOSTICS">
+            <div className="space-y-3">
+              <ToggleSetting
+                label="Enable extraction diagnostics"
+                description="Log per-field extraction status for every product the Amazon engine parses. Off by default. Read the lines in the extension's Service worker console (chrome://extensions → PPHunt → Service worker)."
+                checked={diagnosticsEnabled}
+                onChange={(value) => {
+                  setDiagnosticsEnabledState(value);
+                  void setDiagnosticsEnabled(value);
+                }}
+              />
             </div>
           </SettingsSection>
 

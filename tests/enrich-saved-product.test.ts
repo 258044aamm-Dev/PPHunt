@@ -684,6 +684,8 @@ describe('SAD-359 extraction diagnostics logging', () => {
       {
         fetchOptions: okFetch(),
         parse: async () => ({ ok: true as const, product: detail(), fieldDiagnostics: REPORT }),
+        // SAD-369: the diagnostics are opt-in; this test asserts the ON path.
+        diagnosticsEnabled: () => true,
       },
     );
 
@@ -713,6 +715,8 @@ describe('SAD-359 extraction diagnostics logging', () => {
           message: 'no product',
           fieldDiagnostics: REPORT,
         }),
+        // SAD-369: the diagnostics are opt-in; this test asserts the ON path.
+        diagnosticsEnabled: () => true,
       },
     );
 
@@ -729,6 +733,24 @@ describe('SAD-359 extraction diagnostics logging', () => {
       { fetchOptions: okFetch(), parse: parseReturning(detail()) },
     );
 
+    expect(diagnosticLines(info)).toHaveLength(0);
+  });
+
+  it('SAD-369: stays silent while the diagnostics switch is off (default reader)', async () => {
+    await db.products.add(storedRow());
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    // No `diagnosticsEnabled` dep: the gate falls back to the shared cached
+    // reader, which is off in tests — the enrichment itself is unaffected.
+    const result = await enrichSavedProduct(
+      { jobId: 'job-diag-369-off', asin: ASIN, productUrl: PRODUCT_URL, sessionKey: SESSION, now: NOW },
+      {
+        fetchOptions: okFetch(),
+        parse: async () => ({ ok: true as const, product: detail(), fieldDiagnostics: REPORT }),
+      },
+    );
+
+    expect(result.status).toBe('complete');
     expect(diagnosticLines(info)).toHaveLength(0);
   });
 });

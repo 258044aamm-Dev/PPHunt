@@ -1,7 +1,7 @@
 /**
  * SAD-281 (P1.4) - the single "resolve + parse" entry point both save triggers use.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   buildSaveContext,
@@ -17,6 +17,13 @@ import {
 } from '@/engines/amazon/schemas/messages';
 import { captureSaveTarget } from '@/engines/amazon/content/save-target';
 import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
+import { setDiagnosticsEnabled } from '@/engines/amazon/utils/diagnostics-flag';
+
+// SAD-369: the diagnostics switch is module state; keep every test starting
+// from the production default (off) unless it turns the switch on itself.
+afterEach(() => {
+  void setDiagnosticsEnabled(false, {});
+});
 
 const SEARCH_PAGE = `
   <div class="s-main-slot">
@@ -149,6 +156,8 @@ describe('resolveSaveCandidate', () => {
   });
 
   it('treats a product-detail page as one product, with no card involved', () => {
+    // SAD-369: the PDP report is opt-in; this test asserts the switch-on path.
+    void setDiagnosticsEnabled(true, {});
     document.body.innerHTML = DETAIL_PAGE;
     const result = resolveSaveCandidate({
       capture: null,
@@ -180,7 +189,25 @@ describe('resolveSaveCandidate', () => {
     expect(fields.get('seller')).toMatchObject({ status: 'MISSING' });
   });
 
+  it('SAD-369: a PDP save carries no diagnostics while the switch is off', () => {
+    // The default state — no collector is allocated and no report rides along,
+    // so an off payload cannot log anything downstream (T5).
+    void setDiagnosticsEnabled(false, {});
+    document.body.innerHTML = DETAIL_PAGE;
+    const result = resolveSaveCandidate({
+      capture: null,
+      pageUrl: 'https://www.amazon.com/Delta-Widget/dp/B0DDDDDDDD',
+      triggeredBy: 'context-menu',
+    });
+
+    // The product itself is untouched by the switch (parity).
+    expect(result?.product.asin).toBe('B0DDDDDDDD');
+    expect(result?.extractionDiagnostics).toBeUndefined();
+  });
+
   it('SAD-359: reports a present-but-unparseable buybox as PARSE_FAILED', () => {
+    // SAD-369: the PDP report is opt-in; this test asserts the switch-on path.
+    void setDiagnosticsEnabled(true, {});
     document.body.innerHTML = DETAIL_PAGE.replace(
       /<span class="a-price">[\s\S]*?<\/span>\s*<\/div>/,
       '<span class="a-price">See price in cart</span></div>',
@@ -206,6 +233,8 @@ describe('resolveSaveCandidate', () => {
   });
 
   it('SAD-359: the SAVE_PRODUCT schema retains the optional PDP diagnostics', () => {
+    // SAD-369: the PDP report is opt-in; this test asserts the switch-on path.
+    void setDiagnosticsEnabled(true, {});
     document.body.innerHTML = DETAIL_PAGE;
     const result = resolveSaveCandidate({
       capture: null,

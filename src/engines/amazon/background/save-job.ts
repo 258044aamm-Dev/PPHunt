@@ -81,6 +81,12 @@ export interface SaveJobDeps {
    * existing caller and test keeps the pre-enrichment behaviour exactly.
    */
   enrich?: (input: EnrichmentStepInput) => Promise<EnrichmentStepResult | void>;
+  /**
+   * SAD-369: whether the per-field diagnostics may be logged. Absent means
+   * OFF, so a caller that forgets to pass it fails closed — and every
+   * existing test keeps the production default rather than a test-only one.
+   */
+  diagnosticsEnabled?: () => boolean;
 }
 
 /** Jobs currently writing. A repeated `SAVE_PRODUCT` with the same id is ignored. */
@@ -236,7 +242,9 @@ export async function handleSaveProduct(
     // them — one-line JSON with the same jobId, so a live-DOM parse can be
     // compared field-by-field with the enrichment parse of the same page.
     try {
-      if (payload.extractionDiagnostics) {
+      // SAD-369: the diagnostics are opt-in; an absent dep means OFF, so this
+      // site fails closed for any caller that does not pass the switch.
+      if (payload.extractionDiagnostics && deps.diagnosticsEnabled?.()) {
         console.info(
           formatExtractionDiagnosticsLog(payload.extractionDiagnostics, {
             jobId,

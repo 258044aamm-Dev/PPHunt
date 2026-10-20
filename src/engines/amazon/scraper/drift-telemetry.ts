@@ -1,4 +1,5 @@
 import type { AmazonDriftReport, AmazonExtractionTier } from '../types';
+import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
 
 export type AmazonTrackedField =
   | 'asin'
@@ -164,6 +165,9 @@ export function logDriftReport(
   stage: 'search-results' | 'category-page',
 ): void {
   try {
+    // SAD-369: the diagnostics are opt-in; the cached read fails closed, so
+    // an unresolved or absent switch prints nothing.
+    if (!getDiagnosticsEnabled()) return;
     const report = telemetry.getReport();
     if (report.cardsInspected === 0) return;
     console.info(

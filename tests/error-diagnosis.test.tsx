@@ -391,6 +391,14 @@ describe('Background MV3 async channel-closed protection (SAD-137)', () => {
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
     expect(returnVal).toBe(false);
 
+    // SAD-369: the collect handler now awaits the diagnostics-flag refresh
+    // before collecting, so the collected message arrives a microtask later.
+    // The acknowledgment above stays synchronous; only delivery is async.
+    await waitFor(() => {
+      expect(
+        sentMessages.find((m) => m.type === 'PRODUCTS_COLLECTED')
+      ).toBeTruthy();
+    });
     const collectedMsg = sentMessages.find(
       (m) => m.type === 'PRODUCTS_COLLECTED'
     );

@@ -15,6 +15,7 @@ import {
   defaultAmazonDriftTelemetry,
   logDriftReport,
 } from '@/engines/amazon/scraper/drift-telemetry';
+import { setDiagnosticsEnabled } from '@/engines/amazon/utils/diagnostics-flag';
 import {
   discoverStructuralProductCards,
   extractCardAsinWithTier,
@@ -318,6 +319,8 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
       expect(clipboardText).not.toContain('123-456');
     });
     it('SAD-359: logs the existing aggregate report as one-line JSON without resetting it', () => {
+      // SAD-369: drift lines are opt-in; this test asserts the switch-on path.
+      void setDiagnosticsEnabled(true, {});
       const telemetry = new AmazonDriftTelemetry();
       telemetry.recordCardExtraction({
         asin: 'tier2_semantic',
@@ -349,6 +352,7 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
 
       // Surfacing the report is observation only: cumulative totals remain.
       expect(telemetry.getReport().cardsInspected).toBe(1);
+      void setDiagnosticsEnabled(false, {});
     });
 
     it('SAD-359: stays silent before any card is inspected and never throws', () => {
@@ -365,6 +369,8 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
     });
 
     it('SAD-359: top-level search and category parses each surface their telemetry once', () => {
+      // SAD-369: drift lines are opt-in; this test asserts the switch-on path.
+      void setDiagnosticsEnabled(true, {});
       const info = vi.spyOn(console, 'info').mockImplementation(() => {});
 
       document.body.innerHTML = `
@@ -423,6 +429,43 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
         cardsInspected: 1,
         cardsExtracted: 1,
       });
+      void setDiagnosticsEnabled(false, {});
+    });
+
+    it('SAD-369: surfaces no drift telemetry while the switch is off', () => {
+      void setDiagnosticsEnabled(false, {});
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const telemetry = new AmazonDriftTelemetry();
+
+      try {
+        document.body.innerHTML = `
+          <div class="s-main-slot">
+            <div data-component-type="s-search-result" data-asin="B0DRIFTOFF">
+              <h2><a href="/Off-Widget/dp/B0DRIFTOFF"><span>Off Widget</span></a></h2>
+              <img class="s-image" src="https://m.media-amazon.com/images/I/off.jpg">
+              <span class="a-price"><span class="a-offscreen">$19.99</span></span>
+            </div>
+          </div>
+        `;
+        const products = parseAmazonSearchResults(
+          document,
+          'https://www.amazon.com/s?k=drift',
+          { telemetry, cache: new AmazonParseCache() },
+        );
+
+        // Extraction itself is unaffected by the switch (parity)...
+        expect(products).toHaveLength(1);
+        expect(telemetry.getReport().cardsInspected).toBe(1);
+        // ...but the top-level parse surfaces nothing while off.
+        const tag = '[PPHunt][Amazon][Diagnostics] drift ';
+        expect(
+          info.mock.calls.filter(
+            (call) => typeof call[0] === 'string' && call[0].startsWith(tag),
+          ),
+        ).toHaveLength(0);
+      } finally {
+        info.mockRestore();
+      }
     });
   });
 

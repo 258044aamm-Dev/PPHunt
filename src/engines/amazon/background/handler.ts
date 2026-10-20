@@ -31,6 +31,7 @@ import type {
   ScrollRuntimeSettingsPayload,
 } from '../types';
 import { isAmazonUrl } from '../utils/amazon-url';
+import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
 import { handleExportSavedProduct, maybeAutoExportOnSave } from './export-service';
@@ -811,6 +812,9 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
           enrich: (input) => enrichSavedProduct(input),
           // SAD-289: mirror every transition so a suspended worker can resume.
           store: saveJobStore,
+          // SAD-369: the per-field diagnostics are opt-in; the cached reader
+          // fails closed until its first storage read resolves.
+          diagnosticsEnabled: () => getDiagnosticsEnabled(),
           ...(typeof sender?.tab?.id === 'number'
             ? { tabId: sender.tab.id }
             : {}),

@@ -8,6 +8,7 @@ import {
 } from '../scraper';
 import { AMAZON_SELECTORS } from '../scraper/selectors';
 import type { SaveExtractionContext, ScrapedProduct } from '../types';
+import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
 import { resolveCapturedCard, type CapturedSaveTarget } from './save-target';
 
 /**
@@ -109,7 +110,11 @@ export function resolveSaveCandidate(
   if (pageType === 'product-detail') {
     // SAD-359: collect per-field diagnostics for this live-DOM parse. The
     // collector only records outcomes; the product is unchanged.
-    const diagnostics = createFieldDiagnosticsCollector();
+    // SAD-369: opt-in — with the switch off no collector is allocated and no
+    // report rides along on SAVE_PRODUCT.
+    const diagnostics = getDiagnosticsEnabled()
+      ? createFieldDiagnosticsCollector()
+      : undefined;
     const product = parseAmazonProductDetail(doc, input.pageUrl, diagnostics);
     if (!product) return null;
     return {
@@ -119,7 +124,7 @@ export function resolveSaveCandidate(
         pageUrl: input.pageUrl,
         triggeredBy: input.triggeredBy,
       },
-      extractionDiagnostics: diagnostics.build(),
+      ...(diagnostics ? { extractionDiagnostics: diagnostics.build() } : {}),
     };
   }
 

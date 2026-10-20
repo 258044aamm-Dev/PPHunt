@@ -3,6 +3,10 @@ import { createAmazonBackgroundController } from '@/engines/amazon/background/ha
 import { saveJobStore } from '@/engines/amazon/background/job-store';
 import { handleDownloadChanged } from '@/engines/amazon/background/export-service';
 import { recoverAmazonSaveJobs } from '@/engines/amazon/background/save-job-recovery';
+import {
+  refreshDiagnosticsEnabled,
+  subscribeDiagnosticsEnabled,
+} from '@/engines/amazon/utils/diagnostics-flag';
 import { registerTemuBackgroundHandlers } from '@/engines/temu/background/handler';
 import { openOverlayForTab } from '@/lib/overlay/openOverlay';
 import {
@@ -14,6 +18,12 @@ import {
 export default defineBackground(() => {
   const amazonController = createAmazonBackgroundController();
   const temuHandlers = registerTemuBackgroundHandlers();
+
+  // SAD-369: the diagnostics switch cache — read once per worker start, then
+  // kept live by storage.onChanged. Fails closed until the read resolves, so
+  // a worker that spins up mid-session never logs by accident.
+  void refreshDiagnosticsEnabled();
+  subscribeDiagnosticsEnabled();
 
   // SAD-279: the "Save Product Details" menu item. Registration is idempotent
   // and re-runs on install/startup so a changed title or match list is applied.

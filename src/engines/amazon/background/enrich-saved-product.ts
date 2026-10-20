@@ -2,6 +2,7 @@ import { db } from '../db/database';
 import { appendSnapshot, snapshotFromProduct } from '../db/quick-save';
 import { formatExtractionDiagnosticsLog } from '../scraper/extraction-diagnostics';
 import type { Product, ScrapedProduct } from '../types';
+import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
 import { fetchPdpHtml, type FetchPdpOptions } from './enrichment-fetch';
 import { parsePdpHtmlViaOffscreen } from './offscreen';
 
@@ -104,6 +105,13 @@ export interface EnrichSavedProductDeps {
   parse?: typeof parsePdpHtmlViaOffscreen;
   maxConcurrent?: number;
   now?: () => Date;
+  /**
+   * SAD-369: gate for the `enrichment-parse` diagnostics line. Absent falls
+   * back to the shared cached reader, so every production caller (the
+   * handler's `enrich` dep and save-job recovery, which both call this
+   * function directly) is gated with nothing to wire or forget.
+   */
+  diagnosticsEnabled?: () => boolean;
 }
 
 /**
@@ -333,6 +341,9 @@ export async function enrichSavedProduct(
 ): Promise<EnrichSavedProductResult> {
   const max = Math.max(1, deps.maxConcurrent ?? MAX_CONCURRENT_ENRICHMENTS);
   const parse = deps.parse ?? parsePdpHtmlViaOffscreen;
+  // SAD-369: the diagnostics are opt-in; the shared reader fails closed until
+  // its first storage read resolves.
+  const diagnosticsEnabled = deps.diagnosticsEnabled ?? getDiagnosticsEnabled;
 
   // SAD-352 (Phase 1a): every exit goes through `finish` so exactly one
   // outcome line is logged per attempt. The returned results are untouched.
@@ -375,7 +386,7 @@ export async function enrichSavedProduct(
     // same jobId as the outcome line). Present on success and parser-ran
     // errors alike. Best-effort: logging must never fail the enrichment.
     try {
-      if (parsed.fieldDiagnostics) {
+      if (parsed.fieldDiagnostics && diagnosticsEnabled()) {
         console.info(
           formatExtractionDiagnosticsLog(parsed.fieldDiagnostics, {
             jobId: input.jobId,

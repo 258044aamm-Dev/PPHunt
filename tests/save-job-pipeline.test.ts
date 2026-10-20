@@ -378,10 +378,14 @@ describe('SAD-352 save-job diagnostics logging', () => {
     };
 
     try {
-      const result = await handleSaveProduct({
-        ...payload('job-diag-359'),
-        extractionDiagnostics: report,
-      });
+      const result = await handleSaveProduct(
+        {
+          ...payload('job-diag-359'),
+          extractionDiagnostics: report,
+        },
+        // SAD-369: the diagnostics are opt-in; this test asserts the ON path.
+        { diagnosticsEnabled: () => true },
+      );
 
       expect(result.state).toBe('completed');
       const tag = '[PPHunt][Amazon][Diagnostics] ';
@@ -402,6 +406,35 @@ describe('SAD-352 save-job diagnostics logging', () => {
         counts: { extracted: 1, missing: 1, parseFailed: 1, partial: 1, unknown: 0 },
       });
       expect(logged.fields).toEqual(report.fields);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('SAD-369: logs no PDP diagnostics when the switch is off (absent dep = off)', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const report: ExtractionDiagnosticsReport = {
+      asin: 'B08N5WRWNW',
+      fields: [{ field: 'asin', status: 'EXTRACTED', source: 'url' }],
+    };
+
+    try {
+      // No `diagnosticsEnabled` dep: the site must fail closed even though a
+      // report is present in the payload. The save itself is unaffected.
+      const result = await handleSaveProduct({
+        ...payload('job-diag-369-off'),
+        extractionDiagnostics: report,
+      });
+
+      expect(result.state).toBe('completed');
+      const tag = '[PPHunt][Amazon][Diagnostics] ';
+      const lines = info.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (first): first is string =>
+            typeof first === 'string' && first.startsWith(tag),
+        );
+      expect(lines).toHaveLength(0);
     } finally {
       info.mockRestore();
     }

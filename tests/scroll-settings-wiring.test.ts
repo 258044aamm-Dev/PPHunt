@@ -119,13 +119,17 @@ describe('H-1b: ScrollController receives the configured values', () => {
       },
     });
 
-    expect(scrollCtorSpy).toHaveBeenCalledWith({
-      scrollAmount: 1200,
-      scrollInterval: 2000,
-      waitAfterScroll: 3000,
-      maxWaitForNew: 5000,
-      maxLoadingWait: 15000,
-    });
+    // SAD-369: the collect handler now awaits the diagnostics-flag refresh
+    // before wiring the controller, so the ctor call lands a microtask later.
+    await waitFor(() =>
+      expect(scrollCtorSpy).toHaveBeenCalledWith({
+        scrollAmount: 1200,
+        scrollInterval: 2000,
+        waitAfterScroll: 3000,
+        maxWaitForNew: 5000,
+        maxLoadingWait: 15000,
+      })
+    );
   });
 
   it('no scroll key -> the exact pre-wiring hardcoded defaults (800/500/1500)', async () => {
@@ -137,13 +141,16 @@ describe('H-1b: ScrollController receives the configured values', () => {
       payload: { mode: 'automatic', targetCount: 5 },
     });
 
-    expect(scrollCtorSpy).toHaveBeenCalledWith({
-      scrollAmount: 800,
-      scrollInterval: 500,
-      waitAfterScroll: 1500,
-      maxWaitForNew: 5000,
-      maxLoadingWait: 15000,
-    });
+    // SAD-369: async delivery — see the first test.
+    await waitFor(() =>
+      expect(scrollCtorSpy).toHaveBeenCalledWith({
+        scrollAmount: 800,
+        scrollInterval: 500,
+        waitAfterScroll: 1500,
+        maxWaitForNew: 5000,
+        maxLoadingWait: 15000,
+      })
+    );
   });
 });
 
