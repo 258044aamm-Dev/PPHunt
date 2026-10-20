@@ -1,6 +1,12 @@
 import type { TemuProductSource, TemuScrapedProduct } from '../types';
 import { resolveTemuProductUrl } from '../utils/temu-url';
 import {
+  applyValidationResults,
+  createFieldDiagnosticsCollector,
+  type ExtractionDiagnosticsReport,
+  type TemuDiagnosticStage,
+} from './extraction-diagnostics';
+import {
   discoverTemuProductCards,
   extractGoodsIdFromCard,
   extractTemuCardMetadata,
@@ -22,7 +28,8 @@ export function parseTemuSearchResults(
   document: Document,
   pageUrl?: string,
   cache?: TemuParseCache,
-  source: TemuProductSource = 'search'
+  source: TemuProductSource = 'search',
+  diagnosticsByGoodsId?: Map<string, ExtractionDiagnosticsReport>
 ): TemuScrapedProduct[] {
   const products: TemuScrapedProduct[] = [];
   const seenGoodsIds = new Set<string>();
@@ -57,50 +64,81 @@ export function parseTemuSearchResults(
       }
 
       const card = resolveSingleGoodsCardContainer(rawCard, goodsId);
+      // SAD-360: a collector exists only when the caller asked for reports.
+      const stage: TemuDiagnosticStage =
+        source === 'category' ? 'category' : 'search';
+      const diag = diagnosticsByGoodsId
+        ? createFieldDiagnosticsCollector(stage)
+        : undefined;
+      diag?.setGoodsId(goodsId);
+
       const { imageUrl, imageEl } = findBestTemuCardImage(
         card,
         goodsId,
-        baseUrl
+        baseUrl,
+        diag
       );
-      const title = extractTemuCardTitle(card, imageEl);
-      const pricing = extractTemuPricing(card, 'USD');
-      const pastMonthSales = extractTemuSalesVolume(card);
-      const { rating, reviewCount } = extractTemuRatingAndReviews(card);
-      const meta = extractTemuCardMetadata(card);
+      const title = extractTemuCardTitle(card, imageEl, diag);
+      const pricing = extractTemuPricing(card, 'USD', diag);
+      const pastMonthSales = extractTemuSalesVolume(card, diag);
+      const { rating, reviewCount } = extractTemuRatingAndReviews(card, diag);
+      const meta = extractTemuCardMetadata(card, diag);
+
+      if (diag) {
+        diag.extracted(
+          'url',
+          linkHref
+            ? { source: 'url', reason: 'resolved from the card product link' }
+            : { source: 'derived', reason: 'built from goodsId and page origin' }
+        );
+        if (pricing.currency === null) {
+          diag.missing(
+            'currency',
+            'no currency token and no price to derive from',
+            { source: 'dom' }
+          );
+        }
+      }
+
+      const candidate: TemuScrapedProduct = {
+        goodsId,
+        asin: goodsId,
+        url: resolveTemuProductUrl(linkHref, goodsId, baseUrl),
+        title,
+        price: pricing.price,
+        listPrice: pricing.listPrice,
+        discountPercentage: pricing.discountPercentage,
+        dealBadge: meta.dealBadge,
+        currency: pricing.currency,
+        rating,
+        reviewCount,
+        bestSellersRank: meta.bestSellersRank,
+        pastMonthSales,
+        coupon: meta.coupon,
+        badge: meta.badge,
+        delivery: meta.delivery,
+        imageUrl,
+        isSponsored: meta.isSponsored,
+        isPrime: meta.isPrime,
+        brand: meta.brand,
+        availability: meta.availability,
+        seller: meta.seller,
+        description: null,
+        features: [],
+        source,
+      };
 
       const validated = validateAndNormalizeTemuScrapedProduct(
-        {
-          goodsId,
-          asin: goodsId,
-          url: resolveTemuProductUrl(linkHref, goodsId, baseUrl),
-          title,
-          price: pricing.price,
-          listPrice: pricing.listPrice,
-          discountPercentage: pricing.discountPercentage,
-          dealBadge: meta.dealBadge,
-          currency: pricing.currency,
-          rating,
-          reviewCount,
-          bestSellersRank: meta.bestSellersRank,
-          pastMonthSales,
-          coupon: meta.coupon,
-          badge: meta.badge,
-          delivery: meta.delivery,
-          imageUrl,
-          isSponsored: meta.isSponsored,
-          isPrime: meta.isPrime,
-          brand: meta.brand,
-          availability: meta.availability,
-          seller: meta.seller,
-          description: null,
-          features: [],
-          source,
-        },
+        candidate,
         baseUrl,
         source
       );
 
       if (validated) {
+        if (diag) applyValidationResults(diag, candidate, validated);
+        if (diag && diagnosticsByGoodsId) {
+          diagnosticsByGoodsId.set(validated.goodsId, diag.build());
+        }
         cache?.set(rawCard, validated);
         seenGoodsIds.add(validated.goodsId);
         products.push(validated);

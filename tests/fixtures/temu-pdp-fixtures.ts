@@ -241,3 +241,57 @@ export const PDP_FIXTURES: TemuPdpFixture[] = [
     html: JSON_LD_RATING_REJECTED_PDP,
   },
 ];
+
+// ─── SAD-360 step 3: card fixtures ───────────────────────────────────────────
+
+export const CARD_URL = 'https://www.temu.com/search_result.html?search_key=earbuds';
+
+function card(goodsId: string, inner: string, tooltip = true): string {
+  return `<div ${tooltip ? `data-tooltip="goodContainer-${goodsId}"` : ''} data-goods-id="${goodsId}">
+    <a href="/item-g-${goodsId}.html">${inner}</a>
+  </div>`;
+}
+
+/** A grid of listings; each card is described by the caller. */
+export function cardGrid(cards: string[]): string {
+  return `<!doctype html><html><body>
+    <div class="js-search-goodsList">${cards.join('\n')}</div>
+  </body></html>`;
+}
+
+export const FULL_CARD = card(
+  '601099769178067',
+  `
+    <img data-js-main-img="true" src="https://img.kwcdn.com/product/fancy/earbuds.jpg" alt="item picture Wireless Earbuds" />
+    <h2 data-tooltip="goodName-601099769178067" data-tooltip-title="Wireless Bluetooth Earbuds with Charging Case">Wireless Bluetooth Earbuds</h2>
+    <span data-type="price"><span class="srOnly">US$12.49</span><span>$12</span><span>.49</span></span>
+    <span data-type="priceText">US$29.99</span>
+    <span data-type="discount">-58%</span>
+    <div role="img" aria-label="4.7 out of five stars"></div>
+    <span aria-label="1,245 reviews">(1,245)</span>
+    <div data-type="saleTips">10K+ sold</div>
+    <span>Brand: Anker</span>
+    <span>Sold by AnkerDirect</span>
+    <span>Local warehouse</span>
+    <span>Lightning deal</span>
+    <span>Save $2 with coupon</span>
+    <span>Only 3 left</span>
+    <span>#1 Best Seller in Earbuds</span>
+    <span>Sponsored</span>
+  `
+);
+
+export const MINIMAL_CARD = card('601099769178068', '<span>Plain item</span>', false);
+
+export const UNPARSEABLE_PRICE_CARD = card(
+  '601099769178069',
+  `<img src="https://img.kwcdn.com/product/fancy/x.jpg" />
+   <h2 data-tooltip-title="Call For Price Item">Call For Price Item</h2>
+   <span data-type="price">Request a price</span>`
+);
+
+export const NO_GOODS_ID_CARD = `<div data-goods-id="">
+  <a href="/search_result.html?search_key=nothing">Not a product</a>
+</div>`;
+
+export const DUPLICATE_CARD_GRID = cardGrid([FULL_CARD, FULL_CARD]);

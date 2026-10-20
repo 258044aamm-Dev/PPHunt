@@ -677,3 +677,36 @@ worktree at `b826132` (pre-step-2), replayed all 14 fixtures through its parser,
 then replayed the same fixtures through the instrumented parser **with** and
 **without** a collector. Both comparisons are **byte-identical JSON**
 (`diff` clean, no output).
+
+---
+
+## 16. Step 3 implementation record (2026-10-20)
+
+**Files changed:** `src/engines/temu/scraper/field-parsers.ts`
+(`extractTemuCardTitle`, `findBestTemuCardImage`),
+`src/engines/temu/scraper/search-results.ts`,
+`src/engines/temu/scraper/category-page.ts` (forwarding only),
+new `tests/temu-diagnostics-cards.test.ts` (12 tests),
+three card fixtures added to `tests/fixtures/temu-pdp-fixtures.ts`.
+
+**Implemented exactly as planned, with two clarifications:**
+
+1. `extractTemuBestImageUrl` still has an unchanged signature — the card path
+   records at `findBestTemuCardImage`, the PDP path at its own call site (§2).
+2. Cards also get `validated` flags: the inline candidate object in
+   `parseTemuSearchResults` is hoisted so `applyValidationResults` runs, matching
+   the PDP. Without it, Req 2's "passed the engine's existing validation checks"
+   would be answered for PDPs only.
+
+**Behaviour gates:** a report is written only inside the existing
+`if (validated)` branch, so a card rejected by the parse-time validator, a cache
+hit, a duplicate card and a goodsId-less node all produce **no** report.
+
+**Verification:** `tsc` clean · full suite **91 files / 1118 tests** ·
+`wxt build` pass · dead-export guard pass · **Amazon diff empty** · same
+forbidden-area checks as step 2 (all clean).
+
+**Before/after replay:** replayed 7 card scenarios (full, minimal, unparseable
+price, duplicate grid, no-goodsId, mixed grid, category delegation) through the
+`b826132` worktree and through the instrumented parser **with** and **without** a
+collector. All three outputs are **byte-identical JSON**.

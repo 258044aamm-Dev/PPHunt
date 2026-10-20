@@ -363,56 +363,99 @@ export function discoverTemuProductCards(
  */
 export function extractTemuCardTitle(
   card: Element,
-  imageEl: HTMLImageElement | null
+  imageEl: HTMLImageElement | null,
+  diagnostics?: FieldDiagnosticsCollector
 ): string | null {
+  // SAD-360: candidate bookkeeping on the nodes this function already reads.
+  let sawTitleCandidate = false;
+
+  const hit = (
+    value: string | null,
+    selector: string
+  ): string | null => {
+    if (value) diagnostics?.extracted('title', { source: 'dom', selector });
+    return value;
+  };
+
   // 1. Direct or nested data-tooltip-title (emitted by Temu's bui-web-goods-list)
   const directTooltipTitle = cleanTemuText(
     card.getAttribute('data-tooltip-title')
   );
-  if (directTooltipTitle) return directTooltipTitle;
+  if (card.hasAttribute('data-tooltip-title')) sawTitleCandidate = true;
+  if (directTooltipTitle) {
+    return hit(directTooltipTitle, '[data-tooltip-title]');
+  }
 
   const tooltipTitleEl = card.querySelector(
     '[data-tooltip^="goodName-"][data-tooltip-title], [data-tooltip^="goodContainer-"][data-tooltip-title], [data-tooltip-title]'
   );
+  if (tooltipTitleEl) sawTitleCandidate = true;
   const nestedTooltipTitle = cleanTemuText(
     tooltipTitleEl?.getAttribute('data-tooltip-title')
   );
-  if (nestedTooltipTitle) return nestedTooltipTitle;
+  if (nestedTooltipTitle) {
+    return hit(nestedTooltipTitle, '[data-tooltip-title]');
+  }
 
   // 2. goodName element text or heading
   const goodNameEl = card.querySelector('[data-tooltip^="goodName-"]');
+  if (goodNameEl) sawTitleCandidate = true;
   const goodNameText =
     cleanTemuText(goodNameEl?.getAttribute('aria-label')) ??
     extractTemuElementText(goodNameEl);
-  if (goodNameText) return goodNameText;
+  if (goodNameText) {
+    return hit(goodNameText, '[data-tooltip^="goodName-"]');
+  }
 
   const headings = Array.from(card.querySelectorAll('h1, h2, h3, h4'));
+  if (headings.length > 0) sawTitleCandidate = true;
   for (const h of headings) {
     const t =
       cleanTemuText(h.getAttribute('aria-label')) ?? extractTemuElementText(h);
-    if (t && t.length >= 3) return t;
+    if (t && t.length >= 3) return hit(t, 'h1, h2, h3, h4');
   }
 
   // 3. Product anchor aria-label / title / text
   const links = Array.from(
     card.querySelectorAll<HTMLAnchorElement>(TEMU_SELECTORS.listing.productLink)
   );
+  if (links.length > 0) sawTitleCandidate = true;
   for (const a of links) {
     const aria = cleanTemuText(a.getAttribute('aria-label'));
     if (aria && aria.length >= 4 && !/^\$?\d/.test(aria)) {
-      return aria.replace(/^item\s+picture\s+/i, '').trim();
+      return hit(
+        aria.replace(/^item\s+picture\s+/i, '').trim(),
+        TEMU_SELECTORS.listing.productLink
+      );
     }
     const text = extractTemuElementText(a);
     if (text && text.length >= 4 && !/^[\d,.\s$€£¥%-]+$/.test(text)) {
-      return text;
+      return hit(text, TEMU_SELECTORS.listing.productLink);
     }
   }
 
   // 4. Primary image alt attribute (Temu sets alt="item picture <Title>")
   const rawAlt = cleanTemuText(imageEl?.getAttribute('alt'));
   if (rawAlt) {
+    sawTitleCandidate = true;
     const stripped = rawAlt.replace(/^item\s+picture\s+/i, '').trim();
-    if (stripped.length >= 2) return stripped;
+    if (stripped.length >= 2) return hit(stripped, 'img[alt]');
+  }
+
+  if (diagnostics) {
+    if (sawTitleCandidate) {
+      diagnostics.parseFailed(
+        'title',
+        'title candidates present but all rejected',
+        { source: 'dom' }
+      );
+    } else {
+      diagnostics.missing(
+        'title',
+        'no title tooltip, heading, link text, or image alt',
+        { source: 'dom' }
+      );
+    }
   }
 
   return null;
@@ -912,8 +955,23 @@ export function extractTemuBestImageUrl(
 export function findBestTemuCardImage(
   card: Element,
   goodsId?: string | null,
-  baseUrl = 'https://www.temu.com'
+  baseUrl = 'https://www.temu.com',
+  diagnostics?: FieldDiagnosticsCollector
 ): { imageUrl: string | null; imageEl: HTMLImageElement | null } {
+  // SAD-360: candidate bookkeeping only.
+  let sawImageElement = false;
+
+  const selectorFor = (img: HTMLImageElement, url: string): string => {
+    if (img.getAttribute('data-js-main-img') === 'true') {
+      return 'img[data-js-main-img="true"]';
+    }
+    if (img.classList.contains('goods-img-external')) {
+      return 'img.goods-img-external';
+    }
+    if (/kwcdn\.com/i.test(url)) return 'img[src*="kwcdn.com"]';
+    return 'img';
+  };
+
   const searchIn = (
     container: Element
   ): { imageUrl: string | null; imageEl: HTMLImageElement | null } => {
@@ -922,6 +980,7 @@ export function findBestTemuCardImage(
     );
     const allImgs = Array.from(container.querySelectorAll<HTMLImageElement>('img'));
     const candidates = Array.from(new Set([...primaryImgs, ...allImgs]));
+    if (candidates.length > 0) sawImageElement = true;
 
     let fallbackUrl: string | null = null;
     let fallbackEl: HTMLImageElement | null = null;
@@ -934,6 +993,10 @@ export function findBestTemuCardImage(
         img.classList.contains('goods-img-external') ||
         /kwcdn\.com/i.test(url)
       ) {
+        diagnostics?.extracted('imageUrl', {
+          source: 'dom',
+          selector: selectorFor(img, url),
+        });
         return { imageUrl: url, imageEl: img };
       }
       if (!fallbackUrl) {
@@ -942,6 +1005,9 @@ export function findBestTemuCardImage(
       }
     }
 
+    if (fallbackUrl) {
+      diagnostics?.extracted('imageUrl', { source: 'dom', selector: 'img' });
+    }
     return { imageUrl: fallbackUrl, imageEl: fallbackEl };
   };
 
@@ -951,11 +1017,33 @@ export function findBestTemuCardImage(
   if (goodsId) {
     const expanded = resolveSingleGoodsCardContainer(card, goodsId);
     if (expanded !== card) {
-      return searchIn(expanded);
+      const expandedResult = searchIn(expanded);
+      if (expandedResult.imageUrl) return expandedResult;
+      recordCardImageAbsence(diagnostics, sawImageElement);
+      return expandedResult;
     }
   }
 
+  recordCardImageAbsence(diagnostics, sawImageElement);
   return direct;
+}
+
+function recordCardImageAbsence(
+  diagnostics: FieldDiagnosticsCollector | undefined,
+  sawImageElement: boolean
+): void {
+  if (!diagnostics) return;
+  if (sawImageElement) {
+    diagnostics.parseFailed(
+      'imageUrl',
+      'image element present but no valid http(s) URL',
+      { source: 'dom' }
+    );
+  } else {
+    diagnostics.missing('imageUrl', 'no image element in the card', {
+      source: 'dom',
+    });
+  }
 }
 
 /**
