@@ -147,3 +147,29 @@ export function createAmazonDriftTelemetry(): AmazonDriftTelemetry {
 
 export const defaultAmazonDriftTelemetry = new AmazonDriftTelemetry();
 
+/**
+ * SAD-359: makes the previously consumer-less drift report visible.
+ *
+ * The telemetry object remains cumulative (this helper deliberately does not
+ * reset it), so the line describes the content-script session so far for the
+ * telemetry instance used by that parse. It is emitted in the parsing context
+ * (the Amazon page console for listing collection), as one-line JSON that can
+ * be filtered with `[PPHunt] drift report` and survives copy-paste. No product
+ * values or page data are included. A logging failure is swallowed: telemetry
+ * must never affect extraction.
+ */
+export function logDriftReport(
+  telemetry: AmazonDriftTelemetry,
+  stage: 'search-results' | 'category-page',
+): void {
+  try {
+    const report = telemetry.getReport();
+    if (report.cardsInspected === 0) return;
+    console.info(
+      `[PPHunt] drift report ${JSON.stringify({ stage, ...report })}`,
+    );
+  } catch {
+    // Diagnostics only.
+  }
+}
+

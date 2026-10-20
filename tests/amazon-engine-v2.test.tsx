@@ -13,6 +13,7 @@ import {
 import {
   AmazonDriftTelemetry,
   defaultAmazonDriftTelemetry,
+  logDriftReport,
 } from '@/engines/amazon/scraper/drift-telemetry';
 import {
   discoverStructuralProductCards,
@@ -315,6 +316,113 @@ describe('Amazon Engine v2 — Clean-Slate Architecture & Future-Proofing Suite 
       expect(clipboardText).toContain('=== PPHunt Diagnostic Summary ===');
       expect(clipboardText).not.toContain('secret-20');
       expect(clipboardText).not.toContain('123-456');
+    });
+    it('SAD-359: logs the existing aggregate report as one-line JSON without resetting it', () => {
+      const telemetry = new AmazonDriftTelemetry();
+      telemetry.recordCardExtraction({
+        asin: 'tier2_semantic',
+        title: 'tier2_semantic',
+        price: 'missing',
+        rating: 'missing',
+        reviewCount: 'missing',
+        imageUrl: 'tier2_semantic',
+      });
+
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+      logDriftReport(telemetry, 'search-results');
+
+      const tag = '[PPHunt] drift report ';
+      const lines = info.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (first): first is string =>
+            typeof first === 'string' && first.startsWith(tag),
+        );
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).not.toContain('\n');
+      expect(JSON.parse(lines[0]!.slice(tag.length))).toMatchObject({
+        stage: 'search-results',
+        cardsInspected: 1,
+        cardsExtracted: 1,
+        fieldCoverage: { price: 0 },
+      });
+
+      // Surfacing the report is observation only: cumulative totals remain.
+      expect(telemetry.getReport().cardsInspected).toBe(1);
+    });
+
+    it('SAD-359: stays silent before any card is inspected and never throws', () => {
+      const telemetry = new AmazonDriftTelemetry();
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {
+        throw new Error('console is gone');
+      });
+
+      expect(() => logDriftReport(telemetry, 'category-page')).not.toThrow();
+      expect(info).not.toHaveBeenCalled();
+
+      telemetry.recordCardExtraction({ asin: 'tier2_semantic' });
+      expect(() => logDriftReport(telemetry, 'category-page')).not.toThrow();
+    });
+
+    it('SAD-359: top-level search and category parses each surface their telemetry once', () => {
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+      document.body.innerHTML = `
+        <div class="s-main-slot">
+          <div data-component-type="s-search-result" data-asin="B0DRIFT359">
+            <h2><a href="/Drift-Widget/dp/B0DRIFT359"><span>Drift Widget</span></a></h2>
+            <img class="s-image" src="https://m.media-amazon.com/images/I/drift.jpg">
+            <span class="a-price"><span class="a-offscreen">$19.99</span></span>
+          </div>
+        </div>
+      `;
+      const searchTelemetry = new AmazonDriftTelemetry();
+      const searchProducts = parseAmazonSearchResults(
+        document,
+        'https://www.amazon.com/s?k=drift',
+        { telemetry: searchTelemetry, cache: new AmazonParseCache() },
+      );
+      expect(searchProducts).toHaveLength(1);
+
+      const categoryCard = document.createElement('div');
+      categoryCard.setAttribute(
+        'data-p13n-asin-metadata',
+        JSON.stringify({ asin: 'B0CATG3590', price: '$29.99' }),
+      );
+      categoryCard.innerHTML = `
+        <a href="/dp/B0CATG3590">
+          <img alt="Category Drift Widget" src="https://m.media-amazon.com/images/I/category.jpg">
+        </a>
+        <div class="p13n-sc-truncate">Category Drift Widget</div>
+      `;
+      document.body.replaceChildren(categoryCard);
+      const categoryTelemetry = new AmazonDriftTelemetry();
+      const categoryProducts = parseAmazonCategoryPage(
+        document,
+        'https://www.amazon.com/gp/bestsellers',
+        { telemetry: categoryTelemetry, cache: new AmazonParseCache() },
+      );
+      expect(categoryProducts).toHaveLength(1);
+
+      const tag = '[PPHunt] drift report ';
+      const reports = info.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (first): first is string =>
+            typeof first === 'string' && first.startsWith(tag),
+        )
+        .map((line) => JSON.parse(line.slice(tag.length)) as Record<string, unknown>);
+      expect(reports).toHaveLength(2);
+      expect(reports[0]).toMatchObject({
+        stage: 'search-results',
+        cardsInspected: 1,
+        cardsExtracted: 1,
+      });
+      expect(reports[1]).toMatchObject({
+        stage: 'category-page',
+        cardsInspected: 1,
+        cardsExtracted: 1,
+      });
     });
   });
 

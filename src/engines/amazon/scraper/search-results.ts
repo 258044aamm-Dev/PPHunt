@@ -3,6 +3,7 @@ import { resolveProductUrl } from '../utils/amazon-url';
 import { mergeScrapedProductFields } from './dedup';
 import {
   defaultAmazonDriftTelemetry,
+  logDriftReport,
   type AmazonDriftTelemetry,
   type AmazonTrackedField,
 } from './drift-telemetry';
@@ -371,6 +372,14 @@ export function parseAmazonSearchResults(
       console.warn('[PPHunt] Search card iteration error:', err);
     }
   }
+
+  // SAD-359: surface the aggregate card telemetry once for this listing
+  // parse. This adds logging only; `results` and the telemetry totals are
+  // unchanged.
+  logDriftReport(
+    options.telemetry ?? defaultAmazonDriftTelemetry,
+    'search-results',
+  );
 
   return results;
 }

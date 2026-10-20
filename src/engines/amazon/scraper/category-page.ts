@@ -2,6 +2,7 @@ import type { ScrapedAmazonProduct } from '../types';
 import { resolveProductUrl } from '../utils/amazon-url';
 import {
   defaultAmazonDriftTelemetry,
+  logDriftReport,
   type AmazonDriftTelemetry,
   type AmazonTrackedField,
 } from './drift-telemetry';
@@ -305,6 +306,14 @@ export function parseAmazonCategoryPage(
       console.warn('[PPHunt] Category card iteration error:', err);
     }
   }
+
+  // SAD-359: surface the aggregate card telemetry once for this listing
+  // parse. This adds logging only; `results` and the telemetry totals are
+  // unchanged.
+  logDriftReport(
+    options.telemetry ?? defaultAmazonDriftTelemetry,
+    'category-page',
+  );
 
   return results;
 }
