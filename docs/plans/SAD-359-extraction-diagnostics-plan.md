@@ -1,7 +1,8 @@
 # SAD-359 — Per-field extraction diagnostic logging (plan)
 
-Status: Step 0 (decisions locked 2026-10-20). Diagnostics only — no extraction,
-merge, persistence, schema-of-record, manifest or UI behaviour change. Temu untouched.
+Status: Steps 0–5 implemented and verified locally on 2026-10-20; GitHub push
+pending a working token. Diagnostics only — no extraction, merge,
+persistence, schema-of-record, manifest or UI behaviour change. Temu untouched.
 
 ## What the audit found (all verified at `3c3cbe2`)
 
@@ -145,3 +146,44 @@ for a non-empty listing parse and silent at zero cards.
 - Temu byte-identical; `PRODUCTS_COLLECTED` untouched.
 - Push note: SAD-352's `3c3cbe2` is still unpushed (GitHub PAT returns 401
   from the sandbox). SAD-359 commits stack locally until a fresh token lands.
+
+## Implementation record & test report (2026-10-20)
+
+Local commits: Step 1 `99cf6cb`; Step 2 `ab494be`; Step 3 `2e91a41`;
+Step 4 `219bdc0`. The implementation covers all 21 detail-stage fields in
+`DETAIL_DIAGNOSTIC_FIELDS`, plus the six pre-existing aggregate card-drift
+fields (`asin`, `title`, `price`, `rating`, `reviewCount`, `imageUrl`).
+
+Verified scenarios:
+
+- Complete PDP fixture: ASIN/title/brand/price/rating/review count/
+  availability/delivery/seller/features/image/BSR classified `EXTRACTED`,
+  with winning selectors and validation flags where applicable.
+- Buybox-less PDP matching the SAD-352 fingerprint: price/seller/delivery/
+  discount are `MISSING` as absent from HTML while brand/features extract.
+- Present-but-unparseable buybox price and rank-label-without-rank BSR:
+  `PARTIAL` as candidate-rejected.
+- JSON-LD-only price/rating/review count: `EXTRACTED` from `json-ld`;
+  garbage DOM price rescued by JSON-LD: `PARTIAL` under the strict rule.
+- JSON-LD non-HTTP image: `PARTIAL`, `validated:false`, because normalized
+  validation drops it.
+- No-title rejection: product remains `null`, while a complete 21-field
+  report still distinguishes the attempted ASIN/title from fields the parser
+  never reached.
+- Cross-context contracts: offscreen success/no-product/ASIN-mismatch carry
+  diagnostics; enrichment logs success and rejected parses exactly once and
+  stays silent without a report; live PDP saves carry the report while card
+  saves do not fabricate one; the optional `SAVE_PRODUCT` field validates
+  with current and legacy payloads; the worker logs it once as
+  `stage: "detail-page"`.
+- Drift surfacing: aggregate helper output is one-line JSON, does not reset
+  counters, is silent at zero cards, tolerates a throwing console, and is
+  emitted by both top-level search-results and category-page parsers.
+
+Full gate: `npx tsc --noEmit` clean; `npm run verify` exit 0 — 87 files /
+995 tests passed, extension build completed, production audit 0
+vulnerabilities; dead-export guard passed; Temu and `wxt.config.ts` diffs
+empty for SAD-359. A fresh-sandbox first verify attempt had all 984 then
+runnable tests passing but the pre-existing built-manifest suite could not
+find `dist/` yet; rerunning the unchanged full verify with the artifact
+present passed all 995 tests.
