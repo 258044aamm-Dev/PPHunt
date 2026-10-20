@@ -91,3 +91,95 @@ The same day, from the audit sandbox (desktop UA, no cookies), 2 `partial` and
 3. Owner's check of the saved rows themselves (History/Preview) for a
    `complete` save — do brand/seller/BSR actually show for e.g. `B0GKMCP4JY`?
    This separates "merged but not seen" from "never merged".
+
+---
+
+## Session 2 (2026-10-20, zip build `b73db24`, one-line JSON outcomes)
+
+Source: full JSON outcome lines supplied by the owner from the unpacked zip
+build in Chrome on amazon.com (deals pages; the expanded save-job lines all
+show `pageType: 'category'`, `triggeredBy: 'context-menu'` for the tail of the
+session). Chrome version still not recorded. The two ASINs requested by name
+in session 1's follow-up were not in this batch; two session-1 ASINs repeat
+with the same status (`B09BD8GZ8L`, `B0DDCQ534S` — both `partial` again).
+
+### Totals (42 enrichment outcomes)
+
+| Outcome | n | Notes |
+|---|---|---|
+| `failed` — `captcha` | 2 | The **first two attempts of the session** (`ms` 357/264 — tiny interstitial pages, HTTP 200). Both ASINs (`B00AHAWWO0`, `B07MJL8NXR`) were saved again **later in the same session and enriched successfully** (`partial`). Transient, and below the 3-strike breaker, so no `skipped` followed. |
+| `failed` — `parse-failed` (fetch layer) | 1 | `B0CBTZSS9F`, HTTP 200, `ms` 2317, no `htmlBytes` (rejected inside `fetchPdpHtml`). Candidates by code: non-HTML content type, declared/decoded size > 3,000,000, or body-read error. **Not yet distinguishable** — session 2's log carried no fetch `message` (Step 1a.2 adds it). Timing (2.3 s, like full-size reads) is consistent with the size cap but does not prove it. |
+| `complete` | 14 | 36% of the 39 parsed |
+| `partial` | 25 | 64% of the 39 parsed (session 1: 39% — different sample, same order of problem) |
+
+- `htmlBytes` (parsed outcomes): 1,779,497 – **2,853,572** (95% of the cap).
+- Enrichment wall time: ~1.8–4.0 s per parsed save.
+- No `skipped`, no `asin-mismatch`, no `row-missing`, no currency mismatch.
+
+### Field pattern — the buybox family is the story
+
+Per-field, across the 39 parsed outcomes (`fieldsChanged` = merged from the
+PDP; `missingDetailFields` = still empty on the row **after** merge, i.e.
+neither card nor PDP supplied it):
+
+- **Almost always delivered by enrichment:** `brand`, `bestSellersRank` (38/39
+  changed), `rating`, `reviewCount`, `imageUrl`, `features` (39/39), and
+  `availability` in most. So for a typical save the row *does* gain the PDP's
+  brand/BSR/features — enrichment is functioning.
+- **The `partial` fingerprint:** in the overwhelming majority of partials,
+  `missingDetailFields` contains `discountPercentage`, **`seller`**,
+  **`delivery`** and `pastMonthSales` *together*, and `fieldsChanged` never
+  contains them. `partial` itself means the parsed detail's `price` was
+  `null` (title is mandatory for a parse). Price + discount + seller +
+  delivery + monthly-sales are exactly the **buybox/offer block** of a PDP:
+  in the HTML the owner's cookieless fetch receives, that block is either
+  absent or not matched by the current selectors, while the rest of the page
+  (title/brand/reviews/BSR/features) parses fine. The listing price the user
+  saw survives on the row (fill-only policy), so `price` does not appear in
+  `missingDetailFields` — the visible blanks are Seller / Delivery /
+  Discount / Monthly Sales.
+- **Rarely delivered by anyone, regardless of status:** `badge` (missing in
+  39/39 — the PDP parser never sets it and these cards didn't either),
+  `coupon` (changed once), `dealBadge` (never), `warrantyDescription*`
+  (present in 5), and `description` (missing in most outcomes including 11 of
+  14 `complete`). This matters for the Phase 2A core-set decision: a
+  "complete = no core field missing" rule that includes `description` would
+  reclassify nearly every save as partial.
+- Three `complete` outcomes still lack `availability`; one lacks `seller`.
+  "Complete" (title+price) materially overstates completeness, as §5.3 said —
+  but field data now shows which fields can honestly be required.
+- Same-ASIN cross-check with the sandbox probe (session 1 doc): the sandbox's
+  US-variant parse of `B09BD8GZ8L` extracted seller + delivery; the owner's
+  browser parse of the same ASIN (twice) extracted neither. Same parser,
+  different served HTML — the fetched variant, not buybox parsing in the
+  abstract, is the variable.
+
+### Updated verdicts
+
+| # | Verdict now |
+|---|---|
+| H1 fetch refusal | **Occasional, transient** (2/42, both self-recovered on manual re-save). Not the systemic cause. No automatic retry exists today; a captcha'd save stays card-only unless the user re-saves. |
+| H2 size cap | **Possibly 1/42** (the fetch-layer `parse-failed`); plus a 2.85 MB success at 95% of the cap. Needs the fetch `message` (Step 1a.2) to settle. A 3 MB → 5 MB alignment (2B) is cheap insurance either way. |
+| H4 sparse static parse | **Confirmed, narrowed:** the static HTML the cookieless fetch receives frequently yields no parseable buybox family (price/discount/seller/delivery/monthly-sales). Open sub-question: nodes *absent* from that HTML (→ only a live-page read can get them: Phase 3 territory) vs *present but unmatched* by current selectors in this variant (→ Phase 2E selector work). `detailPresentFields` (Step 1a.2) + a from-the-PDP-itself save of the same ASIN (live-DOM parity) distinguishes them. |
+| H5/H7/H8/H3 | Still refuted/not observed. |
+| H0 genuine absence | Likely for `badge`/`coupon`/`dealBadge`/often `description`/`warranty` on these PDPs; not plausible as the whole explanation for seller/delivery on retail offers the owner can see in the buybox. |
+
+### Gate 1 — provisional decision (finalises after the micro-test below)
+
+1. **2A (honest `complete`)** — justified by data. Proposed core set from this
+   distribution: `brand, seller, availability, bestSellersRank, features`
+   (deliberately **excluding** `description` — absent from most static PDPs).
+2. **2B (size cap 3 MB → 5 MB)** — justified as cheap insurance (95%-of-cap
+   success + one probable cap rejection).
+3. **2E vs Phase 3** — pending the micro-test: if a from-PDP save of a partial
+   ASIN yields seller/delivery, the live page has what the fetch lacks →
+   background-tab fallback (Phase 3 / Gate 2) is the structural fix; if the
+   live parse also lacks them, it is selector work (2E) on a shared parser.
+4. Not authorised by this data: header/UA variants (fetch layer is healthy),
+   breaker retune (no skips), tab-side cookie fetch (unchanged rejection).
+
+**Micro-test (session 3, 3 saves):** with Step 1a.2's build — (a) re-save
+`B0CBTZSS9F` (reads the fetch `message`); (b) re-save any one fingerprint
+`partial` ASIN from its card (reads `detailPresentFields`); (c) open that same
+ASIN's PDP and right-click-save **on the PDP**, then report whether its
+History row shows Seller/Delivery (live-DOM parity). Plus the Chrome version.
