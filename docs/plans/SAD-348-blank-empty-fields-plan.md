@@ -214,3 +214,9 @@ empty cell does not change row height. No layout code to change (verify visually
   Targeted run: 3 files, 13 tests passed.
 - Step 6 (full verification): `tsc --noEmit` PASS; full suite 83 files / 894 tests PASS;
   `npx wxt zip` build PASS. No existing feature affected. Status → In Review.
+
+- Follow-up (2026-10-20): Discount/Deal/Coupon/Badge now show "No" (not blank) when
+  missing — UI in both `columns.tsx` files, and exports via the two export column maps
+  (`EXPORT_COLUMNS` / `TEMU_EXPORT_COLUMNS`, covering CSV/Excel/clipboard). All other
+  fields unchanged. Commits `0f1a33c`, `d1d41cb`, `64cda21`, `116ac28`. Full suite
+  83 files / 894 tests PASS, tsc PASS, `wxt zip` PASS. Status → In Review.
