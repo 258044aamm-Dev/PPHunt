@@ -2,6 +2,7 @@ export * from './selectors';
 export * from './page-detector';
 export * from './captcha-detector';
 export * from './drift-telemetry';
+export * from './extraction-diagnostics';
 export * from './field-parsers';
 export * from './parse-cache';
 export * from './dedup';

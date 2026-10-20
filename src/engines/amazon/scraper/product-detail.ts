@@ -1,4 +1,8 @@
-import type { ScrapedAmazonProduct } from '../types';
+import type { AmazonExtractionTier, ScrapedAmazonProduct } from '../types';
+import {
+  applyValidationResults,
+  type FieldDiagnosticsCollector,
+} from './extraction-diagnostics';
 import {
   extractASIN,
   normalizeASIN,
@@ -155,17 +159,31 @@ function extractDetailAsin(
   doc: Document,
   pageUrl?: string,
   jsonLd?: JsonLdProductMetadata,
+  // SAD-359: optional; records which source resolved the ASIN. Behaviour is
+  // identical with or without it.
+  diagnostics?: FieldDiagnosticsCollector,
 ): string | null {
   const fromUrl = extractASIN(pageUrl);
-  if (fromUrl) return fromUrl;
+  if (fromUrl) {
+    diagnostics?.extracted('asin', { source: 'url' });
+    return fromUrl;
+  }
 
+  const hiddenInputSelector =
+    'input#ASIN, input[name="ASIN"], input[name="ASIN.0"], input[name="idx.asin"]';
   const hiddenInputs = safeQuerySelectorAll<HTMLInputElement>(
     doc,
-    'input#ASIN, input[name="ASIN"], input[name="ASIN.0"], input[name="idx.asin"]',
+    hiddenInputSelector,
   );
   for (const input of hiddenInputs) {
     const asin = normalizeASIN(input.value || input.getAttribute('value'));
-    if (asin) return asin;
+    if (asin) {
+      diagnostics?.extracted('asin', {
+        source: 'dom',
+        selector: hiddenInputSelector,
+      });
+      return asin;
+    }
   }
 
   const canonical = safeQuerySelector<HTMLLinkElement>(
@@ -173,26 +191,47 @@ function extractDetailAsin(
     'link[rel="canonical"]',
   );
   const fromCanonical = extractASIN(canonical?.getAttribute('href'));
-  if (fromCanonical) return fromCanonical;
+  if (fromCanonical) {
+    diagnostics?.extracted('asin', {
+      source: 'dom',
+      selector: 'link[rel="canonical"]',
+    });
+    return fromCanonical;
+  }
 
-  const detailRoot = safeQuerySelector(
-    doc,
-    '#dp-container[data-asin], #dp[data-asin], [data-asin]',
-  );
+  const detailRootSelector = '#dp-container[data-asin], #dp[data-asin], [data-asin]';
+  const detailRoot = safeQuerySelector(doc, detailRootSelector);
   const fromDataAttr = normalizeASIN(detailRoot?.getAttribute('data-asin'));
-  if (fromDataAttr) return fromDataAttr;
+  if (fromDataAttr) {
+    diagnostics?.extracted('asin', {
+      source: 'dom',
+      selector: detailRootSelector,
+    });
+    return fromDataAttr;
+  }
 
-  if (jsonLd?.asin) return jsonLd.asin;
+  if (jsonLd?.asin) {
+    diagnostics?.extracted('asin', { source: 'json-ld' });
+    return jsonLd.asin;
+  }
 
+  diagnostics?.missing('asin', 'no ASIN in URL, page markup or JSON-LD');
   return null;
 }
 
-function extractDetailBsr(doc: Document): string | undefined {
+function extractDetailBsr(
+  doc: Document,
+  // SAD-359: optional diagnostics sink (see extractDetailAsin).
+  diagnostics?: FieldDiagnosticsCollector,
+): string | undefined {
+  let labelSeenSelector: string | undefined;
+
   for (const selector of AMAZON_SELECTORS.detail.bsr) {
     const container = safeQuerySelector(doc, selector);
     if (!container) continue;
     const rawText = normalizeWhitespace(container.textContent);
     if (!/Best Sellers Rank/i.test(rawText)) continue;
+    labelSeenSelector ??= selector;
 
     // Strip parenthetical "(See Top 100 in ...)" before extracting rank clauses
     const cleaned = rawText.replace(/\(\s*See Top\s+\d+[^)]*\)/gi, ' ');
@@ -202,11 +241,26 @@ function extractDetailBsr(doc: Document): string | undefined {
     ).filter(Boolean);
 
     if (rankMatches.length >= 2) {
+      diagnostics?.extracted('bestSellersRank', { source: 'dom', selector });
       return `${rankMatches[0]} (${rankMatches[1]})`;
     }
     if (rankMatches.length === 1) {
+      diagnostics?.extracted('bestSellersRank', { source: 'dom', selector });
       return rankMatches[0];
     }
+  }
+
+  if (labelSeenSelector) {
+    diagnostics?.partial(
+      'bestSellersRank',
+      'Best Sellers Rank label present but no rank could be parsed',
+      { selector: labelSeenSelector },
+    );
+  } else {
+    diagnostics?.missing(
+      'bestSellersRank',
+      'no Best Sellers Rank row in the detail tables',
+    );
   }
   return undefined;
 }
@@ -267,19 +321,42 @@ function* iterDetailSpecRows(
  * that is the "Product Warranty: For warranty information about this product,
  * please click here" boilerplate, and a real row can follow it in the same table.
  */
-function extractDetailWarranty(doc: Document): DetailWarranty | undefined {
+function extractDetailWarranty(
+  doc: Document,
+  // SAD-359: optional diagnostics sink (see extractDetailAsin).
+  diagnostics?: FieldDiagnosticsCollector,
+): DetailWarranty | undefined {
+  let labelSeen = false;
+
   for (const selector of AMAZON_SELECTORS.detail.warrantyContainers) {
     const container = safeQuerySelector(doc, selector);
     if (!container || isInsideExcludedDetailSubtree(container)) continue;
 
     for (const { label, value } of iterDetailSpecRows(container)) {
       if (!AMAZON_WARRANTY_LABEL_PATTERN.test(label)) continue;
+      labelSeen = true;
 
       const warrantyDescription = normalizeWarrantyDescription(value);
       if (!warrantyDescription) continue;
 
+      diagnostics?.extracted('warrantyDescription', {
+        source: 'dom',
+        selector,
+      });
       return { warrantyDescription, warrantyDescriptionRaw: value };
     }
+  }
+
+  if (labelSeen) {
+    diagnostics?.partial(
+      'warrantyDescription',
+      'warranty row present but no duration could be parsed',
+    );
+  } else {
+    diagnostics?.missing(
+      'warrantyDescription',
+      'no warranty row in the detail tables',
+    );
   }
   return undefined;
 }
@@ -291,7 +368,13 @@ function extractDetailWarranty(doc: Document): DetailWarranty | undefined {
 export function parseAmazonProductDetail(
   doc: Document = document,
   pageUrl?: string,
+  // SAD-359: optional per-field diagnostics out-parameter. Every `diag?.`
+  // call below only *records* an outcome the parser already reached; the
+  // product returned is identical with or without a collector (parity is
+  // pinned by tests/extraction-diagnostics.test.ts).
+  diagnostics?: FieldDiagnosticsCollector,
 ): ScrapedAmazonProduct | null {
+  const diag = diagnostics;
   try {
     const activeUrl =
       pageUrl ??
@@ -300,41 +383,91 @@ export function parseAmazonProductDetail(
         : 'https://www.amazon.com');
 
     const jsonLd = extractProductJsonLd(doc);
-    const asin = extractDetailAsin(doc, activeUrl, jsonLd);
+    const asin = extractDetailAsin(doc, activeUrl, jsonLd, diag);
     if (!asin) {
       return null;
     }
+    diag?.setAsin(asin);
 
     // Title
     let title: string | null = null;
+    let titleSelector: string | undefined;
+    let titleRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.title) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
         const text = normalizeWhitespace(el.textContent);
         if (text) {
           title = text;
+          titleSelector = selector;
           break;
         }
+        titleRejectedSelector ??= selector;
       }
+    }
+    if (title && titleSelector) {
+      diag?.extracted('title', { source: 'dom', selector: titleSelector });
     }
     if (!title && jsonLd.title) {
       title = jsonLd.title;
+      if (titleRejectedSelector) {
+        diag?.rescued('title', 'title node present but empty; JSON-LD fallback used', {
+          source: 'json-ld',
+          selector: titleRejectedSelector,
+        });
+      } else {
+        diag?.extracted('title', { source: 'json-ld' });
+      }
     }
     if (!title) {
+      if (titleRejectedSelector) {
+        diag?.partial('title', 'title node present but empty', {
+          selector: titleRejectedSelector,
+        });
+      } else {
+        diag?.missing('title', 'no title node or JSON-LD name in the fetched HTML');
+      }
       return null;
     }
 
     // Brand
     let brand: string | null = null;
+    let brandSelector: string | undefined;
+    let brandRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.brand) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
         brand = cleanBrand(el.textContent);
-        if (brand) break;
+        if (brand) {
+          brandSelector = selector;
+          break;
+        }
+        brandRejectedSelector ??= selector;
       }
+    }
+    if (brand && brandSelector) {
+      diag?.extracted('brand', { source: 'dom', selector: brandSelector });
     }
     if (!brand && jsonLd.brand) {
       brand = jsonLd.brand;
+      if (brandRejectedSelector) {
+        diag?.rescued(
+          'brand',
+          'brand node present but rejected by the field parser; JSON-LD fallback used',
+          { source: 'json-ld', selector: brandRejectedSelector },
+        );
+      } else {
+        diag?.extracted('brand', { source: 'json-ld' });
+      }
+    }
+    if (!brand) {
+      if (brandRejectedSelector) {
+        diag?.partial('brand', 'brand node present but rejected by the field parser', {
+          selector: brandRejectedSelector,
+        });
+      } else {
+        diag?.missing('brand', 'no byline/brand node or JSON-LD brand in the fetched HTML');
+      }
     }
 
     // Scoped Buybox Pricing & Discounts
@@ -346,58 +479,109 @@ export function parseAmazonProductDetail(
     let dealBadge: string | undefined;
     let coupon: string | undefined;
 
+    // SAD-359: pricing provenance. The shared card pricing cascade is not
+    // instrumented internally, so at this level "a buybox scope element was
+    // present" is the candidate signal; the winning scope + priceTier say
+    // where a value came from.
+    let buyboxScopeSeen = false;
+    let priceScopeSelector: string | undefined;
+    let priceTier: AmazonExtractionTier | undefined;
+    let listPriceSelector: string | undefined;
+    let discountSelector: string | undefined;
+    let dealBadgeSelector: string | undefined;
+    let couponSelector: string | undefined;
+
     for (const scopeSelector of AMAZON_SELECTORS.detail.buyboxScopes) {
       const scopeEl = safeQuerySelector(doc, scopeSelector);
       if (!scopeEl || isInsideExcludedDetailSubtree(scopeEl)) continue;
+      buyboxScopeSeen = true;
 
       const scopedPricing = extractCardPricingAndDiscounts(scopeEl, activeUrl);
       if (price === null && scopedPricing.price !== null) {
         price = scopedPricing.price;
         currency = scopedPricing.currency ?? pageCurrency;
+        priceScopeSelector = scopeSelector;
+        priceTier = scopedPricing.priceTier;
       }
       if (listPrice === undefined && scopedPricing.listPrice !== undefined) {
         listPrice = scopedPricing.listPrice;
+        listPriceSelector = scopeSelector;
       }
       if (
         discountPercentage === undefined &&
         scopedPricing.discountPercentage !== undefined
       ) {
         discountPercentage = scopedPricing.discountPercentage;
+        discountSelector = scopeSelector;
       }
       if (dealBadge === undefined && scopedPricing.dealBadge !== undefined) {
         dealBadge = scopedPricing.dealBadge;
+        dealBadgeSelector = scopeSelector;
       }
       if (coupon === undefined && scopedPricing.coupon !== undefined) {
         coupon = scopedPricing.coupon;
+        couponSelector = scopeSelector;
       }
       if (price !== null) break;
     }
 
     // Check legacy `#priceblock_ourprice` / `#priceblock_dealprice` if still null
+    const legacyPriceSelector =
+      '#priceblock_dealprice, #priceblock_ourprice, #price_inside_buybox';
+    let priceFromLegacy = false;
+    let legacyPriceRejected = false;
     if (price === null) {
-      const legacyEl = safeQuerySelector(
-        doc,
-        '#priceblock_dealprice, #priceblock_ourprice, #price_inside_buybox',
-      );
+      const legacyEl = safeQuerySelector(doc, legacyPriceSelector);
       if (legacyEl && !isInsideExcludedDetailSubtree(legacyEl)) {
         const parsed = parsePrice(legacyEl.textContent, pageCurrency);
         if (parsed.value !== null) {
           price = parsed.value;
           currency = parsed.currency ?? pageCurrency;
+          priceFromLegacy = true;
+        } else {
+          legacyPriceRejected = true;
         }
       }
     }
 
+    let priceFromJsonLd = false;
     if (price === null && jsonLd.price !== undefined) {
       price = jsonLd.price;
       currency = jsonLd.currency ?? pageCurrency;
+      priceFromJsonLd = true;
     }
 
+    if (price !== null && priceScopeSelector) {
+      diag?.extracted('price', {
+        source: 'dom',
+        selector: priceScopeSelector,
+        ...(priceTier ? { tier: priceTier } : {}),
+      });
+    } else if (price !== null && priceFromLegacy) {
+      diag?.extracted('price', { source: 'legacy', selector: legacyPriceSelector });
+    } else if (price !== null && priceFromJsonLd) {
+      if (buyboxScopeSeen || legacyPriceRejected) {
+        diag?.rescued(
+          'price',
+          'buybox present but no parseable DOM price; JSON-LD fallback used',
+          { source: 'json-ld' },
+        );
+      } else {
+        diag?.extracted('price', { source: 'json-ld' });
+      }
+    } else if (buyboxScopeSeen || legacyPriceRejected) {
+      diag?.partial('price', 'buybox/price node present but no parseable price');
+    } else {
+      diag?.missing('price', 'no buybox or price node in the fetched HTML');
+    }
+    // Currency always resolves (pricing → page → USD), so it is a derived value.
+    diag?.extracted('currency', { source: 'derived' });
+
+    const listPriceFallbackSelector =
+      '#corePriceDisplay_desktop_feature_div [data-a-strike="true"] .a-offscreen, #corePrice_feature_div [data-a-strike="true"] .a-offscreen, #apex_desktop .basisPrice .a-offscreen, #listPrice';
+    let listPriceRejected = false;
     if (listPrice === undefined) {
-      const strikeEls = safeQuerySelectorAll(
-        doc,
-        '#corePriceDisplay_desktop_feature_div [data-a-strike="true"] .a-offscreen, #corePrice_feature_div [data-a-strike="true"] .a-offscreen, #apex_desktop .basisPrice .a-offscreen, #listPrice',
-      );
+      const strikeEls = safeQuerySelectorAll(doc, listPriceFallbackSelector);
       for (const el of strikeEls) {
         if (isInsideExcludedDetailSubtree(el)) continue;
         const parsed = parsePrice(el.textContent, currency ?? pageCurrency);
@@ -406,21 +590,54 @@ export function parseAmazonProductDetail(
           (price === null || parsed.value > price)
         ) {
           listPrice = parsed.value;
+          listPriceSelector = listPriceFallbackSelector;
           break;
+        }
+        listPriceRejected = true;
+      }
+    }
+    if (listPrice !== undefined) {
+      diag?.extracted('listPrice', { source: 'dom', selector: listPriceSelector });
+    } else if (listPriceRejected) {
+      diag?.partial(
+        'listPrice',
+        'struck-through price node present but rejected (unparseable or not above selling price)',
+        { selector: listPriceFallbackSelector },
+      );
+    } else {
+      diag?.missing('listPrice', 'no list price shown on the page');
+    }
+
+    const savingsSelector =
+      '#corePriceDisplay_desktop_feature_div .savingsPercentage, #corePrice_feature_div .savingsPercentage, #apex_desktop .savingsPercentage';
+    let savingsRejected = false;
+    if (discountPercentage === undefined) {
+      const savEl = safeQuerySelector(doc, savingsSelector);
+      if (savEl && !isInsideExcludedDetailSubtree(savEl)) {
+        discountPercentage = normalizeDiscountBadge(savEl.textContent);
+        if (discountPercentage !== undefined) {
+          discountSelector = savingsSelector;
+        } else {
+          savingsRejected = true;
         }
       }
     }
-
-    if (discountPercentage === undefined) {
-      const savEl = safeQuerySelector(
-        doc,
-        '#corePriceDisplay_desktop_feature_div .savingsPercentage, #corePrice_feature_div .savingsPercentage, #apex_desktop .savingsPercentage',
+    if (discountPercentage !== undefined) {
+      diag?.extracted('discountPercentage', {
+        source: 'dom',
+        selector: discountSelector,
+      });
+    } else if (savingsRejected) {
+      diag?.partial(
+        'discountPercentage',
+        'savings percentage node present but unparseable',
+        { selector: savingsSelector },
       );
-      if (savEl && !isInsideExcludedDetailSubtree(savEl)) {
-        discountPercentage = normalizeDiscountBadge(savEl.textContent);
-      }
+    } else {
+      diag?.missing('discountPercentage', 'no discount shown on the page');
     }
 
+    let dealBadgeRejectedSelector: string | undefined;
     if (dealBadge === undefined) {
       for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
         const el = safeQuerySelector(doc, selector);
@@ -428,11 +645,23 @@ export function parseAmazonProductDetail(
         const text = normalizeWhitespace(el.textContent);
         if (text && /deal|limited|lightning|prime day|black friday/i.test(text)) {
           dealBadge = text;
+          dealBadgeSelector = selector;
           break;
         }
+        dealBadgeRejectedSelector ??= selector;
       }
     }
+    if (dealBadge !== undefined) {
+      diag?.extracted('dealBadge', { source: 'dom', selector: dealBadgeSelector });
+    } else if (dealBadgeRejectedSelector) {
+      diag?.partial('dealBadge', 'badge-like node present but its text is not a deal badge', {
+        selector: dealBadgeRejectedSelector,
+      });
+    } else {
+      diag?.missing('dealBadge', 'no deal badge shown on the page');
+    }
 
+    let couponRejectedSelector: string | undefined;
     if (coupon === undefined) {
       for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
         const el = safeQuerySelector(doc, selector);
@@ -440,138 +669,326 @@ export function parseAmazonProductDetail(
         const text = normalizeWhitespace(el.textContent);
         if (text && /coupon|voucher|rabatt/i.test(text)) {
           coupon = text.replace(/\s*Terms\s*$/i, '').trim();
+          couponSelector = selector;
           break;
         }
+        couponRejectedSelector ??= selector;
       }
+    }
+    if (coupon !== undefined) {
+      diag?.extracted('coupon', { source: 'dom', selector: couponSelector });
+    } else if (couponRejectedSelector) {
+      diag?.partial('coupon', 'coupon-like node present but its text is not a coupon', {
+        selector: couponRejectedSelector,
+      });
+    } else {
+      diag?.missing('coupon', 'no coupon shown on the page');
     }
 
     // Past Month Sales
+    const pastMonthSelector =
+      '#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought';
     let pastMonthSales: string | undefined;
-    const boughtEl = safeQuerySelector(
-      doc,
-      '#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought',
-    );
+    let pastMonthRejected = false;
+    let pastMonthFromScan = false;
+    const boughtEl = safeQuerySelector(doc, pastMonthSelector);
     if (boughtEl && !isInsideExcludedDetailSubtree(boughtEl)) {
       const text = normalizeWhitespace(boughtEl.textContent);
       const match =
         /(\d+(?:[.,]\d+)?\s*[KkMm+]?\+?\s*bought in past month)/i.exec(text);
       if (match?.[1]) {
         pastMonthSales = match[1].trim();
+      } else {
+        pastMonthRejected = true;
       }
     }
     if (!pastMonthSales && (doc.body || doc.documentElement)) {
       pastMonthSales = extractCardPastMonthSales(
         (doc.body ?? doc.documentElement)!,
       );
+      pastMonthFromScan = pastMonthSales !== undefined;
+    }
+    if (pastMonthSales !== undefined) {
+      diag?.extracted('pastMonthSales', {
+        source: 'dom',
+        selector: pastMonthFromScan ? '(document text scan)' : pastMonthSelector,
+      });
+    } else if (pastMonthRejected) {
+      diag?.partial(
+        'pastMonthSales',
+        'social-proof node present but the bought-in-past-month pattern did not match',
+        { selector: pastMonthSelector },
+      );
+    } else {
+      diag?.missing('pastMonthSales', 'no bought-in-past-month social proof on the page');
     }
 
     // Rating & Review count
+    const ratingSelector =
+      '#acrPopover, #averageCustomerReviews [data-action="acrStarsLink-click-metrics"]';
     let rating: number | null = null;
-    const acrPopover = safeQuerySelector(
-      doc,
-      '#acrPopover, #averageCustomerReviews [data-action="acrStarsLink-click-metrics"]',
-    );
+    let ratingRejected = false;
+    let ratingFromJsonLd = false;
+    const acrPopover = safeQuerySelector(doc, ratingSelector);
     if (acrPopover && !isInsideExcludedDetailSubtree(acrPopover)) {
       rating = parseRating(
         acrPopover.getAttribute('title') ||
           acrPopover.getAttribute('aria-label') ||
           acrPopover.textContent,
       );
+      ratingRejected = rating === null;
     }
     if (rating === null && jsonLd.rating !== undefined) {
       rating = jsonLd.rating;
+      ratingFromJsonLd = true;
+    }
+    if (rating !== null && !ratingFromJsonLd) {
+      diag?.extracted('rating', { source: 'dom', selector: ratingSelector });
+    } else if (rating !== null && ratingFromJsonLd) {
+      if (ratingRejected) {
+        diag?.rescued('rating', 'rating node present but unparseable; JSON-LD fallback used', {
+          source: 'json-ld',
+          selector: ratingSelector,
+        });
+      } else {
+        diag?.extracted('rating', { source: 'json-ld' });
+      }
+    } else if (ratingRejected) {
+      diag?.partial('rating', 'rating node present but unparseable', {
+        selector: ratingSelector,
+      });
+    } else {
+      diag?.missing('rating', 'no rating node or JSON-LD aggregateRating in the fetched HTML');
     }
 
     let reviewCount: number | null = null;
+    let reviewRejected = false;
+    let reviewFromJsonLd = false;
     const reviewEl = safeQuerySelector(doc, '#acrCustomerReviewText');
     if (reviewEl && !isInsideExcludedDetailSubtree(reviewEl)) {
       reviewCount = parseReviewCount(reviewEl.textContent);
+      reviewRejected = reviewCount === null;
     }
     if (reviewCount === null && jsonLd.reviewCount !== undefined) {
       reviewCount = jsonLd.reviewCount;
+      reviewFromJsonLd = true;
+    }
+    if (reviewCount !== null && !reviewFromJsonLd) {
+      diag?.extracted('reviewCount', { source: 'dom', selector: '#acrCustomerReviewText' });
+    } else if (reviewCount !== null && reviewFromJsonLd) {
+      if (reviewRejected) {
+        diag?.rescued(
+          'reviewCount',
+          'review-count node present but unparseable; JSON-LD fallback used',
+          { source: 'json-ld', selector: '#acrCustomerReviewText' },
+        );
+      } else {
+        diag?.extracted('reviewCount', { source: 'json-ld' });
+      }
+    } else if (reviewRejected) {
+      diag?.partial('reviewCount', 'review-count node present but unparseable', {
+        selector: '#acrCustomerReviewText',
+      });
+    } else {
+      diag?.missing(
+        'reviewCount',
+        'no review-count node or JSON-LD aggregateRating in the fetched HTML',
+      );
     }
 
     // Availability
     let availability: string | null = null;
+    let availabilitySelector: string | undefined;
+    let availabilityRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.availability) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
         availability = cleanAvailability(el.textContent);
-        if (availability) break;
+        if (availability) {
+          availabilitySelector = selector;
+          break;
+        }
+        availabilityRejectedSelector ??= selector;
       }
+    }
+    if (availability) {
+      diag?.extracted('availability', { source: 'dom', selector: availabilitySelector });
+    } else if (availabilityRejectedSelector) {
+      diag?.partial(
+        'availability',
+        'availability node present but rejected by the field parser',
+        { selector: availabilityRejectedSelector },
+      );
+    } else {
+      diag?.missing('availability', 'no availability node in the fetched HTML');
     }
 
     // Delivery
     let delivery: string | undefined;
+    let deliverySelector: string | undefined;
+    let deliveryRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.delivery) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
         const text = normalizeWhitespace(el.textContent);
         if (text) {
           delivery = text;
+          deliverySelector = selector;
           break;
         }
+        deliveryRejectedSelector ??= selector;
       }
+    }
+    if (delivery !== undefined) {
+      diag?.extracted('delivery', { source: 'dom', selector: deliverySelector });
+    } else if (deliveryRejectedSelector) {
+      diag?.partial('delivery', 'delivery node present but empty', {
+        selector: deliveryRejectedSelector,
+      });
+    } else {
+      diag?.missing('delivery', 'no delivery block in the fetched HTML');
     }
 
     // Seller
     let seller: string | null = null;
+    let sellerSelector: string | undefined;
+    let sellerRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.seller) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
         seller = cleanSeller(el.textContent);
-        if (seller) break;
+        if (seller) {
+          sellerSelector = selector;
+          break;
+        }
+        sellerRejectedSelector ??= selector;
       }
+    }
+    if (seller) {
+      diag?.extracted('seller', { source: 'dom', selector: sellerSelector });
+    } else if (sellerRejectedSelector) {
+      diag?.partial('seller', 'seller node present but rejected by the field parser', {
+        selector: sellerRejectedSelector,
+      });
+    } else {
+      diag?.missing('seller', 'no seller/merchant node in the fetched HTML');
     }
 
     // Features
     const features: string[] = [];
+    let featuresSelector: string | undefined;
+    let featureNodesSeen = 0;
     for (const selector of AMAZON_SELECTORS.detail.features) {
       const items = safeQuerySelectorAll(doc, selector);
+      const before = features.length;
       for (const item of items) {
         if (isInsideExcludedDetailSubtree(item)) continue;
+        featureNodesSeen += 1;
         const text = normalizeWhitespace(item.textContent);
         if (text && !features.includes(text)) {
           features.push(text);
         }
       }
+      if (features.length > before) featuresSelector = selector;
       if (features.length > 0) break;
+    }
+    if (features.length > 0) {
+      diag?.extracted('features', { source: 'dom', selector: featuresSelector });
+    } else if (featureNodesSeen > 0) {
+      diag?.partial('features', 'feature bullet nodes present but empty');
+    } else {
+      diag?.missing('features', 'no feature bullets in the fetched HTML');
     }
 
     // Description
     let description: string | null = null;
+    let descriptionSelector: string | undefined;
+    let descriptionRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.description) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
         const text = normalizeWhitespace(el.textContent);
         if (text) {
           description = text;
+          descriptionSelector = selector;
           break;
         }
+        descriptionRejectedSelector ??= selector;
       }
+    }
+    if (description && descriptionSelector) {
+      diag?.extracted('description', { source: 'dom', selector: descriptionSelector });
     }
     if (!description && jsonLd.description) {
       description = jsonLd.description;
+      if (descriptionRejectedSelector) {
+        diag?.rescued(
+          'description',
+          'description node present but empty; JSON-LD fallback used',
+          { source: 'json-ld', selector: descriptionRejectedSelector },
+        );
+      } else {
+        diag?.extracted('description', { source: 'json-ld' });
+      }
+    }
+    if (!description) {
+      if (descriptionRejectedSelector) {
+        diag?.partial('description', 'description node present but empty', {
+          selector: descriptionRejectedSelector,
+        });
+      } else {
+        diag?.missing(
+          'description',
+          'no description node or JSON-LD description in the fetched HTML',
+        );
+      }
     }
 
     // High-res Image
     let imageUrl: string | null = null;
+    let imageSelector: string | undefined;
+    let imageRejectedSelector: string | undefined;
     for (const selector of AMAZON_SELECTORS.detail.images) {
       const img = safeQuerySelector(doc, selector);
       if (img && !isInsideExcludedDetailSubtree(img)) {
         imageUrl = extractBestImageUrl(img);
-        if (imageUrl) break;
+        if (imageUrl) {
+          imageSelector = selector;
+          break;
+        }
+        imageRejectedSelector ??= selector;
       }
+    }
+    if (imageUrl && imageSelector) {
+      diag?.extracted('imageUrl', { source: 'dom', selector: imageSelector });
     }
     if (!imageUrl && jsonLd.imageUrl) {
       imageUrl = jsonLd.imageUrl;
+      if (imageRejectedSelector) {
+        diag?.rescued(
+          'imageUrl',
+          'image node present but no usable URL; JSON-LD fallback used',
+          { source: 'json-ld', selector: imageRejectedSelector },
+        );
+      } else {
+        diag?.extracted('imageUrl', { source: 'json-ld' });
+      }
+    }
+    if (!imageUrl) {
+      if (imageRejectedSelector) {
+        diag?.partial('imageUrl', 'image node present but no usable URL', {
+          selector: imageRejectedSelector,
+        });
+      } else {
+        diag?.missing('imageUrl', 'no product image node or JSON-LD image in the fetched HTML');
+      }
     }
 
     // BSR
-    const bestSellersRank = extractDetailBsr(doc);
+    const bestSellersRank = extractDetailBsr(doc, diag);
 
     // Warranty (SAD-349) — structured detail tables only, PDP-exclusive.
-    const warranty = extractDetailWarranty(doc);
+    const warranty = extractDetailWarranty(doc, diag);
 
     // Prime
     const isPrime = Boolean(
@@ -581,6 +998,11 @@ export function parseAmazonProductDetail(
       ) ||
         (delivery && /\bFREE delivery\b/i.test(delivery)),
     );
+    if (isPrime) {
+      diag?.extracted('isPrime', { source: 'derived' });
+    } else {
+      diag?.missing('isPrime', 'no Prime marker found');
+    }
 
     const url = resolveProductUrl(null, asin, activeUrl);
 
@@ -623,7 +1045,11 @@ export function parseAmazonProductDetail(
       candidate.warrantyDescriptionRaw = warranty.warrantyDescriptionRaw;
     }
 
-    return validateAndNormalizeScrapedProduct(candidate, activeUrl);
+    const normalized = validateAndNormalizeScrapedProduct(candidate, activeUrl);
+    // SAD-359: reconcile the recorded outcomes with validation (a value the
+    // parser produced but validation dropped becomes PARTIAL, validated:false).
+    if (diag) applyValidationResults(diag, candidate, normalized);
+    return normalized;
   } catch (err) {
     console.warn('[PPHunt] Failed to parse product detail page:', err);
     return null;
