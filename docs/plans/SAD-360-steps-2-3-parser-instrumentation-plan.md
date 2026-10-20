@@ -710,3 +710,48 @@ forbidden-area checks as step 2 (all clean).
 price, duplicate grid, no-goodsId, mixed grid, category delegation) through the
 `b826132` worktree and through the instrumented parser **with** and **without** a
 collector. All three outputs are **byte-identical JSON**.
+
+---
+
+## 17. Step 4 implementation record (2026-10-20)
+
+Authorized by the owner ("keep going") after steps 2–3. Built on D1–D8, A1–A3
+and the recorded fail-open policy.
+
+**Files changed**
+
+| File | Change |
+|---|---|
+| `scraper/extraction-diagnostics.ts` | formatter/summary accept a structural report type (the wire keeps `field` a plain string) |
+| `schemas/messages.ts` | `TemuFieldDiagnosticSchema`, `TemuDiagnosticsReportSchema`, optional `productDiagnostics` (max 200) |
+| `constants/defaults.ts` | `TEMU_DIAGNOSTICS_LEDGER_KEY` |
+| `background/diagnostics-ledger.ts` | **new** — in-memory + `storage.session` seen-key ledger, fail-open, capped |
+| `background/handler.ts` | eligibility-gated logging, diagnostics-only branch, ledger wiring |
+| `entrypoints/temu.content.ts` | per-page reports, bounded-to-sent attachment, A1 null-ID routing, A3 later-stage sends |
+| `tests/temu-diagnostics-transport.test.ts` | **new** — 14 tests |
+| `ARCHITECTURE.md`, `CHANGELOG.md` | documentation |
+
+**Two bugs the tests caught**
+
+1. The diagnostics-only path sat *after* the session-creation block, so a
+   null-ID PDP report created a session row — a direct A1 violation. The whole
+   branch now runs before any session/product/count/broadcast code.
+2. The wire report type (`field: string`) did not satisfy the formatter's
+   literal union. The formatter now takes a structural type; existing callers
+   are unaffected.
+
+**Logging eligibility (D8/A3) is a real check, not validation success:** the
+background re-reads the session's persisted goodsIds after `upsertTemuProducts`
+(which can still skip products at the target cap) and logs only reports whose
+`goodsId` is present. `null`-ID reports bypass the membership check and require
+`pageType === 'product_detail'`.
+
+**Verification:** `tsc` clean · full suite **92 files / 1132 tests** ·
+`wxt build` pass · dead-export guard pass · **Amazon diff empty** · docs
+consistency suite green.
+
+**Known limitations (carried into the step-5 report):** console output and the
+ledger write cannot be atomic, so a crash between them can lose one line; a full
+browser restart clears `storage.session` and the per-session keys with it (new
+sessions get fresh keys anyway); the ledger is capped at 20 000 keys (oldest
+evicted first).

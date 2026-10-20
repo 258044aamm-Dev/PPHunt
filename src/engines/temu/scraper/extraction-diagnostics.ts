@@ -206,7 +206,9 @@ export interface FieldDiagnosticCounts {
 }
 
 export function summarizeFieldDiagnostics(
-  fields: readonly FieldDiagnostic[]
+  // Only `status` is read, so this accepts both the typed collector output and
+  // the looser wire form the background receives (SAD-360 step 4).
+  fields: readonly { status: FieldExtractionStatus }[]
 ): FieldDiagnosticCounts {
   const counts: FieldDiagnosticCounts = {
     extracted: 0,
@@ -225,9 +227,29 @@ export function summarizeFieldDiagnostics(
   return counts;
 }
 
+/**
+ * Structural shape of a report as it arrives from another context. The wire
+ * schema keeps `field` a plain string, so the background formats this rather
+ * than the narrower collector type.
+ */
+export interface FormattableFieldDiagnostic {
+  field: string;
+  status: FieldExtractionStatus;
+  source?: string;
+  selector?: string;
+  reason?: string;
+  validated?: boolean;
+}
+
+export interface FormattableDiagnosticsReport {
+  goodsId: string | null;
+  stage: TemuDiagnosticStage;
+  fields: readonly FormattableFieldDiagnostic[];
+}
+
 /** Return a paste-safe line, or null if formatting fails. Never emit a log here. */
 export function formatTemuExtractionDiagnosticsLog(
-  report: ExtractionDiagnosticsReport,
+  report: FormattableDiagnosticsReport,
   context: { sessionId?: string | null; pageType?: TemuPageType } = {}
 ): string | null {
   try {

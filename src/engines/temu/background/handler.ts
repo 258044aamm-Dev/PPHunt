@@ -25,10 +25,13 @@ import {
   isTemuMessage,
   validateTemuBackgroundIncomingMessage,
 } from '../schemas/validate-message';
+import { claimDiagnosticLine, diagnosticLedgerKey } from './diagnostics-ledger';
+import { formatTemuExtractionDiagnosticsLog } from '../scraper/extraction-diagnostics';
 import { validateAndNormalizeTemuScrapedProduct } from '../scraper/field-parsers';
 import {
   extractTemuSearchQuery,
 } from '../scraper/page-detector';
+import type { TemuDiagnosticsReport } from '../schemas/messages';
 import type { TemuProduct } from '../types/product';
 
 const MAX_SEEDED_GOODS_IDS = 2000;
@@ -313,11 +316,72 @@ export function registerTemuBackgroundHandlers(): {
     }
   }
 
+  /**
+   * SAD-360: emit one service-worker console line per report that describes a
+   * product this session actually holds (decisions D3, D4, D8, A1, A2, A3).
+   *
+   * Every failure mode is swallowed: diagnostics must never affect a save.
+   */
+  async function logTemuDiagnostics(
+    reports: TemuDiagnosticsReport[] | undefined,
+    sessionId: string | null,
+    persistedGoodsIds: Set<string> | null,
+    pageType: string
+  ): Promise<void> {
+    if (!reports || reports.length === 0) return;
+    for (const report of reports) {
+      try {
+        // A1: a null-ID report is the "PDP parse failed" signal and is logged.
+        // A3: an ID'd report is logged only when the session really holds it.
+        if (report.goodsId !== null) {
+          if (!persistedGoodsIds || !persistedGoodsIds.has(report.goodsId)) {
+            continue;
+          }
+        } else if (pageType !== 'product_detail') {
+          continue;
+        }
+
+        const key = diagnosticLedgerKey(sessionId, report.goodsId, report.stage);
+        if (!(await claimDiagnosticLine(key))) continue;
+
+        console.info(
+          formatTemuExtractionDiagnosticsLog(report, {
+            sessionId,
+            pageType: report.stage,
+          })
+        );
+      } catch {
+        // Diagnostics only.
+      }
+    }
+  }
+
   async function persistTemuCollectedProducts(
     rawProducts: unknown[],
     pageType: 'search' | 'product_detail' | 'category' | 'unknown',
-    pageUrl: string
+    pageUrl: string,
+    pendingDiagnostics: TemuDiagnosticsReport[] = []
   ): Promise<void> {
+    if (rawProducts.length === 0) {
+      // A1: a diagnostics-only delivery must not create a session, a product,
+      // a count, a history row or a broadcast. It only logs, using whichever
+      // session already exists (possibly none, for a goodsId-less PDP).
+      if (pendingDiagnostics.length > 0) {
+        const resolvedSessionId =
+          state.sessionId ?? lastFinalizedTemuSessionId;
+        const persisted = resolvedSessionId
+          ? await getExistingTemuGoodsIds(resolvedSessionId).catch(() => null)
+          : null;
+        await logTemuDiagnostics(
+          pendingDiagnostics,
+          resolvedSessionId,
+          persisted,
+          pageType
+        );
+      }
+      return;
+    }
+
     if (!state.sessionId && lastFinalizedTemuSessionId) {
       // Products arrived just as the session finalized; save under the finalized sessionId without reopening state
       const targetSessionId = lastFinalizedTemuSessionId;
@@ -339,6 +403,17 @@ export function registerTemuBackgroundHandlers(): {
       }
       if (validated.length > 0) {
         await upsertTemuProducts(validated, state.targetCount);
+      }
+      if (pendingDiagnostics.length > 0) {
+        const persisted = await getExistingTemuGoodsIds(targetSessionId).catch(
+          () => null
+        );
+        await logTemuDiagnostics(
+          pendingDiagnostics,
+          targetSessionId,
+          persisted,
+          pageType
+        );
       }
       return;
     }
@@ -401,7 +476,22 @@ export function registerTemuBackgroundHandlers(): {
       }
     }
 
-    if (validatedProducts.length === 0) return;
+    if (validatedProducts.length === 0) {
+      // A1/A3: a diagnostics-only message creates no product, session, count,
+      // progress entry, history row or broadcast — it may only log.
+      if (pendingDiagnostics.length > 0) {
+        const persisted = await getExistingTemuGoodsIds(sessionId).catch(
+          () => null
+        );
+        await logTemuDiagnostics(
+          pendingDiagnostics,
+          sessionId,
+          persisted,
+          pageType
+        );
+      }
+      return;
+    }
 
     const { totalForSession } = await upsertTemuProducts(
       validatedProducts,
@@ -442,6 +532,21 @@ export function registerTemuBackgroundHandlers(): {
         ...(rejectedCount > 0 ? { rejectedCount } : {}),
       },
     });
+
+    if (pendingDiagnostics.length > 0) {
+      // D8: only products that actually persisted earn a per-field line, so
+      // the log always describes what was collected (the upsert can still skip
+      // products at the target cap).
+      const persisted = await getExistingTemuGoodsIds(sessionId).catch(
+        () => null
+      );
+      await logTemuDiagnostics(
+        pendingDiagnostics,
+        sessionId,
+        persisted,
+        pageType
+      );
+    }
   }
 
   function handleTemuMessage(
@@ -661,13 +766,53 @@ export function registerTemuBackgroundHandlers(): {
         }
 
         case 'TEMU_PRODUCTS_COLLECTED': {
-          const { products, pageType, pageUrl } = msg.payload;
-          if (Array.isArray(products) && products.length > 0) {
-            const targetUrl =
-              pageUrl || senderTabUrl || 'https://www.temu.com/';
+          const { products, pageType, pageUrl, productDiagnostics } =
+            msg.payload;
+          const targetUrl = pageUrl || senderTabUrl || 'https://www.temu.com/';
+          if (
+            productDiagnostics &&
+            productDiagnostics.length > 0 &&
+            (!Array.isArray(products) || products.length === 0)
+          ) {
+            // A1/A3: diagnostics-only delivery, serialized with product writes
+            // so the persisted-membership check sees a settled session.
             const next = pendingTemuProductsChain.then(
-              () => persistTemuCollectedProducts(products, pageType, targetUrl),
-              () => persistTemuCollectedProducts(products, pageType, targetUrl),
+              () =>
+                persistTemuCollectedProducts(
+                  [],
+                  pageType,
+                  targetUrl,
+                  productDiagnostics
+                ),
+              () =>
+                persistTemuCollectedProducts(
+                  [],
+                  pageType,
+                  targetUrl,
+                  productDiagnostics
+                )
+            );
+            pendingTemuProductsChain = next.catch((err) => {
+              console.warn('[PPHunt:Temu] Failed to log diagnostics:', err);
+            });
+            break;
+          }
+          if (Array.isArray(products) && products.length > 0) {
+            const next = pendingTemuProductsChain.then(
+              () =>
+                persistTemuCollectedProducts(
+                  products,
+                  pageType,
+                  targetUrl,
+                  productDiagnostics
+                ),
+              () =>
+                persistTemuCollectedProducts(
+                  products,
+                  pageType,
+                  targetUrl,
+                  productDiagnostics
+                ),
             );
             pendingTemuProductsChain = next.catch((err) => {
               console.warn('[PPHunt:Temu] Failed to persist products:', err);

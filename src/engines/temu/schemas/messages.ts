@@ -112,6 +112,28 @@ export const TemuStopCollectionCmdMessageSchema = z.object({
 
 // ─── Content Script → Background ──────────────────────────────────────────────
 
+/**
+ * SAD-360: per-field extraction diagnostics for one product at one stage.
+ * Diagnostics only — nothing branches on them, so `source`/`selector`/`reason`
+ * stay loose strings instead of enums that would couple the wire schema to the
+ * scraper internals.
+ */
+export const TemuFieldDiagnosticSchema = z.object({
+  field: z.string().min(1),
+  status: z.enum(['EXTRACTED', 'MISSING', 'PARSE_FAILED', 'PARTIAL', 'UNKNOWN']),
+  source: z.string().optional(),
+  selector: z.string().optional(),
+  reason: z.string().optional(),
+  validated: z.boolean().optional(),
+});
+
+export const TemuDiagnosticsReportSchema = z.object({
+  /** null only for a PDP whose goodsId could not be resolved (decision D7). */
+  goodsId: z.string().nullable(),
+  stage: z.enum(['search', 'product_detail', 'category']),
+  fields: z.array(TemuFieldDiagnosticSchema).max(64),
+});
+
 export const TemuProductsCollectedMessageSchema = z.object({
   type: z.literal('TEMU_PRODUCTS_COLLECTED'),
   payload: z.object({
@@ -119,6 +141,10 @@ export const TemuProductsCollectedMessageSchema = z.object({
     pageType: z.enum(['search', 'product_detail', 'category', 'unknown']),
     pageUrl: z.string().url(),
     totalOnPage: z.number().int().nonnegative(),
+    // SAD-360: optional, so a message from an older content script still
+    // validates and persists exactly as before. Bounded to keep the runtime
+    // message small even on a large card batch.
+    productDiagnostics: z.array(TemuDiagnosticsReportSchema).max(200).optional(),
   }),
 });
 
@@ -279,6 +305,8 @@ export type TemuSidepanelIncomingMessage = z.infer<
   typeof TemuSidepanelIncomingMessageSchema
 >;
 export type TemuExtensionMessage = z.infer<typeof TemuExtensionMessageSchema>;
+export type TemuFieldDiagnostic = z.infer<typeof TemuFieldDiagnosticSchema>;
+export type TemuDiagnosticsReport = z.infer<typeof TemuDiagnosticsReportSchema>;
 
 // Keep TemuScrapedProductSchema referenced for re-export convenience
 export { TemuScrapedProductSchema };
