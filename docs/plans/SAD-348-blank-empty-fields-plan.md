@@ -199,3 +199,14 @@ empty cell does not change row height. No layout code to change (verify visually
 - **Whitespace-only strings:** cells use `if (!value)`, so a whitespace-only string
   would still render. Scrapers already trim/normalize (out of scope); do **not** add
   trimming as part of this ticket unless a failing test proves it is needed.
+
+## 8. Implementation log (2026-10-20)
+
+- Step 1 (coverage re-confirmed): commit `f92272d`.
+- Step 2 (Amazon table, 13 cells): commit `9230a30`.
+- Step 3 (Temu table, 13 cells): commit `4a156d9`.
+- Step 4 (export audit): **no export code change needed.** All six builders
+  (Amazon + Temu x CSV/Excel/clipboard) already map `null`/`undefined` to an
+  empty value (`raw == null ? '' : String(raw)` in csv/clipboard; `value ?? ''` /
+  null cell in excel). No `—`, `"null"`, or `"undefined"` is emitted. Regression
+  assertions for this are added in Step 5 instead of changing export code.
