@@ -44,6 +44,12 @@ const DETAIL_FIELDS = [
   'dealBadge',
   'pastMonthSales',
   'badge',
+  // SAD-349: warranty can only come from a PDP, so a one-click save that omits
+  // this would fetch the page, parse the row, and throw the value away.
+  // Deliberately NOT in FILL_ONLY_FIELDS: the detail page is authoritative here
+  // and neither key belongs to the price family.
+  'warrantyDescription',
+  'warrantyDescriptionRaw',
 ] as const;
 
 /**

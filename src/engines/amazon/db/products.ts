@@ -27,6 +27,10 @@ function enrichStoredProductFields(
     'availability',
     'seller',
     'description',
+    // SAD-349: lets a later pass over the same ASIN backfill a warranty the
+    // first pass did not see (e.g. a listing row later re-collected on the PDP).
+    'warrantyDescription',
+    'warrantyDescriptionRaw',
   ] as const;
 
   for (const key of nullableKeys) {

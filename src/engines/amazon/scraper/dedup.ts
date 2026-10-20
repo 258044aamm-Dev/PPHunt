@@ -27,6 +27,10 @@ const MERGEABLE_NULLABLE_FIELDS = [
   'availability',
   'seller',
   'description',
+  // SAD-349: a collection run started ON a product page parses the detail
+  // parser, so warranty can reach the dedup merge today, not hypothetically.
+  'warrantyDescription',
+  'warrantyDescriptionRaw',
 ] as const;
 
 /**

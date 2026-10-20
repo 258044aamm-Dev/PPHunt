@@ -125,3 +125,128 @@ describe('parseAmazonProductDetail — warranty shapes', () => {
     expect('warrantyDescription' in (p as object)).toBe(false);
   });
 });
+
+/* ------------------------------------------------------------------------- *
+ * The three merge gates. Each of these is a whitelist: a field missing from it
+ * is dropped without an error, which is exactly how SAD-330's "data collected
+ * but never displayed" bug was produced. One pin per gate.
+ * ------------------------------------------------------------------------- */
+
+import { beforeEach } from 'vitest';
+import { db } from '@/engines/amazon/db/database';
+import { addProducts } from '@/engines/amazon/db/products';
+import { mergeScrapedProductFields } from '@/engines/amazon/scraper/dedup';
+import { mergeDetailIntoStored } from '@/engines/amazon/background/enrich-saved-product';
+import type { Product, ScrapedProduct } from '@/engines/amazon/types';
+
+function scraped(overrides: Partial<ScrapedProduct> = {}): ScrapedProduct {
+  return {
+    asin: 'B0WARANTY1',
+    url: 'https://www.amazon.com/dp/B0WARANTY1',
+    title: 'Widget',
+    price: null,
+    currency: 'USD',
+    rating: null,
+    reviewCount: null,
+    imageUrl: null,
+    isSponsored: false,
+    isPrime: false,
+    brand: null,
+    availability: null,
+    seller: null,
+    description: null,
+    features: [],
+    source: 'detail',
+    ...overrides,
+  };
+}
+
+describe('merge gates', () => {
+  it('G4: mergeScrapedProductFields carries both warranty keys', () => {
+    const target = scraped({ source: 'search' });
+    const source = scraped({
+      warrantyDescription: '1-year',
+      warrantyDescriptionRaw: '1 Year Warranty',
+    });
+    const changed = mergeScrapedProductFields(target, source);
+    expect(changed).toBe(true);
+    expect(target.warrantyDescription).toBe('1-year');
+    expect(target.warrantyDescriptionRaw).toBe('1 Year Warranty');
+  });
+
+  it('G6: mergeDetailIntoStored fills warranty and reports the change', () => {
+    const stored = {
+      ...scraped({ source: 'search' }),
+      collectedAt: '2026-10-20T00:00:00.000Z',
+      sessionKey: 'sess-1',
+    } as Product;
+    const detail = scraped({
+      warrantyDescription: '90-day',
+      warrantyDescriptionRaw: '90 days',
+    });
+
+    const { patch, changedFields } = mergeDetailIntoStored(stored, detail);
+
+    expect(patch.warrantyDescription).toBe('90-day');
+    expect(patch.warrantyDescriptionRaw).toBe('90 days');
+    expect(changedFields).toContain('warrantyDescription');
+    expect(changedFields).toContain('warrantyDescriptionRaw');
+  });
+
+  it('G6: a currency mismatch skips the price family but still lands warranty', () => {
+    const stored = {
+      ...scraped({ source: 'search', price: 10, currency: 'USD' }),
+      collectedAt: '2026-10-20T00:00:00.000Z',
+      sessionKey: 'sess-1',
+    } as Product;
+    const detail = scraped({
+      price: 12,
+      currency: 'EUR',
+      warrantyDescription: '2-year',
+      warrantyDescriptionRaw: '2 year manufacturer',
+    });
+
+    const { patch } = mergeDetailIntoStored(stored, detail);
+
+    expect(patch.price).toBeUndefined(); // price family skipped
+    expect(patch.warrantyDescription).toBe('2-year'); // warranty is not in it
+  });
+});
+
+describe('G5: addProducts backfills warranty onto an existing row', () => {
+  beforeEach(async () => {
+    await db.delete();
+    await db.open();
+  });
+
+  it('fills a row that was first collected without a warranty', async () => {
+    await addProducts([scraped({ source: 'search' })], 'sess-w');
+
+    const before = await db.products.where('sessionKey').equals('sess-w').first();
+    expect(before?.warrantyDescription).toBeUndefined();
+
+    await addProducts(
+      [scraped({ warrantyDescription: '1-year', warrantyDescriptionRaw: '1 Year' })],
+      'sess-w',
+    );
+
+    const after = await db.products.where('sessionKey').equals('sess-w').first();
+    expect(after?.warrantyDescription).toBe('1-year');
+    expect(after?.warrantyDescriptionRaw).toBe('1 Year');
+  });
+
+  it('never overwrites a warranty already stored', async () => {
+    await addProducts(
+      [scraped({ warrantyDescription: '1-year', warrantyDescriptionRaw: '1 Year' })],
+      'sess-w',
+    );
+    await addProducts(
+      [scraped({ warrantyDescription: '5-year', warrantyDescriptionRaw: '5 Years' })],
+      'sess-w',
+    );
+
+    const row = await db.products.where('sessionKey').equals('sess-w').first();
+    expect(row?.warrantyDescription).toBe('1-year');
+    expect(row?.warrantyDescriptionRaw).toBe('1 Year');
+  });
+});
