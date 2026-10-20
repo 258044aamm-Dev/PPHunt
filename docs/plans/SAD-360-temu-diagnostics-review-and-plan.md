@@ -1,6 +1,6 @@
 # SAD-360 — Review of "Add diagnostic logging to the existing Temu Engine" + amended implementation plan
 
-> **Implementation authorization (2026-10-20): steps 0 and 1 only.** The owner approved the follow-up amendments and baseline in §11. That section supersedes the historical planning-only notice and conflicting transport/log-frequency sketches below. Steps 2 onward remain outside the current authorization; the issue stays In Progress until the full feature is implemented and verified.
+> **Implementation progress (2026-10-20): steps 0 and 1 completed; later steps not authorized.** The owner-approved amendments, baseline, and collector-only results are recorded in §11–§12. Those sections supersede the historical planning-only notice and conflicting transport/log-frequency sketches below. The issue stays In Progress until the full feature is implemented and verified; the new collector is not yet wired into production.
 
 **Historical review mode: PLANNING / REVIEW ONLY.** No source code was changed for this review. All owner decisions (D1–D8) are locked; this plan is pushed on `feat/temu-engine` per owner instruction, **not** `main`, pending implementation approval. (Branch history: first pushed onto `feat/temu-engine` at its older base, then rebased onto `origin/main` (`6f168df`) the same day, so this branch is exactly `main` + this plan commit and the `034cb12` audit base is in its history.)
 Repo: `MakeTheNewHistory/PPHunt`, cloned fresh, reviewed at `034cb12` (then-current `origin/main`).
@@ -154,3 +154,27 @@ Logging eligibility must confirm actual persisted membership, not merely validat
 - Earlier baseline attempts exposed setup-only manifest/nested-`npx` failures and one intermittent existing quick-save settings test failure (`tests/quick-save-settings-location.test.tsx`, persistence assertion). That test passed on targeted rerun and the final full verification passed. No unrelated application or test code was changed to obtain the green run.
 
 **Step 1 boundary:** add only the Temu-native diagnostics collector/formatter module and its focused unit tests, plus this progress record. Do not instrument parsers or wire transport/background logging yet. The collector must remain unreferenced by production code in this step; existing runtime behavior must remain unchanged.
+
+
+## 12. Step 1 — completed collector foundation (2026-10-20)
+
+Step 0 was pushed separately as [`d410326`](https://github.com/MakeTheNewHistory/PPHunt/commit/d410326f96fe5327e97d189cb8eb6cbc8d2dae5a) and recorded on Linear before step 1 began.
+
+### Files and implemented contract
+
+- New `src/engines/temu/scraper/extraction-diagnostics.ts`: DOM-free, Temu-native collector with the five statuses, explicit unknown evidence, immutable 22/20-field sets, last-write-wins records, independent report snapshots, nullable envelope ID, and actual parser stage. Only Temu type imports; no Amazon dependency.
+- Validation reconciliation observes the existing validator's result without changing the candidate or normalized product. Dropped obtained values become `PARTIAL, validated:false`; rescued values remain `PARTIAL`; legitimate zero/false values remain valid; missing/unattempted/unparseable fields get no invented validation result.
+- Counts partition report entries. The one-line formatter projects only diagnostic metadata, excludes extra values/HTML/raw payload properties, and returns `null` on serialization failure. It does **not** call the console or any browser/storage API. Reasons/selectors must remain static metadata in future callers.
+- New `tests/temu-extraction-diagnostics.test.ts`: **38 tests**, run in the Node environment to verify that the collector needs no DOM. Covers field sets/stages/exclusions, all statuses and allowed sources, unknown fill, strict rescue versus JSON-LD-only success, last-write-wins, snapshots, actual validation drops, booleans/zero, product immutability, counts/format, null context, value/HTML leakage, and diagnostic fault isolation.
+- This plan file: progress and verification only.
+
+### Verification and non-regression evidence
+
+- `npm test -- tests/temu-extraction-diagnostics.test.ts`: **38/38 passed**.
+- `npm run compile`: **pass**.
+- `npm run verify` under Node v22.23.3: **pass** — **89 test files / 1084 tests**, TypeScript, WXT production build, production audit **0 vulnerabilities**.
+- `npm run check:dead-exports`: **pass**.
+- Built-artifact comparison: **all 28 extension files are byte-identical** to step 0 (SHA-256 comparison), including Temu/Amazon content scripts, background, UI chunks, and manifest.
+- Existing parser/helper/selector, message/schema, background, product/model, database, UI, entrypoint, dependency/lockfile, and Amazon/shared-library files have an **empty diff**. No production code imports the new collector.
+
+**Stop boundary:** steps 0 and 1 only. Parser instrumentation, collector parity fixtures at the parser boundary, diagnostic transport, empty-product routing, persisted-product eligibility, restart-safe seen-key storage, live service-worker logging, and integration/volume tests remain for later authorization. No diagnostic output is active in the extension yet. Keep SAD-360 In Progress, not In Review, while the full feature remains incomplete.
