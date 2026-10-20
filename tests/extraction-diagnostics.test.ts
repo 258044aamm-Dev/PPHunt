@@ -43,8 +43,21 @@ const FULL_HTML = `<!doctype html>
       <li><span class="a-list-item">Two pack</span></li>
     </ul></div>
     <div id="detailBulletsWrapper_feature_div">
+      <ul>
+        <li><span class="a-text-bold">Item Weight:</span> 1.25 pounds</li>
+      </ul>
       Best Sellers Rank: #1,204 in Patio, Lawn &amp; Garden
     </div>
+    <script type="text/javascript">
+      P.register('twister-js-init-dpx-data', function () {
+        return {
+          "dimensions": ["color_name", "size_name"],
+          "variationDisplayLabels": {"color_name": "Color", "size_name": "Size"},
+          "variationValues": {"color_name": ["Black", "Silver"], "size_name": ["Small", "Large"]},
+          "num_total_variations": 4
+        };
+      });
+    </script>
   </body>
 </html>`;
 
@@ -100,6 +113,28 @@ const BSR_LABEL_ONLY_HTML = `<!doctype html>
   </body>
 </html>`;
 
+const WEIGHT_LABEL_ONLY_HTML = `<!doctype html>
+<html>
+  <body>
+    <span id="productTitle">Delta Widget, 2 Pack</span>
+    <div id="detailBulletsWrapper_feature_div">
+      <ul>
+        <li><span class="a-text-bold">Item Weight:</span> Not applicable</li>
+      </ul>
+    </div>
+    <script type="text/javascript">
+      P.register('twister-js-init-dpx-data', function () {
+        return {
+          "dimensions": ["size_name"],
+          "variationDisplayLabels": {"size_name": "Size"},
+          "variationValues": {"size_name": ["Standard"]},
+          "num_total_variations": 1
+        };
+      });
+    </script>
+  </body>
+</html>`;
+
 const NO_TITLE_HTML = `<!doctype html>
 <html><body><p>Sold by someone</p></body></html>`;
 
@@ -122,7 +157,7 @@ describe('SAD-359 detail-parser field diagnostics', () => {
 
     expect(product).not.toBeNull();
     expect(report.asin).toBe('B0DELTA123');
-    expect(report.fields).toHaveLength(21);
+    expect(report.fields).toHaveLength(23);
 
     expect(fields.get('asin')).toMatchObject({ status: 'EXTRACTED', source: 'url' });
     expect(fields.get('title')).toMatchObject({
@@ -152,6 +187,18 @@ describe('SAD-359 detail-parser field diagnostics', () => {
     expect(fields.get('reviewCount')?.status).toBe('EXTRACTED');
     expect(fields.get('features')?.status).toBe('EXTRACTED');
     expect(fields.get('bestSellersRank')?.status).toBe('EXTRACTED');
+    expect(fields.get('variations')).toMatchObject({
+      status: 'EXTRACTED',
+      source: 'dom',
+      selector: 'script[twister-js-init-dpx-data]',
+      validated: true,
+    });
+    expect(fields.get('weight')).toMatchObject({
+      status: 'EXTRACTED',
+      source: 'dom',
+      selector: '#detailBulletsWrapper_feature_div',
+      validated: true,
+    });
     expect(fields.get('imageUrl')?.status).toBe('EXTRACTED');
   });
 
@@ -234,6 +281,20 @@ describe('SAD-359 detail-parser field diagnostics', () => {
     expect(fields.get('bestSellersRank')?.reason).toContain('no rank could be parsed');
   });
 
+  it('reports unparseable weight rows as PARTIAL and singleton twister data as MISSING', () => {
+    const fields = fieldMap(WEIGHT_LABEL_ONLY_HTML);
+
+    expect(fields.get('weight')).toMatchObject({
+      status: 'PARTIAL',
+      selector: '#detailBulletsWrapper_feature_div',
+    });
+    expect(fields.get('weight')?.reason).toContain('no positive mass could be parsed');
+    expect(fields.get('variations')).toMatchObject({
+      status: 'MISSING',
+      reason: 'singleton product (no multi-option variations)',
+    });
+  });
+
   it('still builds a full report when the parser rejects the page (no title)', () => {
     const { product, report } = parseWithReport(NO_TITLE_HTML);
     const fields = new Map(report.fields.map((e) => [e.field, e]));
@@ -249,7 +310,13 @@ describe('SAD-359 detail-parser field diagnostics', () => {
   });
 
   it('never changes the extracted product (collector parity)', () => {
-    for (const html of [FULL_HTML, NO_BUYBOX_HTML, GARBAGE_PRICE_HTML, JSONLD_ONLY_HTML]) {
+    for (const html of [
+      FULL_HTML,
+      NO_BUYBOX_HTML,
+      GARBAGE_PRICE_HTML,
+      JSONLD_ONLY_HTML,
+      WEIGHT_LABEL_ONLY_HTML,
+    ]) {
       const withDiag = parseWithReport(html).product;
       const withoutDiag = parseAmazonProductDetail(
         new DOMParser().parseFromString(html, 'text/html'),
@@ -308,7 +375,7 @@ describe('SAD-359 diagnostics collector', () => {
   it('summarizes counts and formats one paste-safe JSON log line', () => {
     const { report } = parseWithReport(NO_BUYBOX_HTML);
     const counts = summarizeFieldDiagnostics(report.fields);
-    expect(counts.extracted + counts.missing + counts.partial).toBe(21);
+    expect(counts.extracted + counts.missing + counts.partial).toBe(23);
 
     const line = formatExtractionDiagnosticsLog(report, {
       jobId: 'job-1',
@@ -327,6 +394,6 @@ describe('SAD-359 diagnostics collector', () => {
     expect(payload.jobId).toBe('job-1');
     expect(payload.stage).toBe('enrichment-parse');
     expect(payload.counts).toEqual(counts);
-    expect(payload.fields).toHaveLength(21);
+    expect(payload.fields).toHaveLength(23);
   });
 });

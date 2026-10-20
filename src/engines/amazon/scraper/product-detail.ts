@@ -377,9 +377,16 @@ function extractDetailWarranty(
  *   3. Combined `Product Dimensions: L x W x H; Weight` rows
  *   4. A+ manufacturer spec tables (`#aplus`), direct mass labels only
  */
-function extractDetailWeight(doc: Document): string | undefined {
+function extractDetailWeight(
+  doc: Document,
+  // SAD-359: optional diagnostics sink (see extractDetailAsin).
+  diagnostics?: FieldDiagnosticsCollector,
+): string | undefined {
+  let labelSeenSelector: string | undefined;
   let packageWeightFallback: string | undefined;
+  let packageWeightSelector: string | undefined;
   let dimensionsWeightFallback: string | undefined;
+  let dimensionsWeightSelector: string | undefined;
 
   for (const selector of AMAZON_SELECTORS.detail.warrantyContainers) {
     const container = safeQuerySelector(doc, selector);
@@ -387,8 +394,12 @@ function extractDetailWeight(doc: Document): string | undefined {
 
     for (const { label, value } of iterDetailSpecRows(container)) {
       if (AMAZON_WEIGHT_ITEM_LABEL_PATTERN.test(label)) {
+        labelSeenSelector ??= selector;
         const normalized = normalizeWeightValue(value);
-        if (normalized) return normalized;
+        if (normalized) {
+          diagnostics?.extracted('weight', { source: 'dom', selector });
+          return normalized;
+        }
         continue;
       }
 
@@ -396,8 +407,12 @@ function extractDetailWeight(doc: Document): string | undefined {
         packageWeightFallback === undefined &&
         AMAZON_WEIGHT_PACKAGE_LABEL_PATTERN.test(label)
       ) {
+        labelSeenSelector ??= selector;
         const normalized = normalizeWeightValue(value);
-        if (normalized) packageWeightFallback = normalized;
+        if (normalized) {
+          packageWeightFallback = normalized;
+          packageWeightSelector = selector;
+        }
         continue;
       }
 
@@ -408,23 +423,51 @@ function extractDetailWeight(doc: Document): string | undefined {
       ) {
         const weightSegment = value.split(';').slice(1).join(';');
         const normalized = normalizeWeightValue(weightSegment);
-        if (normalized) dimensionsWeightFallback = normalized;
+        if (normalized) {
+          dimensionsWeightFallback = normalized;
+          dimensionsWeightSelector = selector;
+        }
       }
     }
   }
 
-  if (packageWeightFallback !== undefined) return packageWeightFallback;
-  if (dimensionsWeightFallback !== undefined) return dimensionsWeightFallback;
+  if (packageWeightFallback !== undefined) {
+    diagnostics?.extracted('weight', {
+      source: 'dom',
+      selector: packageWeightSelector,
+    });
+    return packageWeightFallback;
+  }
+  if (dimensionsWeightFallback !== undefined) {
+    diagnostics?.extracted('weight', {
+      source: 'dom',
+      selector: dimensionsWeightSelector,
+    });
+    return dimensionsWeightFallback;
+  }
 
   const aplusContainer = safeQuerySelector(doc, '#aplus');
   if (aplusContainer && !isInsideExcludedDetailSubtree(aplusContainer)) {
     for (const { label, value } of iterDetailSpecRows(aplusContainer)) {
       if (!AMAZON_WEIGHT_ITEM_LABEL_PATTERN.test(label)) continue;
+      labelSeenSelector ??= '#aplus';
       const normalized = normalizeWeightValue(value);
-      if (normalized) return normalized;
+      if (normalized) {
+        diagnostics?.extracted('weight', { source: 'dom', selector: '#aplus' });
+        return normalized;
+      }
     }
   }
 
+  if (labelSeenSelector) {
+    diagnostics?.partial(
+      'weight',
+      'weight row present but no positive mass could be parsed',
+      { selector: labelSeenSelector },
+    );
+  } else {
+    diagnostics?.missing('weight', 'no weight row in the detail tables');
+  }
   return undefined;
 }
 
@@ -490,7 +533,10 @@ function humanizeDimensionKey(rawKey: string): string {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
-function extractTwisterScriptVariations(doc: Document): string | null {
+function extractTwisterScriptVariations(doc: Document): {
+  summary: string | null;
+  singleton: boolean;
+} {
   for (const script of safeQuerySelectorAll<HTMLScriptElement>(doc, 'script')) {
     const text = script.textContent;
     if (!text || !text.includes('twister-js-init-dpx-data')) continue;
@@ -571,11 +617,13 @@ function extractTwisterScriptVariations(doc: Document): string | null {
       dimensions,
       inferredTotal,
     );
-    if (formatted) return formatted;
+    if (formatted) return { summary: formatted, singleton: false };
     // If `twister-js-init-dpx-data` explicitly declared a singleton (`<= 1`), stop cleanly.
-    if (inferredTotal !== null && inferredTotal <= 1) return null;
+    if (inferredTotal !== null && inferredTotal <= 1) {
+      return { summary: null, singleton: true };
+    }
   }
-  return null;
+  return { summary: null, singleton: false };
 }
 
 function extractTwisterOptionLabel(optionEl: Element): string {
@@ -626,14 +674,29 @@ function extractTwisterOptionLabel(optionEl: Element): string {
  *   Tier 2: Inline twister (`#inline-twister-row-*`) and classic `#twister` DOM rows
  *   Tier 3: Media/Book format swatches (`#tmmSwatches .swatchElement`)
  */
-function extractDetailVariations(doc: Document): string | undefined {
-  const scriptSummary = extractTwisterScriptVariations(doc);
-  if (scriptSummary) return scriptSummary;
+function extractDetailVariations(
+  doc: Document,
+  // SAD-359: optional diagnostics sink (see extractDetailAsin).
+  diagnostics?: FieldDiagnosticsCollector,
+): string | undefined {
+  const scriptResult = extractTwisterScriptVariations(doc);
+  if (scriptResult.summary) {
+    diagnostics?.extracted('variations', {
+      source: 'dom',
+      selector: 'script[twister-js-init-dpx-data]',
+    });
+    return scriptResult.summary;
+  }
 
-  const domRows = [
-    ...safeQuerySelectorAll(doc, AMAZON_SELECTORS.detail.twister.inlineRows),
-    ...safeQuerySelectorAll(doc, AMAZON_SELECTORS.detail.twister.classicRows),
-  ].filter((row) => !isInsideExcludedDetailSubtree(row));
+  const inlineRows = safeQuerySelectorAll(
+    doc,
+    AMAZON_SELECTORS.detail.twister.inlineRows,
+  ).filter((row) => !isInsideExcludedDetailSubtree(row));
+  const classicRows = safeQuerySelectorAll(
+    doc,
+    AMAZON_SELECTORS.detail.twister.classicRows,
+  ).filter((row) => !isInsideExcludedDetailSubtree(row));
+  const domRows = [...inlineRows, ...classicRows];
 
   if (domRows.length > 0) {
     const dims: VariationDimensionSummaryInput[] = [];
@@ -676,7 +739,16 @@ function extractDetailVariations(doc: Document): string | undefined {
         ? dims.reduce((acc, d) => acc * d.values.length, 1)
         : dims[0]?.values.length ?? null;
     const domSummary = formatVariationDimensionsSummary(dims, total);
-    if (domSummary) return domSummary;
+    if (domSummary) {
+      diagnostics?.extracted('variations', {
+        source: 'dom',
+        selector:
+          inlineRows.length > 0
+            ? AMAZON_SELECTORS.detail.twister.inlineRows
+            : AMAZON_SELECTORS.detail.twister.classicRows,
+      });
+      return domSummary;
+    }
   }
 
   const mediaSwatches = safeQuerySelectorAll(
@@ -700,9 +772,21 @@ function extractDetailVariations(doc: Document): string | undefined {
       [{ label: 'Format', values: formats }],
       formats.length,
     );
-    if (mediaSummary) return mediaSummary;
+    if (mediaSummary) {
+      diagnostics?.extracted('variations', {
+        source: 'dom',
+        selector: AMAZON_SELECTORS.detail.twister.mediaSwatches,
+      });
+      return mediaSummary;
+    }
   }
 
+  diagnostics?.missing(
+    'variations',
+    scriptResult.singleton
+      ? 'singleton product (no multi-option variations)'
+      : 'no variation twister or format swatches in the fetched HTML',
+  );
   return undefined;
 }
 
@@ -1336,8 +1420,8 @@ export function parseAmazonProductDetail(
     const warranty = extractDetailWarranty(doc, diag);
 
     // Variations & Weight (SAD-357)
-    const variations = extractDetailVariations(doc);
-    const weight = extractDetailWeight(doc);
+    const variations = extractDetailVariations(doc, diag);
+    const weight = extractDetailWeight(doc, diag);
 
     // Prime
     const isPrime = Boolean(
