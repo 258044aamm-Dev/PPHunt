@@ -22,6 +22,7 @@ export const AMAZON_MESSAGE_TYPES = new Set<AmazonExtensionMessage['type']>([
   'SAVE_JOB_UPDATE',
   'ASSIGN_SAVED_PRODUCT',
   'EXPORT_SAVED_PRODUCT',
+  'DRIFT_REPORT',
 ]);
 
 export type MessageValidationOutcome =

@@ -149,16 +149,51 @@ export function createAmazonDriftTelemetry(): AmazonDriftTelemetry {
 export const defaultAmazonDriftTelemetry = new AmazonDriftTelemetry();
 
 /**
+ * SAD-369 D10: the drift line's payload. The content script ships this to
+ * the service worker; the worker formats and prints it. Counts only — never
+ * product values or page data (C2 holds across the boundary).
+ */
+export interface DriftLogPayload {
+  stage: 'search-results' | 'category-page';
+  report: AmazonDriftReport;
+}
+
+/**
+ * The exact one-line form, shared by the default (page-console) transport and
+ * the service worker, so the move in D10 changed the console, not the line.
+ */
+export function formatDriftLogLine(payload: DriftLogPayload): string {
+  return `[PPHunt][Amazon][Diagnostics] drift ${JSON.stringify({
+    stage: payload.stage,
+    ...payload.report,
+  })}`;
+}
+
+let driftTransport: ((payload: DriftLogPayload) => void) | null = null;
+
+/**
+ * SAD-369 D10: the content script injects a transport that routes the drift
+ * line to the service worker (the page console of a busy Amazon tab is where
+ * reports go to die). `null` restores the page-console default, which keeps
+ * direct-call tests and non-extension contexts working.
+ */
+export function setDriftTransport(
+  transport: ((payload: DriftLogPayload) => void) | null,
+): void {
+  driftTransport = transport;
+}
+
+/**
  * SAD-359: makes the previously consumer-less drift report visible.
  *
  * The telemetry object remains cumulative (this helper deliberately does not
  * reset it), so the line describes the content-script session so far for the
- * telemetry instance used by that parse. It is emitted in the parsing context
- * (the Amazon page console for listing collection), as one-line JSON that can
- * be filtered with `[PPHunt][Amazon][Diagnostics]` and survives copy-paste.
- * The `drift` tag separates it from the per-field report, which is logged by
- * the service worker. No product values or page data are included. A logging
- * failure is swallowed: telemetry must never affect extraction.
+ * telemetry instance used by that parse. It is emitted as one-line JSON that
+ * can be filtered with `[PPHunt][Amazon][Diagnostics]` and survives
+ * copy-paste. The `drift` tag separates it from the per-field report, which
+ * is logged by the service worker. No product values or page data are
+ * included. A logging failure is swallowed: telemetry must never affect
+ * extraction.
  */
 export function logDriftReport(
   telemetry: AmazonDriftTelemetry,
@@ -170,9 +205,14 @@ export function logDriftReport(
     if (!getDiagnosticsEnabled()) return;
     const report = telemetry.getReport();
     if (report.cardsInspected === 0) return;
-    console.info(
-      `[PPHunt][Amazon][Diagnostics] drift ${JSON.stringify({ stage, ...report })}`,
-    );
+    const payload: DriftLogPayload = { stage, report };
+    if (driftTransport) {
+      // Production: routed to the service worker, which prints it gated.
+      driftTransport(payload);
+    } else {
+      // Default: the parsing context's console (tests, non-extension pages).
+      console.info(formatDriftLogLine(payload));
+    }
   } catch {
     // Diagnostics only.
   }

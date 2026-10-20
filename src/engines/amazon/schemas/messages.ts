@@ -109,12 +109,48 @@ export const StopCollectionCmdMessageSchema = z.object({
   type: z.literal('STOP_COLLECTION_CMD'),
 });
 
+/**
+ * SAD-359: per-field extraction diagnostics collected when the product was
+ * parsed on a PDP in the content script. Diagnostics only (the worker logs
+ * them; nothing branches on them), so `source`/`tier` stay loose strings
+ * rather than enums that would couple this schema to the scraper.
+ */
+export const FieldDiagnosticSchema = z.object({
+  field: z.string().min(1),
+  /**
+   * Five statuses (SAD-359 requirement 3). The enum only ever grew, so a
+   * payload that validated against the earlier three-status form still
+   * validates here — an older content script talking to a newer worker is
+   * unaffected.
+   */
+  status: z.enum(['EXTRACTED', 'MISSING', 'PARSE_FAILED', 'PARTIAL', 'UNKNOWN']),
+  source: z.string().optional(),
+  selector: z.string().optional(),
+  tier: z.string().optional(),
+  reason: z.string().optional(),
+  validated: z.boolean().optional(),
+});
+
+export const ExtractionDiagnosticsReportSchema = z.object({
+  asin: z.string().nullable(),
+  fields: z.array(FieldDiagnosticSchema).max(64),
+});
+
 export const ProductsCollectedMessageSchema = z.object({
   type: z.literal('PRODUCTS_COLLECTED'),
   payload: z.object({
     products: z.array(AmazonScrapedProductSchema),
     totalCount: z.number().int().nonnegative(),
     isNewBatch: z.boolean(),
+    /**
+     * SAD-369 step 3 (D11): per-product diagnostics reports for THIS message
+     * only — a SUBSET of `products`, self-identified by `asin`, never a
+     * parallel array. Each message carries only the reports not yet sent
+     * this run (an `updatedExisting` batch re-sends the whole run, and
+     * products past the 50-item cap have no report). Optional, so a message
+     * from an older content script still validates.
+     */
+    extractionDiagnostics: z.array(ExtractionDiagnosticsReportSchema).optional(),
   }),
 });
 
@@ -197,33 +233,6 @@ export const SaveExtractionContextSchema = z.object({
   sectionLabel: z.string().optional(),
 });
 
-/**
- * SAD-359: per-field extraction diagnostics collected when the product was
- * parsed on a PDP in the content script. Diagnostics only (the worker logs
- * them; nothing branches on them), so `source`/`tier` stay loose strings
- * rather than enums that would couple this schema to the scraper.
- */
-export const FieldDiagnosticSchema = z.object({
-  field: z.string().min(1),
-  /**
-   * Five statuses (SAD-359 requirement 3). The enum only ever grew, so a
-   * payload that validated against the earlier three-status form still
-   * validates here — an older content script talking to a newer worker is
-   * unaffected.
-   */
-  status: z.enum(['EXTRACTED', 'MISSING', 'PARSE_FAILED', 'PARTIAL', 'UNKNOWN']),
-  source: z.string().optional(),
-  selector: z.string().optional(),
-  tier: z.string().optional(),
-  reason: z.string().optional(),
-  validated: z.boolean().optional(),
-});
-
-export const ExtractionDiagnosticsReportSchema = z.object({
-  asin: z.string().nullable(),
-  fields: z.array(FieldDiagnosticSchema).max(64),
-});
-
 export const SaveProductMessageSchema = z.object({
   type: z.literal('SAVE_PRODUCT'),
   payload: z.object({
@@ -282,6 +291,36 @@ export const ExportSavedProductMessageSchema = z.object({
   }),
 });
 
+/**
+ * SAD-369 D10: the drift telemetry line, routed from the content script to
+ * the service worker. Deliberately loose like `FieldDiagnosticSchema` (this
+ * file's own convention): counts only — never product values, so the
+ * privacy rule (C2) holds across the message boundary.
+ */
+export const AmazonDriftReportSchema = z.object({
+  cardsInspected: z.number().int().nonnegative(),
+  cardsExtracted: z.number().int().nonnegative(),
+  fieldCoverage: z.object({
+    asin: z.number(),
+    title: z.number(),
+    price: z.number(),
+    rating: z.number(),
+    reviewCount: z.number(),
+    imageUrl: z.number(),
+  }),
+  tierBreakdown: z.record(z.string(), z.number()),
+  isDriftDetected: z.boolean(),
+  driftReasons: z.array(z.string()),
+});
+
+export const DriftReportMessageSchema = z.object({
+  type: z.literal('DRIFT_REPORT'),
+  payload: z.object({
+    stage: z.enum(['search-results', 'category-page']),
+    report: AmazonDriftReportSchema,
+  }),
+});
+
 export const AmazonExtensionMessageSchema = z.discriminatedUnion('type', [
   StartCollectionMessageSchema,
   ReloadAndRetryCollectionMessageSchema,
@@ -302,6 +341,7 @@ export const AmazonExtensionMessageSchema = z.discriminatedUnion('type', [
   SaveJobUpdateMessageSchema,
   AssignSavedProductMessageSchema,
   ExportSavedProductMessageSchema,
+  DriftReportMessageSchema,
 ]);
 
 export const ExtensionMessageSchema = AmazonExtensionMessageSchema;

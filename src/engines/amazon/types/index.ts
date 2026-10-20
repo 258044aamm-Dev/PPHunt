@@ -327,6 +327,13 @@ export type AmazonExtensionMessage =
         products: ScrapedAmazonProduct[];
         totalCount: number;
         isNewBatch: boolean;
+        /**
+         * SAD-369 step 3 (D11): per-product diagnostics reports for THIS
+         * message only — a subset of `products`, self-identified by `asin`,
+         * NOT a parallel array. Each message carries only the reports not
+         * yet sent this run; products past the 50-item cap have no report.
+         */
+        extractionDiagnostics?: import('../scraper/extraction-diagnostics').ExtractionDiagnosticsReport[];
       };
     }
   | {
@@ -423,6 +430,18 @@ export type AmazonExtensionMessage =
   | {
       type: 'EXPORT_SAVED_PRODUCT';
       payload: { jobId?: string; collectionKey?: string };
+    }
+  | {
+      /**
+       * SAD-369 D10: the drift telemetry line, routed to the service worker
+       * so it lands in the extension console instead of the page's. Counts
+       * only — never product values (C2 holds across the boundary).
+       */
+      type: 'DRIFT_REPORT';
+      payload: {
+        stage: 'search-results' | 'category-page';
+        report: AmazonDriftReport;
+      };
     };
 
 export type ExtensionMessage = AmazonExtensionMessage;

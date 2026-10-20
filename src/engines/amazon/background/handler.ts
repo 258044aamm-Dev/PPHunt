@@ -22,8 +22,14 @@ import {
 import { ProductSchema } from '../schemas/product';
 import { ScrapedProductSchema } from '../schemas/scraped-product';
 import { validateExtensionMessage } from '../schemas/validate-message';
+import { ExtractionDiagnosticsReportSchema } from '../schemas/messages';
 import { detectAmazonPageType } from '../scraper/page-detector';
 import { validateAndNormalizeScrapedProduct } from '../scraper/field-parsers';
+import { formatDriftLogLine } from '../scraper/drift-telemetry';
+import {
+  formatExtractionDiagnosticsLog,
+  type ExtractionDiagnosticsReport,
+} from '../scraper/extraction-diagnostics';
 import type {
   AmazonCollectionStatus,
   CollectionMode,
@@ -425,6 +431,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       products: unknown[];
       totalCount: number;
       isNewBatch: boolean;
+      /** SAD-369 step 3: per-product reports, capped at 50 per run (D7/D11). */
+      extractionDiagnostics?: unknown[];
     },
     senderUrl?: string,
   ): Promise<void> => {
@@ -455,6 +463,36 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       (!active.url || active.url === 'https://www.amazon.com')
     ) {
       active.url = senderUrl;
+    }
+
+    // SAD-369 step 3: one `collection-card` line per collected product — the
+    // first 50 of the run (capped in the content script's run sink), keyed by
+    // the collection's sessionKey. This runs inside `pendingProductsChain`,
+    // so the lines come out in collection order. Best-effort: logging must
+    // never fail the collection, and each report is validated before print.
+    try {
+      const reports = Array.isArray(payload.extractionDiagnostics)
+        ? payload.extractionDiagnostics
+        : [];
+      if (reports.length > 0 && getDiagnosticsEnabled()) {
+        for (const raw of reports) {
+          const parsed = ExtractionDiagnosticsReportSchema.safeParse(raw);
+          if (!parsed.success) continue;
+          // The Zod schema is deliberately loose (loose `source`/`tier`
+          // strings); the report was produced by our own content script and
+          // just validated, so the narrow formatter type is honest here.
+          const report = parsed.data as ExtractionDiagnosticsReport;
+          console.info(
+            formatExtractionDiagnosticsLog(report, {
+              jobId: active.sessionKey,
+              asin: report.asin ?? 'unknown',
+              stage: 'collection-card',
+            }),
+          );
+        }
+      }
+    } catch {
+      // Diagnostics only.
     }
 
     const rawProducts = Array.isArray(payload.products) ? payload.products : [];
@@ -557,6 +595,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       products: unknown[];
       totalCount: number;
       isNewBatch: boolean;
+      /** SAD-369 step 3: forwarded to `processProductsCollected`. */
+      extractionDiagnostics?: unknown[];
     },
     senderUrl?: string,
   ): Promise<void> => {
@@ -740,6 +780,17 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
             products: p.products as unknown[],
             totalCount: p.totalCount,
             isNewBatch: p.isNewBatch,
+            // SAD-369 step 3: this envelope fast-path used to rebuild the
+            // payload with only the three fields above, dropping everything
+            // else — the diagnostics reports must survive the trip. Each
+            // report is schema-validated at the print site, so a shallow
+            // array check is the right depth here.
+            ...(Array.isArray(p.extractionDiagnostics)
+              ? {
+                  extractionDiagnostics:
+                    p.extractionDiagnostics as unknown[],
+                }
+              : {}),
           },
           sender?.tab?.url,
         );
@@ -860,6 +911,20 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       case 'CONTENT_ERROR':
         sendResponse?.({ ok: true });
         void handleContentError(validated.payload.message);
+        break;
+
+      case 'DRIFT_REPORT':
+        // SAD-369 D10: the drift line's new home — the service worker
+        // console, gated by the same switch as every other line. The
+        // byte-identical format lives in `formatDriftLogLine`.
+        sendResponse?.({ ok: true });
+        try {
+          if (getDiagnosticsEnabled()) {
+            console.info(formatDriftLogLine(validated.payload));
+          }
+        } catch {
+          // Diagnostics only.
+        }
         break;
 
       default:

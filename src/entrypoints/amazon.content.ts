@@ -19,6 +19,7 @@ import {
   subscribeDiagnosticsEnabled,
 } from '@/engines/amazon/utils/diagnostics-flag';
 import { createSingleReportSink } from '@/engines/amazon/scraper/card-diagnostics';
+import { createCollectionDiagnosticsRun } from '@/engines/amazon/content/collection-diagnostics';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -27,6 +28,7 @@ import {
   AmazonParseCache,
   countProductCards,
   createChurnResistantDebounce,
+  createFieldDiagnosticsCollector,
   defaultAmazonDriftTelemetry,
   detectAmazonPageType,
   detectPageIssues,
@@ -35,6 +37,8 @@ import {
   parseAmazonCategoryPage,
   parseAmazonProductDetail,
   parseAmazonSearchResults,
+  setDriftTransport,
+  type ExtractionDiagnosticsSink,
 } from '@/engines/amazon/scraper';
 
 
@@ -78,11 +82,24 @@ function extractCurrentPageProducts(
   doc: Document,
   url: string,
   cache: AmazonParseCache,
+  // SAD-369 step 3: present only when the diagnostics switch is on. Every
+  // listing branch forwards it; a missed branch just logs nothing.
+  diagnosticsSink?: ExtractionDiagnosticsSink,
 ): ScrapedAmazonProduct[] {
   const pageType = detectAmazonPageType(url, doc);
 
   if (pageType === 'product-detail') {
-    const detail = parseAmazonProductDetail(doc, url);
+    // SAD-369 step 3 (G10): a collection started on a product page reports
+    // too — it currently parses without a collector and logs nothing at all.
+    // The parser records the ASIN and reconciles validation internally, so
+    // `build()` is all that is left here (same shape as the PDP save path).
+    const diagnostics = diagnosticsSink
+      ? createFieldDiagnosticsCollector()
+      : undefined;
+    const detail = parseAmazonProductDetail(doc, url, diagnostics);
+    if (diagnostics && detail) {
+      diagnosticsSink?.accept(diagnostics.build());
+    }
     return detail ? [detail] : [];
   }
 
@@ -90,11 +107,13 @@ function extractCurrentPageProducts(
     const searchItems = parseAmazonSearchResults(doc, url, {
       cache,
       telemetry: defaultAmazonDriftTelemetry,
+      ...(diagnosticsSink ? { diagnosticsSink } : {}),
     });
     if (searchItems.length > 0) return searchItems;
     return parseAmazonCategoryPage(doc, url, {
       cache,
       telemetry: defaultAmazonDriftTelemetry,
+      ...(diagnosticsSink ? { diagnosticsSink } : {}),
     });
   }
 
@@ -102,11 +121,13 @@ function extractCurrentPageProducts(
     const categoryItems = parseAmazonCategoryPage(doc, url, {
       cache,
       telemetry: defaultAmazonDriftTelemetry,
+      ...(diagnosticsSink ? { diagnosticsSink } : {}),
     });
     if (categoryItems.length > 0) return categoryItems;
     return parseAmazonSearchResults(doc, url, {
       cache,
       telemetry: defaultAmazonDriftTelemetry,
+      ...(diagnosticsSink ? { diagnosticsSink } : {}),
     });
   }
 
@@ -114,12 +135,14 @@ function extractCurrentPageProducts(
   const searchFallback = parseAmazonSearchResults(doc, url, {
     cache,
     telemetry: defaultAmazonDriftTelemetry,
+    ...(diagnosticsSink ? { diagnosticsSink } : {}),
   });
   if (searchFallback.length > 0) return searchFallback;
 
   return parseAmazonCategoryPage(doc, url, {
     cache,
     telemetry: defaultAmazonDriftTelemetry,
+    ...(diagnosticsSink ? { diagnosticsSink } : {}),
   });
 }
 
@@ -143,6 +166,9 @@ export default defineContentScript({
     let targetCount = 100;
     let duplicateDetection = true;
     let collectedProducts: ScrapedAmazonProduct[] = [];
+    // SAD-369 step 3: per-run collection diagnostics — the 50-item cap (D7)
+    // and the exactly-once delivery rule (D11) live in this module state.
+    const collectionDiagnostics = createCollectionDiagnosticsRun();
     const dedup = new AmazonDeduplicationEngine();
     const parseCache = new AmazonParseCache();
     let scrollController: ScrollController | null = null;
@@ -351,6 +377,9 @@ export default defineContentScript({
         document,
         window.location.href,
         parseCache,
+        // SAD-369 step 3: the run sink only while the switch is on. Saves
+        // never touch this sink (D8) — they use their own single-report sink.
+        getDiagnosticsEnabled() ? collectionDiagnostics.sink : undefined,
       );
 
       const { newProducts, updatedExisting } = dedup.mergeAndFilterNew(
@@ -369,12 +398,21 @@ export default defineContentScript({
           ? collectedProducts
           : newProducts;
         if (batchToEmit.length > 0) {
+          // SAD-369 step 3 (D11): only the reports not yet sent this run
+          // ride along — an `updatedExisting` batch re-sends the whole run,
+          // and products past the cap have no report, so a parallel array
+          // would re-log products and could never validate.
+          const extractionDiagnostics =
+            collectionDiagnostics.takeUnsentFor(batchToEmit);
           sendRuntimeMessageSafe({
             type: 'PRODUCTS_COLLECTED',
             payload: {
               products: batchToEmit,
               totalCount: totalReported,
               isNewBatch,
+              ...(extractionDiagnostics.length > 0
+                ? { extractionDiagnostics }
+                : {}),
             },
           });
         }
@@ -445,6 +483,9 @@ export default defineContentScript({
       duplicateDetection = payload.scroll?.duplicateDetection ?? true;
 
       collectedProducts = [];
+      // SAD-369 step 3 (T26): this is the run boundary — a new collection
+      // resets the cap counter and the report maps.
+      collectionDiagnostics.reset();
       parseCache.clear();
       dedup.clear();
       dedup.setEnabled(duplicateDetection);
@@ -678,6 +719,14 @@ export default defineContentScript({
     void refreshDiagnosticsEnabled();
     stopDiagnosticsSync = subscribeDiagnosticsEnabled();
 
+    // SAD-369 D10: the drift line is printed by the service worker, not the
+    // page console — the worker is where the other diagnostics lines live,
+    // and an Amazon page's console is not the owner's console. The worker
+    // gates the print; the transport only routes counts (C2).
+    setDriftTransport((payload) => {
+      sendRuntimeMessageSafe({ type: 'DRIFT_REPORT', payload });
+    });
+
     browser.runtime.onMessage.addListener(runtimeListener);
     window.addEventListener('pphunt:command', domBridgeListener);
     window.addEventListener('popstate', handleNavigationChange);
@@ -710,6 +759,9 @@ export default defineContentScript({
       stopCardActionThemeSync = null;
       stopDiagnosticsSync?.();
       stopDiagnosticsSync = null;
+      // SAD-369 D10: restore the default page-console transport so a remount
+      // (or a test) never leaves a stale message-sending transport behind.
+      setDriftTransport(null);
       cardActionLayer?.stop();
       cardActionLayer = null;
       window.removeEventListener('pphunt:command', domBridgeListener);

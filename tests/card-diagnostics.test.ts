@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
 import { parseAmazonCategoryCard } from '@/engines/amazon/scraper/category-page';
+import { extractCardPricingAndDiscounts } from '@/engines/amazon/scraper/field-parsers';
 import {
   CARD_INAPPLICABLE_FIELDS,
   CARD_INAPPLICABLE_REASON,
@@ -226,5 +227,56 @@ describe('SAD-369 step 2: the card-level diagnostics report', () => {
     sink.accept(second);
 
     expect(sink.report).toBe(first);
+  });
+
+  it('E9: an unparseable price keeps { price, currency, priceTier } identical and reports PARSE_FAILED', () => {
+    // The offscreen node is present but its text carries no price ("See price
+    // in cart"). Before SAD-369 the cascade fell through silently; the parity
+    // pin proves the extracted triple is byte-identical to the pre-change
+    // behaviour, and the report now says PARSE_FAILED instead of claiming the
+    // price was absent.
+    const card = renderCard(
+      SEARCH_CARD.replace(
+        '<span class="a-offscreen">$19.99</span>',
+        '<span class="a-offscreen">See price in cart</span>',
+      ),
+    );
+    const sink = collectingSink();
+
+    const product = parseAmazonSearchCard(card, PAGE_URL, {
+      diagnosticsSink: sink,
+    });
+
+    expect(product).not.toBeNull();
+    // Parity pin: exactly what the cascade produced before the change.
+    expect({
+      price: product!.price,
+      currency: product!.currency,
+    }).toEqual({ price: null, currency: 'USD' });
+
+    // The observation rides the diagnostics-only field...
+    const pricing = extractCardPricingAndDiscounts(card, PAGE_URL);
+    expect({
+      price: pricing.price,
+      currency: pricing.currency,
+      priceTier: pricing.priceTier,
+    }).toEqual({ price: null, currency: 'USD', priceTier: 'missing' });
+    expect(pricing.unparseablePriceTier).toBe('tier2_semantic');
+
+    // ...and the report entry is PARSE_FAILED with the observation tier.
+    const fields = byField(sink.reports[0]!);
+    expect(fields.get('price')).toMatchObject({
+      status: 'PARSE_FAILED',
+      reason: 'price node present but its text could not be parsed',
+      tier: 'tier2_semantic',
+    });
+  });
+
+  it('E9: a parseable price carries no unparseablePriceTier', () => {
+    const card = renderCard(SEARCH_CARD);
+    const pricing = extractCardPricingAndDiscounts(card, PAGE_URL);
+
+    expect(pricing.price).toBe(19.99);
+    expect(pricing.unparseablePriceTier).toBeUndefined();
   });
 });

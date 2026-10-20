@@ -17,6 +17,15 @@ export const SCROLL_INTERVAL_MAX = 5000;
 export const WAIT_AFTER_SCROLL_MIN = 500;
 export const WAIT_AFTER_SCROLL_MAX = 5000;
 
+/**
+ * SAD-369 (D7): the first 50 products of a collection run each print one
+ * diagnostics line; from the 51st onwards that run prints nothing more. The
+ * counter counts unique products with a report (re-parses of the same card
+ * never burn slots) and resets when a new collection starts. The cap applies
+ * to collections only — saving a product always prints (D8).
+ */
+export const COLLECTION_DIAGNOSTICS_LIMIT = 50;
+
 export function clampTargetCount(value: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return DEFAULT_TARGET_COUNT;

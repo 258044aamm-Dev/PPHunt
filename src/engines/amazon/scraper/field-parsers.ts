@@ -37,6 +37,14 @@ export interface CardPricingAndDiscounts {
   dealBadge?: string;
   coupon?: string;
   priceTier: AmazonExtractionTier;
+  /**
+   * SAD-369 D9 (diagnostics-only): the first cascade tier that FOUND a price
+   * node whose text would not parse, when no tier produced a price. Lets the
+   * card report say PARSE_FAILED instead of claiming the price was absent.
+   * Ignored by every existing consumer; the extracted price, currency and
+   * priceTier are byte-identical with and without it.
+   */
+  unparseablePriceTier?: AmazonExtractionTier;
 }
 
 const RATING_PATTERNS: readonly RegExp[] = [
@@ -854,6 +862,10 @@ export function extractCardPricingAndDiscounts(
   let price: number | null = null;
   let currency: string | null = pageCurrency;
   let priceTier: AmazonExtractionTier = 'missing';
+  // SAD-369 D9: first tier that found a price node whose text would not
+  // parse — observed at each tier below, first observation wins, and only
+  // returned when no tier produced a price. Diagnostics-only.
+  let unparseablePriceTier: AmazonExtractionTier | undefined;
 
   // Tier 1: `data-p13n-asin-metadata` JSON price if present
   const metaRaw =
@@ -879,6 +891,8 @@ export function extractCardPricingAndDiscounts(
           price = parsed.value;
           currency = parsed.currency ?? pageCurrency ?? 'USD';
           priceTier = 'tier1_json';
+        } else if (unparseablePriceTier === undefined) {
+          unparseablePriceTier = 'tier1_json';
         }
       }
     } catch {
@@ -906,6 +920,9 @@ export function extractCardPricingAndDiscounts(
         currency = parsed.currency ?? pageCurrency ?? 'USD';
         priceTier = 'tier2_semantic';
         break;
+      } else if (unparseablePriceTier === undefined) {
+        // SAD-369 D9: a price node was present but its text would not parse.
+        unparseablePriceTier = 'tier2_semantic';
       }
     }
   }
@@ -935,6 +952,9 @@ export function extractCardPricingAndDiscounts(
         price = splitParsed.value;
         currency = splitParsed.currency ?? pageCurrency ?? 'USD';
         priceTier = 'tier2_semantic';
+      } else if (unparseablePriceTier === undefined) {
+        // SAD-369 D9: the price block was present but its parts would not parse.
+        unparseablePriceTier = 'tier2_semantic';
       }
     }
   }
@@ -960,6 +980,9 @@ export function extractCardPricingAndDiscounts(
           currency = parsed.currency ?? pageCurrency ?? 'USD';
           priceTier = 'tier4_selector';
           break;
+        } else if (unparseablePriceTier === undefined) {
+          // SAD-369 D9: a fallback price node was present but unparseable.
+          unparseablePriceTier = 'tier4_selector';
         }
       }
       if (price !== null) break;
@@ -991,6 +1014,9 @@ export function extractCardPricingAndDiscounts(
           currency = parsed.currency ?? pageCurrency ?? 'USD';
           priceTier = 'tier3_structural';
           break;
+        } else if (unparseablePriceTier === undefined) {
+          // SAD-369 D9: a currency-token node was present but unparseable.
+          unparseablePriceTier = 'tier3_structural';
         }
       }
     }
@@ -1080,6 +1106,11 @@ export function extractCardPricingAndDiscounts(
   }
   if (dealBadge !== undefined) result.dealBadge = dealBadge;
   if (coupon !== undefined) result.coupon = coupon;
+  // SAD-369 D9: only meaningful when no tier produced a price — otherwise the
+  // observation is noise next to a successfully extracted value.
+  if (price === null && unparseablePriceTier !== undefined) {
+    result.unparseablePriceTier = unparseablePriceTier;
+  }
 
   return result;
 }

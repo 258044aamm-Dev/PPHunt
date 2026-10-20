@@ -91,6 +91,14 @@ export function recordCardDiagnostics(
 
   if (input.pricing.price !== null) {
     collector.extracted('price', { ...dom, tier: input.pricing.priceTier });
+  } else if (input.pricing.unparseablePriceTier) {
+    // SAD-369 D9: a price node WAS present but its text would not parse —
+    // never claim the field was absent when the engine can prove otherwise.
+    collector.parseFailed(
+      'price',
+      'price node present but its text could not be parsed',
+      { ...dom, tier: input.pricing.unparseablePriceTier },
+    );
   } else {
     collector.missing('price', 'no price node found on the card', dom);
   }
