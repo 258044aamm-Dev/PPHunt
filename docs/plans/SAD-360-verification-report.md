@@ -98,6 +98,7 @@ decisions won. Each deviation, with its reason:
 | 3 | Logs land in the **Temu tab's** DevTools console (SAD-366, SAD-367) | Logs land in the **service-worker** console | Locked D3: mirror the Amazon SAD-359 sink, one DevTools target for every line, nothing added to the page console. The content script only attaches reports to the message. |
 | 4 | Docs named `SAD-360-temu-diagnostic-logging-plan.md` / `-implementation-guide.md` | `SAD-360-temu-diagnostics-review-and-plan.md`, `SAD-360-steps-2-3-parser-instrumentation-plan.md`, this report | The plan document was renamed when it was amended to D1–D8; the step records continue in a second file rather than a separate guide. |
 | 5 | Nothing beyond step 5 | `scripts/temu-diagnostics-measurement.mjs` + `tests/temu-diagnostics-measurement.test.ts` (`c026756`) | Known limitation 1 (no live evidence) had no tool to close it. The harness is a spike tool: not bundled, not in CI. |
+| 6 | Isolation check "`git diff --stat <baseline> -- src/engines/temu/schemas` prints nothing" (SAD-367) | `src/engines/temu/schemas/messages.ts`, **+28 lines**: an optional `productDiagnostics` array (max 200) on `TEMU_PRODUCTS_COLLECTED` | Requirement 5 explicitly permits "one additive optional message field". It is optional, so a message from an older content script still validates and persists unchanged — both cases are tested in `tests/temu-diagnostics-transport.test.ts`. |
 
 Steps 0–5 themselves were executed as written — one commit per step, each pushed
 and reported on SAD-360 before the next began.
