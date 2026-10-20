@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { CellExpandModal, type ExpandedCellPayload } from '@/entrypoints/sidepanel/components/CellExpandModal';
 import { useConfirmDialog } from '@/entrypoints/sidepanel/components/ConfirmDialog';
 import { TableToolbar } from '@/entrypoints/sidepanel/components/TableToolbar';
 import { sortProducts } from '@/lib/sorting/product-sorter';
@@ -70,6 +71,21 @@ export function AmazonProductTable({
   });
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  // SAD-358: single table-level expand modal state — avoids per-row modal bloat
+  // inside the virtualizer and guarantees focus restore without re-render churn.
+  const [expandedCell, setExpandedCell] = useState<ExpandedCellPayload | null>(null);
+  const expandTriggerRef = useRef<HTMLElement | null>(null);
+  const handleExpand = useCallback((payload: ExpandedCellPayload) => {
+    expandTriggerRef.current = (payload.triggerRef?.current as HTMLElement | null) ?? null;
+    setExpandedCell(payload);
+  }, []);
+  const handleCloseExpand = useCallback(() => {
+    setExpandedCell(null);
+    requestAnimationFrame(() => {
+      expandTriggerRef.current?.focus();
+    });
+  }, []);
 
   useEffect(() => {
     setStoreSorting?.(sorting);
@@ -213,6 +229,9 @@ export function AmazonProductTable({
     columnResizeMode: 'onChange' as const,
     enableRowSelection: true,
     getRowId: (row: AmazonProduct) => String(row.id ?? row.asin),
+    meta: {
+      onExpand: handleExpand,
+    },
   });
 
   const rows = table.getRowModel().rows;
@@ -690,6 +709,8 @@ export function AmazonProductTable({
           </table>
         )}
       </div>
+
+      <CellExpandModal open={!!expandedCell} payload={expandedCell} onClose={handleCloseExpand} />
 
       <AmazonExportModal
         isOpen={exportOpen}

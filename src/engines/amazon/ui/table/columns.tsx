@@ -6,6 +6,8 @@ import {
   sortFn_basic,
   stockFeatures,
 } from '@tanstack/react-table';
+import { ExpandableCell } from '@/entrypoints/sidepanel/components/ExpandableCell';
+import type { ExpandedCellPayload } from '@/entrypoints/sidepanel/components/CellExpandModal';
 import type { ValidatedSettings } from '../../schemas/settings';
 import type { AmazonProduct } from '../../types/product';
 import { formatCurrency } from '../../utils/formatters';
@@ -166,7 +168,8 @@ const titleColumn = columnHelper.accessor('title', {
           ? '★'
           : '●';
 
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <div className="flex flex-col gap-0.5 min-w-0">
         <div className="flex flex-wrap items-center gap-1">
           <span
@@ -206,6 +209,19 @@ const titleColumn = columnHelper.accessor('title', {
           {title ?? '—'}
         </a>
       </div>
+    );
+
+    if (!title || !meta?.onExpand) return inner;
+    return (
+      <ExpandableCell
+        label="Title"
+        columnId="title"
+        value={title}
+        product={product}
+        onExpand={meta.onExpand}
+      >
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 280,
@@ -297,7 +313,8 @@ const dealBadgeColumn = columnHelper.accessor('dealBadge', {
   cell: (info) => {
     const deal = info.getValue();
     if (!deal) return <span className="text-ink-subtle">No</span>;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-crimson/15 text-crimson line-clamp-1"
         title={deal}
@@ -305,6 +322,12 @@ const dealBadgeColumn = columnHelper.accessor('dealBadge', {
       >
         {deal}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Deal" columnId="dealBadge" value={deal} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 136,
@@ -378,7 +401,8 @@ const bestSellersRankColumn = columnHelper.accessor('bestSellersRank', {
   cell: (info) => {
     const bsr = info.getValue();
     if (!bsr) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-sans text-xs text-ink line-clamp-1"
         title={bsr}
@@ -386,6 +410,12 @@ const bestSellersRankColumn = columnHelper.accessor('bestSellersRank', {
       >
         {bsr}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Best Sellers Rank" columnId="bestSellersRank" value={bsr} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 160,
@@ -400,7 +430,8 @@ const pastMonthSalesColumn = columnHelper.accessor('pastMonthSales', {
   cell: (info) => {
     const sales = info.getValue();
     if (!sales) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-sans text-xs text-moss font-medium line-clamp-1"
         title={sales}
@@ -408,6 +439,12 @@ const pastMonthSalesColumn = columnHelper.accessor('pastMonthSales', {
       >
         {sales}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Monthly Sales" columnId="pastMonthSales" value={sales} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 150,
@@ -422,7 +459,8 @@ const couponColumn = columnHelper.accessor('coupon', {
   cell: (info) => {
     const coupon = info.getValue();
     if (!coupon) return <span className="text-ink-subtle">No</span>;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-moss/15 text-moss line-clamp-1"
         title={coupon}
@@ -430,6 +468,12 @@ const couponColumn = columnHelper.accessor('coupon', {
       >
         {coupon}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Coupon" columnId="coupon" value={coupon} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 140,
@@ -444,7 +488,8 @@ const badgeColumn = columnHelper.accessor('badge', {
   cell: (info) => {
     const badge = info.getValue();
     if (!badge) return <span className="text-ink-subtle">No</span>;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-golden/15 text-golden line-clamp-1"
         title={badge}
@@ -452,6 +497,12 @@ const badgeColumn = columnHelper.accessor('badge', {
       >
         {badge}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Badge" columnId="badge" value={badge} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 124,
@@ -466,7 +517,8 @@ const deliveryColumn = columnHelper.accessor('delivery', {
   cell: (info) => {
     const delivery = info.getValue();
     if (!delivery) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-sans text-xs text-ink-muted line-clamp-1"
         title={delivery}
@@ -474,6 +526,12 @@ const deliveryColumn = columnHelper.accessor('delivery', {
       >
         {delivery}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Delivery" columnId="delivery" value={delivery} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 150,
@@ -488,13 +546,20 @@ const brandColumn = columnHelper.accessor('brand', {
   cell: (info) => {
     const brand = info.getValue();
     if (!brand) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-sans text-xs text-ink line-clamp-1"
         title={brand}
       >
         {brand}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Brand" columnId="brand" value={brand} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 110,
@@ -509,13 +574,20 @@ const sellerColumn = columnHelper.accessor('seller', {
   cell: (info) => {
     const seller = info.getValue();
     if (!seller) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-sans text-xs text-ink-muted line-clamp-1"
         title={seller}
       >
         {seller}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Seller" columnId="seller" value={seller} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 110,
@@ -530,13 +602,20 @@ const availabilityColumn = columnHelper.accessor('availability', {
   cell: (info) => {
     const availability = info.getValue();
     if (!availability) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-sans text-xs text-ink-muted line-clamp-1"
         title={availability}
       >
         {availability}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Availability" columnId="availability" value={availability} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 120,
@@ -589,7 +668,8 @@ const urlColumn = columnHelper.accessor('url', {
   cell: (info) => {
     const url = info.getValue();
     if (!url) return <span className="text-ink-subtle">—</span>;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <a
         href={url}
         target="_blank"
@@ -599,6 +679,12 @@ const urlColumn = columnHelper.accessor('url', {
       >
         /dp/{info.row.original.asin}
       </a>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="URL" columnId="url" value={url} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 110,
@@ -613,13 +699,20 @@ const descriptionColumn = columnHelper.accessor('description', {
   cell: (info) => {
     const desc = info.getValue();
     if (!desc) return null;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-serif text-xs text-ink-muted line-clamp-2"
         title={desc}
       >
         {desc}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Description" columnId="description" value={desc} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 200,
@@ -636,13 +729,20 @@ const featuresColumn = columnHelper.accessor('features', {
       return null;
     }
     const joined = features.join(' • ');
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-serif text-xs text-ink-muted line-clamp-2"
         title={joined}
       >
         {joined}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Features" columnId="features" value={features} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 200,
@@ -666,7 +766,8 @@ const warrantyDescriptionColumn = columnHelper.accessor('warrantyDescription', {
     const warranty = info.getValue();
     if (!warranty) return <span className="text-ink-subtle">No</span>;
     const raw = info.row.original.warrantyDescriptionRaw;
-    return (
+    const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
+    const inner = (
       <span
         className="font-mono text-xs text-ink whitespace-nowrap"
         title={raw ?? warranty}
@@ -674,6 +775,12 @@ const warrantyDescriptionColumn = columnHelper.accessor('warrantyDescription', {
       >
         {warranty}
       </span>
+    );
+    if (!meta?.onExpand) return inner;
+    return (
+      <ExpandableCell label="Warranty" columnId="warrantyDescription" value={warranty} raw={raw ?? null} product={info.row.original} onExpand={meta.onExpand}>
+        {inner}
+      </ExpandableCell>
     );
   },
   size: 110,

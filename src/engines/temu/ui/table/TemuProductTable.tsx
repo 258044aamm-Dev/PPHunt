@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { CellExpandModal, type ExpandedCellPayload } from '@/entrypoints/sidepanel/components/CellExpandModal';
 import { TableToolbar } from '@/entrypoints/sidepanel/components/TableToolbar';
 import { useConfirmDialog } from '@/entrypoints/sidepanel/components/ConfirmDialog';
 import { sortProducts } from '@/lib/sorting/product-sorter';
@@ -54,6 +55,20 @@ export function TemuProductTable({
   const [globalFilter, setGlobalFilter] = useState(initialGlobalFilter ?? '');
   const [exportOpen, setExportOpen] = useState(false);
   const { askConfirm, confirmDialog } = useConfirmDialog();
+
+  // SAD-358: single table-level expand modal — same contract as Amazon
+  const [expandedCell, setExpandedCell] = useState<ExpandedCellPayload | null>(null);
+  const expandTriggerRef = useRef<HTMLElement | null>(null);
+  const handleExpand = useCallback((payload: ExpandedCellPayload) => {
+    expandTriggerRef.current = (payload.triggerRef?.current as HTMLElement | null) ?? null;
+    setExpandedCell(payload);
+  }, []);
+  const handleCloseExpand = useCallback(() => {
+    setExpandedCell(null);
+    requestAnimationFrame(() => {
+      expandTriggerRef.current?.focus();
+    });
+  }, []);
 
   useEffect(() => {
     setStoreSorting?.(sorting);
@@ -165,6 +180,9 @@ export function TemuProductTable({
     columnResizeMode: 'onChange' as const,
     enableRowSelection: true,
     getRowId: (row: TemuProduct) => String(row.id ?? row.goodsId),
+    meta: {
+      onExpand: handleExpand,
+    },
   });
 
   const rows = table.getRowModel().rows;
@@ -432,6 +450,8 @@ export function TemuProductTable({
           </tbody>
         </table>
       </div>
+
+      <CellExpandModal open={!!expandedCell} payload={expandedCell} onClose={handleCloseExpand} />
 
       <TemuExportModal
         isOpen={exportOpen}
