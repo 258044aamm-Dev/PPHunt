@@ -1,11 +1,12 @@
-# Diagnostics in every situation + an enable/disable setting (plan)
+# SAD-369 — Diagnostics in every situation + an enable/disable setting (design plan)
 
 **Status:** plan only — nothing implemented. Written 2026-10-20, after the
 SAD-359 gap-closure work reached **In Review** (commit `6f168df`).
 **Scope:** the Amazon engine only. The Temu engine is not touched.
-**Suggested Linear:** a **new** issue. SAD-359 is already In Review; this is
-new scope with a different acceptance surface. Rename this file to
-`SAD-3xx-…` once the number exists.
+**Linear:** [SAD-369](https://linear.app/sad-mod/issue/SAD-369) · origin
+[SAD-368](https://linear.app/sad-mod/issue/SAD-368).
+**Step-by-step guide:** `docs/plans/SAD-369-diagnostics-everywhere-and-toggle-implementation-guide.md`
+— read that one to *do* the work; this one explains *why* it is shaped that way.
 
 ---
 
