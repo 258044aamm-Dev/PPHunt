@@ -210,3 +210,7 @@ empty cell does not change row height. No layout code to change (verify visually
   empty value (`raw == null ? '' : String(raw)` in csv/clipboard; `value ?? ''` /
   null cell in excel). No `—`, `"null"`, or `"undefined"` is emitted. Regression
   assertions for this are added in Step 5 instead of changing export code.
+- Step 5 (tests — Amazon table/clipboard, Temu table, Temu CSV/clipboard): commit `e762cfe`.
+  Targeted run: 3 files, 13 tests passed.
+- Step 6 (full verification): `tsc --noEmit` PASS; full suite 83 files / 894 tests PASS;
+  `npx wxt zip` build PASS. No existing feature affected. Status → In Review.
