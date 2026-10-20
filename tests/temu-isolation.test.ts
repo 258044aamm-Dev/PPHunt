@@ -389,7 +389,7 @@ describe('Engine Isolation: PPHuntDB (Amazon) vs PPHuntTemuDB (Temu) (SAD-223)',
     expect(tsv).toContain("'+MaliciousBrand");
   });
 
-  it('exports missing optional fields as blank in Temu CSV and clipboard (SAD-348)', () => {
+  it('exports missing Discount/Deal/Coupon/Badge as No and other optional fields as blank in Temu CSV and clipboard (SAD-348)', () => {
     const products = [
       {
         goodsId: '601099769178068',
@@ -431,9 +431,9 @@ describe('Engine Isolation: PPHuntDB (Amazon) vs PPHuntTemuDB (Temu) (SAD-223)',
       'Delivery',
     ];
     const csvLines = buildTemuCSVContent(products, cols).split('\n');
-    expect(csvLines[1]).toBe('9.99,,,,,,');
+    expect(csvLines[1]).toBe('9.99,,No,No,No,No,');
     const tsvLines = buildTemuClipboardTSV(products, cols).split('\n');
-    expect(tsvLines[1]).toBe('9.99\t\t\t\t\t\t');
+    expect(tsvLines[1]).toBe('9.99\t\tNo\tNo\tNo\tNo\t');
     expect(csvLines.join('\n')).not.toContain('—');
     expect(tsvLines.join('\n')).not.toContain('—');
   });

@@ -567,24 +567,27 @@ describe('Dedicated Preview Tab, 3-Mode Switching & Sort-Preserving Export (SAD-
       expect(screen.getByTestId('table-sort-preset-select')).toBeTruthy();
     });
 
-    // SAD-348: Temu products seeded without coupon/badge/deal/list price/delivery
-    // render those cells blank (no testid, no dash), while Discount still renders.
+    // SAD-348: Temu product seeded without deal/coupon/badge renders those cells
+    // as "No"; list price/delivery render blank (no testid, no dash); Discount renders.
     await waitFor(() => {
       expect(
         screen.getByTestId('product-discount-601099000001').textContent
       ).toBe('-15%');
     });
-    for (const prefix of [
-      'product-list-price-',
-      'product-deal-',
-      'product-coupon-',
-      'product-badge-',
-      'product-delivery-',
-    ]) {
+    for (const prefix of ['product-list-price-', 'product-delivery-']) {
       expect(screen.queryByTestId(`${prefix}601099000001`)).toBeNull();
     }
-    expect(
-      screen.getByTestId('product-price-601099000001').closest('tr')?.textContent
-    ).not.toContain('—');
+    const temuRow = screen
+      .getByTestId('product-price-601099000001')
+      .closest('tr');
+    const temuHeaders = Array.from(
+      document.querySelectorAll('thead th')
+    ).map((th) => th.textContent ?? '');
+    const temuCells = temuRow?.querySelectorAll('td');
+    for (const header of ['Deal', 'Coupon', 'Badge']) {
+      const idx = temuHeaders.findIndex((h) => h.includes(header));
+      expect(temuCells?.[idx]?.textContent).toBe('No');
+    }
+    expect(temuRow?.textContent).not.toContain('—');
   });
 });

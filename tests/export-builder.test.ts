@@ -103,7 +103,7 @@ describe('CSV bytes', () => {
     );
   });
 
-  it('leaves unavailable values blank instead of inventing text', async () => {
+  it('leaves unavailable values blank, except Coupon which shows No (SAD-348)', async () => {
     const result = await buildExportFile(
       request({
         columns: ['ASIN', 'Coupon', 'Best Sellers Rank', 'Snapshot Count'],
@@ -120,7 +120,7 @@ describe('CSV bytes', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(text(result.base64).replace(/^\uFEFF/, '').split('\n')[1]).toBe(
-      'B08N5WRWNW,,,',
+      'B08N5WRWNW,No,,',
     );
   });
 });
@@ -209,7 +209,7 @@ describe('a 50-product collection', () => {
     }),
   );
 
-  it('exports CSV with every row, blanks left blank', async () => {
+  it('exports CSV with every row, blanks left blank except Coupon which shows No (SAD-348)', async () => {
     const result = await buildExportFile(
       request({ columns: ['ASIN', 'Price', 'Coupon'], products: rows }),
     );
@@ -219,7 +219,7 @@ describe('a 50-product collection', () => {
     const lines = text(result.base64).replace(/^\uFEFF/, '').split('\n');
     expect(lines).toHaveLength(51);
     expect(lines[1]).toBe('B000000000,,10% off');
-    expect(lines[2]).toBe('B000000001,11,');
+    expect(lines[2]).toBe('B000000001,11,No');
   });
 
   it('exports XLSX with every row', async () => {

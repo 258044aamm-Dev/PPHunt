@@ -308,26 +308,32 @@ describe('Product pricing, deal badges, list price separation, BSR, and market i
       ).toBe('FREE delivery Tomorrow');
     });
 
-    // SAD-348: the no-discount product's optional fields render blank (no dash, no testid),
-    // while its populated core Price still renders.
+    // SAD-348: the no-discount product's Discount/Deal/Coupon/Badge render "No",
+    // its other optional fields render blank (no dash, no testid), and its
+    // populated core Price still renders.
     for (const prefix of [
       'product-list-price-',
-      'product-discount-',
-      'product-deal-',
       'product-bsr-',
       'product-monthly-sales-',
-      'product-coupon-',
-      'product-badge-',
       'product-delivery-',
     ]) {
       expect(screen.queryByTestId(`${prefix}B0PRV00002`)).toBeNull();
     }
+    const emptyRow = screen
+      .getByTestId('product-price-B0PRV00002')
+      .closest('tr');
+    const headerTexts = Array.from(
+      document.querySelectorAll('thead th')
+    ).map((th) => th.textContent ?? '');
+    const emptyCells = emptyRow?.querySelectorAll('td');
+    for (const header of ['Discount', 'Deal', 'Coupon', 'Badge']) {
+      const idx = headerTexts.findIndex((h) => h.includes(header));
+      expect(emptyCells?.[idx]?.textContent).toBe('No');
+    }
     expect(screen.getByTestId('product-price-B0PRV00002').textContent).toBe(
       '$24.50'
     );
-    expect(
-      screen.getByTestId('product-price-B0PRV00002').closest('tr')?.textContent
-    ).not.toContain('—');
+    expect(emptyRow?.textContent).not.toContain('—');
 
     unmount();
 
@@ -340,12 +346,12 @@ describe('Product pricing, deal badges, list price separation, BSR, and market i
     expect(lines[1]).toContain(
       '31.99,99.99,68% off,Limited-time deal,USD,4.8,4120,#5 in Electronics,10K+ bought in past month,Save 15% with coupon,Amazon\'s Choice,FREE delivery Tomorrow'
     );
-    expect(lines[2]).toContain('24.5,,,,USD,4.3,190,,,,,');
+    expect(lines[2]).toContain('24.5,,No,No,USD,4.3,190,,,No,No,');
 
     // SAD-348: clipboard TSV likewise leaves missing optional fields empty
     const tsv = buildClipboardTSV(sampleProducts, DEFAULT_VISIBLE_COLUMNS);
     const tsvLines = tsv.split('\n');
-    expect(tsvLines[2]).toContain('24.5\t\t\t\tUSD\t4.3\t190\t\t\t\t\t');
+    expect(tsvLines[2]).toContain('24.5\t\tNo\tNo\tUSD\t4.3\t190\t\t\tNo\tNo\t');
     expect(tsv).not.toContain('—');
 
     // Verify XLSX export preserves numeric Price and List Price and all promotional/BSR strings
@@ -378,8 +384,8 @@ describe('Product pricing, deal badges, list price separation, BSR, and market i
       ASIN: 'B0PRV00002',
       Price: 24.5,
       'List Price': '',
-      Discount: '',
-      Deal: '',
+      Discount: 'No',
+      Deal: 'No',
       'Best Sellers Rank': '',
     });
   });
