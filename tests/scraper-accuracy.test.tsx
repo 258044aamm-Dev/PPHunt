@@ -500,6 +500,9 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
       'URL',
       'Description',
       'Features',
+      // SAD-349
+      'Warranty Description',
+      'Warranty Details',
       'Source',
       'Collected At',
     ]);
@@ -523,6 +526,12 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
     expect(getColumnsForSettings(allEnabled)).toHaveLength(27);
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Description');
     expect(getExportColumnsFromSettings(allEnabled)).toContain('Features');
+    expect(getExportColumnsFromSettings(allEnabled)).toContain(
+      'Warranty Description'
+    );
+    expect(getExportColumnsFromSettings(allEnabled)).toContain(
+      'Warranty Details'
+    );
 
     const bothOff = {
       ...defaults.enabledFields,
@@ -532,6 +541,21 @@ describe('default enabled fields across Settings, Preview Table, and Exports', (
     expect(getColumnsForSettings(bothOff)).toHaveLength(25);
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Description');
     expect(getExportColumnsFromSettings(bothOff)).not.toContain('Features');
+    // SAD-349: turning off description/features leaves warranty alone, and its
+    // own toggle removes both of its columns from an export.
+    expect(getExportColumnsFromSettings(bothOff)).toContain(
+      'Warranty Description'
+    );
+    const warrantyOff = {
+      ...defaults.enabledFields,
+      warrantyDescription: false,
+    };
+    expect(getExportColumnsFromSettings(warrantyOff)).not.toContain(
+      'Warranty Description'
+    );
+    expect(getExportColumnsFromSettings(warrantyOff)).not.toContain(
+      'Warranty Details'
+    );
 
     // SAD-349: the warranty toggle is independent of the other two, and turning
     // all three off returns exactly the pre-SAD-333 column set.

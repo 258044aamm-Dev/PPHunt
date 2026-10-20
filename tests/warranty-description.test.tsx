@@ -471,3 +471,110 @@ describe('Preview table', () => {
     expect(ids(off).length).toBe(ids(on).length - 1);
   });
 });
+
+/* ------------------------------------------------------------------------- *
+ * Exports. The ticket's "included in all relevant exports" criterion, checked
+ * against the real builders rather than the column list alone — the three
+ * writers coerce missing values differently, which is exactly why `|| 'No'`
+ * has to live in the accessor.
+ * ------------------------------------------------------------------------- */
+
+import * as XLSX from 'xlsx';
+import { buildCSVContent } from '@/engines/amazon/export/csv';
+import { buildClipboardTSV } from '@/engines/amazon/export/clipboard';
+import { buildExcelWorkbookBuffer } from '@/engines/amazon/export/excel';
+import {
+  DEFAULT_VISIBLE_COLUMNS,
+  getExportColumnsFromSettings,
+} from '@/engines/amazon/export/types';
+
+const exportSample: Product[] = [
+  row('B0WARANTY1', {
+    warrantyDescription: '2-year',
+    warrantyDescriptionRaw: '2 year manufacturer',
+  }),
+  row('B0WARANTY2'),
+];
+
+describe('Exports', () => {
+  it('ships both warranty columns by default, in the right place', () => {
+    const i = DEFAULT_VISIBLE_COLUMNS.indexOf('Warranty Description');
+    expect(i).toBeGreaterThan(DEFAULT_VISIBLE_COLUMNS.indexOf('Features'));
+    expect(DEFAULT_VISIBLE_COLUMNS[i + 1]).toBe('Warranty Details');
+    expect(DEFAULT_VISIBLE_COLUMNS[i + 2]).toBe('Source');
+  });
+
+  it('CSV carries the token, the verbatim text, and No when absent', () => {
+    const csv = buildCSVContent(exportSample, DEFAULT_VISIBLE_COLUMNS, false);
+    const lines = csv.split('\n');
+
+    expect(lines[0]).toContain('Warranty Description,Warranty Details');
+    // Populated row: token then verbatim cell.
+    expect(lines[1]).toContain('2-year,2 year manufacturer');
+    // Absent row: both columns fall back to No, never blank and never a dash.
+    expect(lines[2]).toContain('No,No');
+    expect(csv).not.toContain('—');
+  });
+
+  it('clipboard TSV agrees with CSV cell for cell', () => {
+    const tsv = buildClipboardTSV(exportSample, DEFAULT_VISIBLE_COLUMNS);
+    const lines = tsv.split('\n');
+
+    expect(lines[0]).toContain('Warranty Description\tWarranty Details');
+    expect(lines[1]).toContain('2-year\t2 year manufacturer');
+    expect(lines[2]).toContain('No\tNo');
+  });
+
+  it('XLSX keeps both columns as text, including the No fallback', async () => {
+    const bytes = await buildExcelWorkbookBuffer(
+      exportSample,
+      DEFAULT_VISIBLE_COLUMNS,
+      { embedImages: 'always', fetchImage: async () => null },
+    );
+    const wb = XLSX.read(bytes, { type: 'array' });
+    const sheet = wb.Sheets['Products'];
+    if (!sheet) throw new Error('Products sheet missing from workbook');
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      ASIN: 'B0WARANTY1',
+      'Warranty Description': '2-year',
+      'Warranty Details': '2 year manufacturer',
+    });
+    expect(rows[1]).toMatchObject({
+      ASIN: 'B0WARANTY2',
+      'Warranty Description': 'No',
+      'Warranty Details': 'No',
+    });
+  });
+
+  it('the settings toggle removes both columns from an export', () => {
+    const on = getExportColumnsFromSettings({
+      title: true, asin: true, url: true, price: true, listPrice: true,
+      discountPercentage: true, dealBadge: true, currency: true, rating: true,
+      reviewCount: true, bestSellersRank: true, pastMonthSales: true,
+      coupon: true, badge: true, delivery: true, imageUrl: true,
+      isSponsored: true, isPrime: true, brand: true, availability: true,
+      seller: true, description: true, features: true, warrantyDescription: true,
+    });
+    const off = getExportColumnsFromSettings({
+      title: true, asin: true, url: true, price: true, listPrice: true,
+      discountPercentage: true, dealBadge: true, currency: true, rating: true,
+      reviewCount: true, bestSellersRank: true, pastMonthSales: true,
+      coupon: true, badge: true, delivery: true, imageUrl: true,
+      isSponsored: true, isPrime: true, brand: true, availability: true,
+      seller: true, description: true, features: true, warrantyDescription: false,
+    });
+
+    expect(on).toContain('Warranty Description');
+    expect(on).toContain('Warranty Details');
+    expect(off).not.toContain('Warranty Description');
+    expect(off).not.toContain('Warranty Details');
+    expect(off.length).toBe(on.length - 2);
+
+    // And the omission actually reaches the CSV, not just the column list.
+    const csv = buildCSVContent(exportSample, off, false);
+    expect(csv.split('\n')[0]).not.toContain('Warranty');
+  });
+});

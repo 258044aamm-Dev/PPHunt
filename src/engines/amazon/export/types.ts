@@ -79,6 +79,15 @@ export const EXPORT_COLUMNS: Record<
   URL: 'url',
   Description: 'description',
   Features: (p) => (p.features ?? []).join('; '),
+  /**
+   * SAD-349: the `|| 'No'` lives in the accessor, not in the writers, so CSV,
+   * clipboard TSV and XLSX all render an absent warranty identically without
+   * each of the three needing to know this field exists. `csv.ts` and
+   * `clipboard.ts` coerce with `raw == null ? '' : String(raw)` and `excel.ts`
+   * with `value ?? ''`, none of which would turn `null` into `No` on their own.
+   */
+  'Warranty Description': (p) => p.warrantyDescription || 'No',
+  'Warranty Details': (p) => p.warrantyDescriptionRaw || 'No',
   Category: (p) => formatListingCategoryLabel(resolveListingCategory(p)),
   Section: (p) => resolveProductPlacements(p).join(' + '),
   Source: (p) => {
@@ -135,6 +144,10 @@ const FIELD_KEY_TO_HEADER: Record<string, string> = {
   url: 'URL',
   description: 'Description',
   features: 'Features',
+  // SAD-349: property-key alias so a caller may pass either form, like every
+  // other field here. The raw-text column is header-only by design — it has no
+  // independent settings toggle and no table column of its own.
+  warrantyDescription: 'Warranty Description',
   listingCategory: 'Category',
   sectionLabel: 'Section',
   source: 'Source',
@@ -177,6 +190,9 @@ export const DEFAULT_VISIBLE_COLUMNS = [
   'URL',
   'Description',
   'Features',
+  // SAD-349: both columns ship together, gated by the one toggle.
+  'Warranty Description',
+  'Warranty Details',
   'Source',
   'Collected At',
 ];
@@ -218,6 +234,13 @@ export function getExportColumnsFromSettings(
   columns.push('URL');
   if (enabledFields.description) columns.push('Description');
   if (enabledFields.features) columns.push('Features');
+  // SAD-349: one toggle pushes both columns — the same precedent as `listPrice`
+  // pushing 'List Price', 'Discount' and 'Deal' above. Truthy check rather than
+  // `!== false`, matching description/features, so a settings row predating the
+  // key does not silently drop the columns.
+  if (enabledFields.warrantyDescription) {
+    columns.push('Warranty Description', 'Warranty Details');
+  }
   columns.push('Source', 'Collected At');
 
   return columns;
