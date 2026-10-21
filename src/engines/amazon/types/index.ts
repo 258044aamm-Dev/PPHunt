@@ -6,6 +6,10 @@ import type {
   ScrapedAmazonProduct,
   ScrapedProduct,
 } from './product';
+// SAD-379: the per-run enrichment cap ('25' | '50' | 'all').
+import type { EnrichCollectedLimit } from '../constants/defaults';
+
+export type { EnrichCollectedLimit };
 
 export type {
   AmazonListingCategory,
@@ -181,6 +185,14 @@ export interface AmazonSettings {
   quickSaveCollectionBehavior: QuickSaveCollectionBehavior;
   /** SAD-276: build the configured export right after each save (default off). */
   quickSaveAutoDownload: boolean;
+  /**
+   * SAD-379: run the save pipeline's enrichment stage for collected products
+   * (default off). With this false a collection run is byte-identical to the
+   * pre-SAD-379 behaviour.
+   */
+  enrichCollectedProducts: boolean;
+  /** SAD-379: per-run enrichment cap for a collection ('25' | '50' | 'all'). */
+  enrichCollectedLimit: EnrichCollectedLimit;
 }
 export type Settings = AmazonSettings;
 export type AppSettings = AmazonSettings;

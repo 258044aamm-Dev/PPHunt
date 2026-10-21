@@ -2,6 +2,9 @@ import { z } from 'zod';
 import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_ENABLED_FIELDS,
+  DEFAULT_ENRICH_COLLECTED,
+  DEFAULT_ENRICH_COLLECTED_LIMIT,
+  ENRICH_COLLECTED_LIMIT_OPTIONS,
   DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
   DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR,
   DEFAULT_TARGET_COUNT,
@@ -108,6 +111,12 @@ export const AmazonSettingsSchema = z.object({
     .enum(['current', 'new', 'ask'])
     .default(DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR),
   quickSaveAutoDownload: z.boolean().default(DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD),
+  // SAD-379: the collection enrichment stage. Both keys are optional-with-default,
+  // so an existing stored row parses without a settingsVersion bump.
+  enrichCollectedProducts: z.boolean().default(DEFAULT_ENRICH_COLLECTED),
+  enrichCollectedLimit: z
+    .enum(ENRICH_COLLECTED_LIMIT_OPTIONS)
+    .default(DEFAULT_ENRICH_COLLECTED_LIMIT),
 });
 
 export const PartialAmazonSettingsSchema = z.object({
@@ -153,6 +162,9 @@ export const PartialAmazonSettingsSchema = z.object({
   enabledFields: EnabledFieldsSchema.partial().optional(),
   quickSaveCollectionBehavior: z.enum(['current', 'new', 'ask']).optional(),
   quickSaveAutoDownload: z.boolean().optional(),
+  // SAD-379
+  enrichCollectedProducts: z.boolean().optional(),
+  enrichCollectedLimit: z.enum(ENRICH_COLLECTED_LIMIT_OPTIONS).optional(),
 });
 
 export const SettingsSchema = AmazonSettingsSchema;

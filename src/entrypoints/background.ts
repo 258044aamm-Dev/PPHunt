@@ -7,6 +7,10 @@ import {
   refreshDiagnosticsEnabled,
   subscribeDiagnosticsEnabled,
 } from '@/engines/amazon/utils/diagnostics-flag';
+import {
+  refreshEnrichCollected,
+  subscribeEnrichCollected,
+} from '@/engines/amazon/utils/enrich-collected-flag';
 import { registerTemuBackgroundHandlers } from '@/engines/temu/background/handler';
 import { openOverlayForTab } from '@/lib/overlay/openOverlay';
 import {
@@ -24,6 +28,12 @@ export default defineBackground(() => {
   // a worker that spins up mid-session never logs by accident.
   void refreshDiagnosticsEnabled();
   subscribeDiagnosticsEnabled();
+
+  // SAD-379: the collection enrichment switch — same read-once-then-subscribe
+  // discipline. It fails closed (OFF), so a worker that starts mid-session can
+  // never enrich anything before its settings read resolves.
+  void refreshEnrichCollected();
+  subscribeEnrichCollected();
 
   // SAD-279: the "Save Product Details" menu item. Registration is idempotent
   // and re-runs on install/startup so a changed title or match list is applied.
