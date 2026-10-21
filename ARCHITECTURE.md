@@ -106,6 +106,58 @@ CSV/XLSX bytes → `downloadBlob()` → `downloads.download({ conflictAction:
 'uniquify' })` → the blob URL is revoked on `complete`/`interrupted` (60 s
 backstop).
 
+### Collection Enrichment (SAD-385)
+
+A collection run stores what a listing card prints, then continues into the
+**same** enrichment stage the save pipeline runs — `enrichSavedProduct()`
+(fetch → offscreen parse → field-scoped merge → detail snapshot). It is not
+optional, because two of the fields a card never prints exist only on the
+product page: `weight` (`extractDetailWeight`) and the full twister
+`variations` (`extractDetailVariations`). A collection that skipped this stage
+could never carry them, whatever the mode — `mode` only selects the scroll
+driver below, it never reaches a parser.
+
+```
+PRODUCTS_COLLECTED (per batch)
+   │
+   ├─ validateAndNormalize → addProducts()          (row is durable here)
+   └─ enqueueCollectionEnrichment()                 (never awaited)
+            │
+            ▼
+      enrichment-pump.ts — one queue, one serial runner, deduped per
+      (sessionKey, asin), drained when a fetch returns `skipped`
+            │
+            ▼
+      enrichSavedProduct({ jobId: 'collect:<session>:<asin>' })
+            │
+   run boundary (Stop / completion)
+      └─ reconcile: rows of the session still missing `weight` or
+         `variations` are queued once more, BEFORE the per-run bookkeeping
+         (dedupe set + budget) is cleared
+```
+
+Four properties are load-bearing:
+
+1. **Nothing on the collection path awaits enrichment**, so progress messages and
+   Stop Collection never wait on a ~2.4 s fetch; a row can be visible at card
+   quality and fill in afterwards.
+2. **A failure is never a collection error.** The row keeps its card data and the
+   run continues, exactly as a failed save does.
+3. **The budget is per run** (`enrichCollectedLimit`: `25` / `50` / `all`,
+   default `all`), resolved by the cached reader in
+   `utils/enrich-collected-flag.ts` — mirrored into `storage.local` because the
+   worker answers synchronously on every batch.
+4. **The queue is in memory, the rows are not.** A worker suspension drops the
+   remaining tail, which is why the run boundary reconciles from the rows. The
+   reconciliation is idempotent per session and runs before the bookkeeping is
+   cleared: the other order would re-fetch products the run already attempted,
+   with no cap.
+
+Deliberate trade-offs: one extra request per collected product (bounded by the
+limit and by the host circuit breaker in `enrichment-fetch.ts`), ordering between
+the row and its detail fields is not guaranteed, and a product page that prints
+no weight is attempted once per run rather than retried.
+
 ### Automatic Mode (Additional Steps)
 
 ```

@@ -5,6 +5,45 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Weights and variations in Collection Mode (SAD-385)
+
+A product collected by a run carried no **weight** and no full **variation**
+list, in Manual and Automatic mode alike, while a right-click save of the same
+product carried both. The extraction was never the difference: those two fields
+exist only on the product page, and a collection only fetched it when the
+opt-in *Enrich collected products* switch was on — which shipped **off**.
+
+Collection mode now always finishes the same step a save finishes.
+
+### Fixed
+- **A collected row now carries `weight` and the full `variations`**, including
+  the twister data a listing card never prints. The collection pipeline calls
+  the same `enrichSavedProduct()` the save pipeline calls, so the merged values,
+  the price-family rules (the listing price still wins), the currency-mismatch
+  freeze and the diagnostics log are identical for both paths.
+- **The on/off switch is gone** (Settings → Collection Enrichment). It could
+  only ever produce the reported bug, and because settings rows are written
+  whole, a changed default would never have reached anyone who had already
+  touched a setting. The section now states what happens and keeps the per-run
+  limit — **25 / 50 / every collected product**, defaulting to *every*.
+- **A run that loses its enrichment tail finishes it.** The queue lives in
+  memory, so a service-worker suspension mid-run drops the rest; at the run
+  boundary (Stop, or completion) the controller now re-derives what is still
+  missing from the stored rows and queues it, once per session.
+
+### Changed
+- A collection run makes **one extra request per collected product** (bounded by
+  the per-run limit). This is the cost of the two fields: Amazon prints them
+  only on the product page. The existing circuit breaker still stops a run that
+  Amazon starts refusing, and the limit is the user-facing brake.
+
+### Unchanged
+- Right-click save and the individual extraction icon: same pipeline, same
+  behaviour, no code change.
+- No parser, selector, merge policy, product schema or message-schema change.
+  `addProducts()`' fill-only policy is untouched.
+- The diagnostics switch (SAD-369) and the Temu engine are untouched.
+
 ## [Unreleased] — Collection enrichment (SAD-379)
 
 A collection used to stop where a save kept going. Both pipelines parse the same

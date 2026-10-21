@@ -691,3 +691,63 @@ step 1** — it is the only step that is not strictly required by the ticket.
 | Existing test pinning the old behaviour | `tests/collection-save-parity.test.ts:341-355` |
 | Pump + wiring + parity suites that must stay green | `tests/collection-enrichment-pump.test.ts`, `tests/collection-enrichment-wiring.test.ts`, `tests/collection-save-parity.test.ts` |
 | SAD-379's own ordering-hazard record | `docs/plans/SAD-379-FINAL-plan.md` §14, items 1-2 |
+
+---
+
+## 15. Implementation record — what shipped
+
+Branch `feat/sad-385-collection-weight-variations`, four commits. Every step was
+gated by `tsc --noEmit` + the whole `vitest` suite + `wxt build` +
+`node scripts/check-dead-exports.mjs`.
+
+| Step | Commit | Content | Suite |
+|---|---|---|---|
+| 0 | `97be10f` | this plan (root cause, decisions, firewall, tests, risks) | — |
+| 1 | `76b8fe1` | the gate removed; `{ limit }` flag; UI switch gone; 3 suites re-cut | 106 / 1228 |
+| 2 | `6ff9a4e` | run-end reconciliation + `tests/sad-385-collection-detail-fields.test.ts` | 107 / 1232 |
+| 4 | *(this commit)* | CHANGELOG, ARCHITECTURE §"Collection Enrichment (SAD-385)", the live-verification protocol, this record | unchanged |
+
+Baseline on `main` before the branch, measured in this workspace:
+`tsc` clean · 106 files / **1216 passed**, one file skipped because
+`.output/chrome-mv3/manifest.json` did not exist yet · `wxt build` 1.99 MB.
+
+### Where the implementation departed from the plan, and why
+
+1. **Step 3 (the PDP size cap) was dropped** by owner decision, 2026-10-21: it is
+   the same change as SAD-370 step 1 and does not belong in two tickets. Its
+   evidence stays in §7.3 and in the verification protocol's follow-ups.
+2. **`reconciledSessionKeys` was not in the plan.** §7.2 reconciled on every
+   run-boundary event, and a duplicate `completed` progress (or a Stop after a
+   completion) would have queued the same tail a second time *after*
+   `resetCollectionEnrichment()` had cleared the pump's dedupe set. A per-session
+   guard makes the reconciliation idempotent; it is cleared when a run is
+   (re)started, so a retried run reconciles again.
+3. **The reconciliation is deliberately blocked by the pump's `seen` set within a
+   single worker lifetime.** That is the correct behaviour for the case it
+   targets (a suspension wipes `seen` along with the queue) and for the other
+   case it does not (a drained queue means the breaker is open, so re-queueing
+   immediately would only be skipped again). Stated here because it looks like an
+   omission.
+4. **One test-only correction.** `tests/collection-enrichment-settings-ui.test.tsx`
+   now waits for the radio's rendered `checked` to catch up before clicking a
+   *different* radio: clicking a radio the DOM already shows as selected fires no
+   change event. The wait documents real browser behaviour rather than masking a
+   defect — the settings row is written immediately; only the render lags by one
+   live-query round-trip.
+
+### Status of the SAD-379 trade-off register
+
+| Item | Now |
+|---|---|
+| T1 (default off) | **resolved** — the switch is gone |
+| T2 (per-run cap) | **superseded** — the cap stays, defaulting to `all` |
+| T4 (in-memory queue loses the tail) | **mitigated** — reconciled at the run boundary, once per session; the durable queue is still the upgrade path if tails are observed in the field |
+| T6 / T7 / T10 | unchanged, still deferred |
+| T5 / T8 / T9 | unchanged and still deliberate: the price family stays frozen, traffic is one request per product, ordering between a row and its detail fields is not guaranteed |
+
+### Still open for the ticket
+
+Live verification (§9 and `SAD-385-live-verification-protocol.md`) has **not**
+been run: this workspace has no browser, no installed extension and no Amazon
+session. All automated evidence is green; the console-level confirmation has to
+happen on a machine that can load the extension.
