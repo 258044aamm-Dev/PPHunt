@@ -13,7 +13,7 @@ import {
   extractCardBadge,
   extractCardDeliveryAndAvailability,
   extractCardImageWithTier,
-  extractCardIsPrime,
+  extractCardPrimeSignal,
   extractCardIsSponsored,
   extractCardListingCategoryAndSection,
   extractCardPastMonthSales,
@@ -102,7 +102,8 @@ export function parseAmazonSearchCard(
     const badge = extractCardBadge(card);
     const { delivery, availability } = extractCardDeliveryAndAvailability(card);
     const seller = extractCardSeller(card);
-    const isPrime = extractCardIsPrime(card, delivery);
+    const primeSignal = extractCardPrimeSignal(card, delivery);
+    const isPrime = primeSignal !== null;
     const isSponsored = extractCardIsSponsored(card);
     const bestSellersRank = extractInlineCardBsr(card);
     const variations = extractCardVariations(card);
@@ -199,6 +200,8 @@ export function parseAmazonSearchCard(
         availability,
         seller,
         isPrime,
+        primeSignal,
+        isSponsored,
         bestSellersRank,
         variations,
         url,

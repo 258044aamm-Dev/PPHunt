@@ -1613,6 +1613,16 @@ export function parseAmazonProductDetail(
       });
     }
 
+    // Sponsored (SAD-391): the visited URL is the only ad evidence a PDP has.
+    const isSponsored = isSponsoredDetailUrl(activeUrl);
+    if (isSponsored) {
+      diag?.extracted('isSponsored', { source: 'url' });
+    } else {
+      diag?.missing('isSponsored', 'no Sponsored Products marker in the page URL', {
+        source: 'url',
+      });
+    }
+
     const url = resolveProductUrl(null, asin, activeUrl);
     // SAD-359: the product URL is derived from the resolved ASIN and the
     // marketplace origin, so it is part of what this page yielded.
@@ -1639,7 +1649,7 @@ export function parseAmazonProductDetail(
       // (`sp_csd=` / `ref=…_sspa`); the canonical URL enrichment fetches has
       // none, so an enrichment pass yields `false` and its patch whitelist
       // never writes the field (enrich-saved-product.ts).
-      isSponsored: isSponsoredDetailUrl(activeUrl),
+      isSponsored,
       isPrime,
       brand,
       availability,

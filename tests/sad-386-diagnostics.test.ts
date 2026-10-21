@@ -51,9 +51,10 @@ const CARD = (inner: string) => `
   </div>`;
 
 describe('SAD-386: diagnostics honesty for discount and deal', () => {
-  it('still reports exactly 24 fields', () => {
+  it('still reports exactly 25 fields', () => {
+    // 24 at SAD-386; SAD-391 added `isSponsored` as the 25th modelled field.
     const report = reportFor(CARD(''));
-    const expected = 24;
+    const expected = 25;
     expect(report.fields).toHaveLength(expected);
     expect(CARD_INAPPLICABLE_FIELDS).toHaveLength(4);
   });

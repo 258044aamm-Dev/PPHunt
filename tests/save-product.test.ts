@@ -154,7 +154,7 @@ describe('resolveSaveCandidate', () => {
 
     expect(result?.product.asin).toBe('B0BBBBBBBB');
     expect(result?.extractionDiagnostics?.asin).toBe('B0BBBBBBBB');
-    expect(result?.extractionDiagnostics?.fields).toHaveLength(24);
+    expect(result?.extractionDiagnostics?.fields).toHaveLength(25);
 
     const fields = new Map(
       (result?.extractionDiagnostics?.fields ?? []).map((entry) => [
@@ -202,7 +202,7 @@ describe('resolveSaveCandidate', () => {
     // SAD-359: the live-DOM detail parse carries its full per-field report
     // back on the candidate, ready to ride along with SAVE_PRODUCT.
     expect(result?.extractionDiagnostics?.asin).toBe('B0DDDDDDDD');
-    expect(result?.extractionDiagnostics?.fields).toHaveLength(24);
+    expect(result?.extractionDiagnostics?.fields).toHaveLength(25);
     const fields = new Map(
       (result?.extractionDiagnostics?.fields ?? []).map((entry) => [
         entry.field,
@@ -285,7 +285,7 @@ describe('resolveSaveCandidate', () => {
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.payload.extractionDiagnostics?.fields).toHaveLength(24);
+      expect(parsed.data.payload.extractionDiagnostics?.fields).toHaveLength(25);
     }
 
     // The same message from an older content script remains valid.
