@@ -912,6 +912,17 @@ Branch: `feat/temu-engine`, branched from `127cd9e` (owner-locked Temu branch, p
 | 4 | Expand helper + opt-in path + tests | toggle-on run yields more rows in jsdom |
 | 5 | Live verification record (`docs/plans/SAD-381-verification-<date>.md`) + CHANGELOG | A6 evidence attached to the issue |
 
+**Status (2026-10-21, `feat/temu-engine`).** Step 0 `9c01c0f` · step 1 `8b1da08` · step 2
+`e84a682` · step 3 `127b647` (setting, transport, content wiring **and** the opt-in expand
+path — the collapse helper shipped in step 1, so step 3 could carry both) · step 4 `87fd872`
+(replay harness + `docs/plans/SAD-381-step4-verification.md`, which records the A/B
+measurement and the still-open live-capture checklist) · step 5 `00d33cd` (CHANGELOG).
+
+Final gates: `tsc --noEmit` clean · `wxt build` 2.01 MB · **108 files / 1282 tests green**,
+1 suite skipped (`tests/temu-pdp-captures.test.ts`, no live captures yet) · `git diff
+127cd9e..HEAD -- src/engines/amazon src/lib` empty. Ticket set to **In Review** with the
+live-page gate called out explicitly rather than assumed.
+
 ---
 
 ## 14. Open questions (non-blocking — defaults chosen)
