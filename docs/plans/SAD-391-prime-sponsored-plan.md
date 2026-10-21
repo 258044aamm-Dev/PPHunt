@@ -4,7 +4,7 @@
 |---|---|
 | Linear | **SAD-391** "The Prime and Sponsored fields" — team SAD · project PPHunt · label Bug · priority 1-Urgent · state Todo · assignee MakeTheNewHistory · no comments/attachments |
 | Repo | `MakeTheNewHistory/PPHunt` · `main` @ `2ec7eaf` (2026-10-21, "Merge branch 'feat/temu-engine' — SAD-380/381") |
-| Mode | **Plan only.** No source file in the repository was modified; `git status` is clean. Every probe used below was run from a scratch file and then moved out of the repo (see §13.1). |
+| Mode | Written as **plan only** (no source file modified at that time; probes run from scratch files moved out of the repo, §13.1). **Status 2026-10-21: implemented** on branch `fix/sad-391-prime-sponsored` in steps 0–6 — see `docs/plans/SAD-391-implementation-record.md` for the per-step commits, the measured before/after on the live capture, the stated deviations (plan §4.4 not done; Phase 0 waived by D5) and the manual matrix that still needs a live browser session. |
 | Reference tool | `lexmount/moli` v1.1.18 (headless browser CLI) — used to reproduce the live Amazon DOM the extension actually sees (§2.2). |
 | Date | 2026-10-21 |
 
@@ -392,8 +392,10 @@ Each commit passes `npm run verify` on its own; 4 and 6 are droppable without af
 
 ## 12. What is still open
 
+*(Status after implementation: O1–O3 were decided — O1 as D8, O2 as D7, O3 applied; D6 made `isSponsored` sticky-true. Phase 6 added one finding not in this plan: a Prime ingress inside the "Get it faster" secondary-offer block (`[data-cy="multi-offer-display"]`) is deliberately **not** read — see the implementation record.)*
+
 - **G0-a/b/c** (Phase 0): signed-in badge markup, PDP ingress wording, F10 frequency.
-- **O1–O3** defaults above; in particular whether a later *organic* re-save should flip a previously sponsored row (Phase 4.4) or whether `isSponsored` should be "sticky true" like `isPrime`.
+- ~~**O1–O3** defaults above; in particular whether a later *organic* re-save should flip a previously sponsored row (Phase 4.4) or whether `isSponsored` should be "sticky true" like `isPrime`.~~ Decided: D6 sticky-true; §4.4 recompute not implemented (volatile pass stays listing-blind).
 - Whether `extractCardPrimeSignal`'s reason should also surface in the UI tooltip later (not in this ticket).
 - F12 (duplicated widget heading) — new ticket.
 

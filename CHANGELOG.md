@@ -5,6 +5,97 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Prime and Sponsored extraction (SAD-391)
+
+The **Prime** and **Sponsored** columns did not mean what they said. Measured on
+a real, logged-out `/s?k=laptop` capture (33 rows: 16 result cards + 17 widget
+tiles): `isPrime` was `true` on 19 rows although the page contained **no Prime
+badge at all** — the flag was, in practice, "the card mentions *FREE delivery*";
+11 **Delivery** values contained Amazon's inline CSS/JavaScript
+(`.prime-brand-color {color: #0064f9; }Join Prime(function(f){…`); 4 cards with
+an *"Only N left in stock"* warning lost their delivery text entirely; a second
+one-click save of a sponsored card silently flipped it back to organic; and the
+product page always stored `isSponsored: false`. Decisions D1–D8 taken with the
+owner are recorded in `docs/plans/SAD-391-prime-sponsored-plan.md` §0; the
+before/after tables are in `docs/plans/SAD-391-implementation-record.md`.
+
+### Fixed
+- **`isPrime` means Prime.** A card or product page is Prime when it shows the
+  **Prime badge** (`i.a-icon-prime`, the UDM `a-icon-prime-with-text` badge
+  block, `aria-label="Prime"` / `"Prime Eligible"`) **or** Amazon's explicit
+  Prime-eligibility **ingress** that a signed-out visitor gets instead of the
+  badge (*"Join Prime to get FREE delivery …"*, *"Prime members get …"*,
+  *"Non-members get FREE delivery …"*). The generic *"FREE delivery"* heuristic
+  and the `data-csa-c-delivery-price="FREE"` shipping-price proxy are gone, and
+  the `[aria-label*="Prime"]` wildcard no longer lets a product *title*
+  containing "Prime" count as a badge. On the live capture: 19 → 12 Prime rows —
+  8 plain *"FREE delivery Tomorrow"* cards drop to `No`, one *"Join Prime"* card
+  whose delivery text used to be lost becomes `Yes`, every other row unchanged.
+- **A Prime ingress on the "Get it faster" secondary offer does not count.**
+  The same link appears under `[data-cy="multi-offer-display"]` for a pricier
+  alternative offer (live B0GPW3BJ6V: featured $695.00 non-Prime, secondary
+  $709.99 Prime); the row's price and delivery describe the featured offer, so
+  only the card's main delivery recipe is read.
+- **Delivery text is read structurally.** The unified delivery block
+  (`.udm-primary-delivery-message` / `.udm-secondary-delivery-message`) is read
+  through visible text only, so the inline `<style>`/`<script>` Amazon ships
+  with the Prime sign-up link can no longer end up in the **Delivery** column
+  (11 → 0 polluted values), and an *"Only N left in stock"* span no longer
+  pre-empts the delivery message (4 → 0 cards without delivery). Availability
+  is still stored separately, unchanged.
+- **A sponsored product stays sponsored.** Saving a product a second time (icon
+  save, context-menu save, collection re-run) used to overwrite `isSponsored`
+  with `undefined` and relabel the row *organic*. `isSponsored` is now sticky
+  like `isPrime`: once `true` it never flips back; a later sponsored sighting of
+  a row that was first seen organic flips it to `true` and relabels it
+  *sponsored*; placements keep recording every later sighting (D6). A source
+  without listing context (a product page, enrichment) no longer touches
+  `isSponsored`, `listingCategory` or `placements`.
+- **The product page reports the ad it was opened through.** A PDP reached via
+  a Sponsored Products click (`sp_csd=` in the query, `/ref=…_sspa`, or an
+  `/sspa/click` URL) stores `isSponsored: true`; an organic link stores `false`.
+  Background enrichment never writes the field.
+- **Sponsored detection on current markup.** The 2025 label
+  (`.puis-sponsored-label-text` with its *"View Sponsored information or leave
+  ad feedback"* popover), `[data-ad-feedback-label-id]`, the
+  `sp-info-popover` hook, widget labels (`.s-widget-sponsored-label-text`,
+  `.sponsored-brand-label-info-desktop`) and nine localized words (*Gesponsert,
+  Sponsorisé, Sponsorizzato, Patrocinado, Gesponsord, Sponsrad, Sponsorowane,
+  Sponsorlu, スポンサー*) are recognised; the one-click save path now uses the
+  same detector as collection instead of its own copy.
+- **A second result card for the same ASIN records its placement** (`Sponsored
+  Search` / `Organic Search`) instead of being dropped, so the Sponsored filter
+  still finds a product that was both advertised and ranked (D8).
+
+### Added (diagnostics only — stored rows are unchanged)
+- **`isSponsored` is the 25th modelled field** (24 → 25) on cards and product
+  pages (D7). Cards report `EXTRACTED` / `MISSING "no Sponsored marker found"`
+  with `source: 'derived'`; product pages report `source: 'url'`.
+- **`isPrime` names its evidence:** the reason is `prime badge` or
+  `prime ingress`; a missing value says `no Prime badge or Prime ingress found`.
+- Real fixtures captured from the live page under
+  `docs/plans/SAD-391-fixtures/` (plain FREE delivery, delivery window + stock
+  warning, Join-Prime + stock warning, secondary-offer ingress) plus the 2025
+  Sponsored Products card markup, with 85 new tests across five `sad-391-*`
+  suites.
+
+### Changed
+- `tests/baseline-snapshot.test.ts`: the card `B0DEAL0001`, whose only Prime
+  evidence was *"FREE delivery Tomorrow, Oct 17"*, is now pinned `isPrime:
+  false` — the one intentional snapshot change (O3).
+- Selector registry version `2.0.0` → `2.1.0` (semantic change of the `prime`
+  family; new `primeIngress` and extended `sponsored` entries).
+- Plan deviation (recorded, not hidden): the quick-save **volatile** merge pass
+  stays listing-blind; the D6 sticky rule is applied once after the fill pass
+  instead of recomputing `listingCategory` inside the volatile pass (plan §4.4).
+
+### Unchanged
+- Every other field, the Temu engine, the DB schema, exports, settings, the
+  table/sort/filter UI, the enrichment patch whitelist, and the 25-field report
+  for products that carried neither flag before.
+
+---
+
 ## [Unreleased] — Temu features & description extraction (SAD-381)
 
 Temu products were storing an empty **Features** list and a **Description** that

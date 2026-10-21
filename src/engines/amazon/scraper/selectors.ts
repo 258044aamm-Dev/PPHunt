@@ -403,13 +403,15 @@ export const AMAZON_SELECTORS = {
     /**
      * SAD-391: the Prime-eligibility *ingress* a non-member sees instead of the
      * badge — the "Join Prime to get FREE delivery <date>" link inside the
-     * unified delivery message. Scoped to delivery containers so the class
-     * cannot be matched elsewhere on the card.
+     * unified delivery message. Scoped to the card's main delivery recipe on
+     * purpose: the same link also appears in the "Get it faster" secondary
+     * offer block (`[data-cy="multi-offer-display"]`, measured live on
+     * B0GPW3BJ6V), where it describes a different, pricier offer than the one
+     * whose price and delivery the row carries.
      */
     primeIngress: [
-      '.udm-sfx-prime-signup-trigger',
+      '[data-cy="delivery-recipe"] .udm-sfx-prime-signup-trigger',
       '[data-cy="delivery-recipe"] .prime-brand-color',
-      '.udm-delivery-block .prime-brand-color',
     ],
     /**
      * SAD-391: every entry is read with the text guard in

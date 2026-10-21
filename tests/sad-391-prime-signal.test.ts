@@ -179,6 +179,19 @@ describe('card isPrime — NOT Prime (the false positives this step removes)', (
     expect(primeOf(card).isPrime).toBe(false);
   });
 
+  it('"Join Prime" ingress only on the "Get it faster" secondary offer → false (live B0GPW3BJ6V)', () => {
+    // The row's price ($695.00) and delivery ("FREE delivery Oct 26 - 28") describe the
+    // featured offer; the Prime ingress belongs to the pricier $709.99 secondary offer in
+    // [data-cy="multi-offer-display"]. It must not make the featured offer Prime.
+    const card = cardFrom(fixture('search-card-secondary-offer-prime-ingress.real.html'));
+    expect(card.querySelector('[data-cy="multi-offer-display"] .udm-sfx-prime-signup-trigger')).not.toBeNull();
+    expect(primeOf(card)).toEqual({
+      delivery: 'FREE delivery Oct 26 - 28',
+      signal: null,
+      isPrime: false,
+    });
+  });
+
   it('sponsored card with "FREE delivery … to Malaysia on $49 of eligible items" → false', () => {
     const card = cardFrom(
       `<div data-component-type="s-search-result" data-asin="B081XSYZMS" class="s-result-item s-asin AdHolder">${fixture('sponsored-card-2025.external.html')}</div>`,
