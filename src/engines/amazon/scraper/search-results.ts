@@ -1,6 +1,6 @@
 import type { ScrapedAmazonProduct } from '../types';
 import { resolveProductUrl } from '../utils/amazon-url';
-import { mergeScrapedProductFields } from './dedup';
+import { appendProductPlacement, mergeScrapedProductFields } from './dedup';
 import {
   defaultAmazonDriftTelemetry,
   logDriftReport,
@@ -392,6 +392,13 @@ export function parseAmazonSearchResults(
         const existingQuick = entriesByAsin.get(quickAsin);
         // If two primary `s-search-result` cards share an ASIN, first-card-wins without re-parsing
         if (existingQuick && existingQuick.isPrimary && isPrimary) {
+          // SAD-391 (D8): a Sponsored Products ad and the organic result of
+          // the same ASIN are both primary cards. Keep the first row as is,
+          // but record the second placement so the ad is not lost.
+          appendProductPlacement(
+            existingQuick.product,
+            extractCardIsSponsored(card) ? 'Sponsored Search' : 'Organic Search',
+          );
           continue;
         }
       }

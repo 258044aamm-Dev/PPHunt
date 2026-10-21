@@ -5,6 +5,7 @@ import {
 } from './extraction-diagnostics';
 import {
   extractASIN,
+  isSponsoredDetailUrl,
   normalizeASIN,
   resolveProductUrl,
 } from '../utils/amazon-url';
@@ -1634,7 +1635,11 @@ export function parseAmazonProductDetail(
       rating,
       reviewCount,
       imageUrl,
-      isSponsored: false,
+      // SAD-391: the page URL carries the Sponsored Products click evidence
+      // (`sp_csd=` / `ref=…_sspa`); the canonical URL enrichment fetches has
+      // none, so an enrichment pass yields `false` and its patch whitelist
+      // never writes the field (enrich-saved-product.ts).
+      isSponsored: isSponsoredDetailUrl(activeUrl),
       isPrime,
       brand,
       availability,

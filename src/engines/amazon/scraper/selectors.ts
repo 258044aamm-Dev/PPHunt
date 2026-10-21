@@ -68,6 +68,19 @@ export const AMAZON_PRIME_INGRESS_TEXT_PATTERN =
 export const AMAZON_PRIME_BADGE_LABEL_PATTERN =
   /^(?:amazon\s+)?prime(?:\s+eligible)?\.?$/i;
 
+/**
+ * SAD-391: the word "Sponsored" in the marketplaces the extension matches
+ * (`AMAZON_MARKETPLACE_DOMAINS`): en, de, fr, it, es/pt, nl, sv, pl, tr, ja.
+ * `AMAZON_SPONSORED_WORD_PATTERN` is the containment form used on label
+ * elements the registry already identified; `AMAZON_SPONSORED_LEAF_PATTERN`
+ * is the whole-text form used on anonymous leaf nodes, where only the bare
+ * word may count.
+ */
+export const AMAZON_SPONSORED_WORD_PATTERN =
+  /sponsored|gesponsert|sponsoris|sponsorizzat|patrocinad|gesponsord|sponsrad|sponsorowan|sponsorlu|スポンサー/i;
+export const AMAZON_SPONSORED_LEAF_PATTERN =
+  /^(?:Sponsored|Gesponsert|Sponsorisé|Sponsorizzat[oa]|Patrocinad[oa]|Gesponsord|Sponsrad|Sponsorowan[ey]|Sponsorlu|スポンサー)$/i;
+
 export const AMAZON_SELECTORS = {
   search: {
     productCard:
@@ -398,11 +411,25 @@ export const AMAZON_SELECTORS = {
       '[data-cy="delivery-recipe"] .prime-brand-color',
       '.udm-delivery-block .prime-brand-color',
     ],
+    /**
+     * SAD-391: every entry is read with the text guard in
+     * `extractCardIsSponsored` (empty text or a localized "Sponsored" word),
+     * which is what keeps Amazon's own "Featured from Amazon brands" tiles —
+     * they reuse `.puis-sponsored-label-text` with a different label — organic.
+     * The `aria-label` wildcard is scoped to the label element so a product
+     * title can never match it. `[data-ad-feedback-label-id]` and the
+     * `sp-info-popover-<ASIN>` popover are the ad-disclosure hooks of the 2025
+     * Sponsored Products card.
+     */
     sponsored: [
       '.puis-sponsored-label-text',
       '[data-component-type="sp-sponsored-result"]',
-      'span[aria-label*="Sponsored" i]',
+      '.puis-sponsored-label-text [aria-label*="Sponsored" i]',
+      '.s-widget-sponsored-label-text',
+      '.sponsored-brand-label-info-desktop',
       '.s-label-popover-default',
+      '[data-ad-feedback-label-id]',
+      '[data-a-popover*="sp-info-popover" i]',
     ],
     delivery: [
       '[data-cy="delivery-recipe"] [aria-label]',

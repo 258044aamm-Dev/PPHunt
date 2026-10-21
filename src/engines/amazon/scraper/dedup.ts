@@ -37,6 +37,27 @@ const MERGEABLE_NULLABLE_FIELDS = [
 ] as const;
 
 /**
+ * SAD-391 (D8): records one more placement on an already-kept row without
+ * re-parsing anything — used when a second primary `s-search-result` card
+ * (typically the Sponsored Products ad of an ASIN that is also listed
+ * organically) is skipped as a duplicate. `isSponsored` / `listingCategory`
+ * of the kept row are untouched; the extra placement is what the Sponsored
+ * filter and badge read (`matchesListingCategoryFilter`). Returns whether the
+ * row changed.
+ */
+export function appendProductPlacement(
+  target: ScrapedAmazonProduct,
+  placement: string,
+): boolean {
+  const current = resolveProductPlacements(target);
+  if (current.includes(placement)) {
+    return false;
+  }
+  target.placements = [...current, placement];
+  return true;
+}
+
+/**
  * Merges fields from `source` into `target` in place.
  * When `preferSource` is true (e.g. `source` is a primary `s-search-result` card and `target`
  * came from a compact widget card), non-null/defined fields on `source` overwrite `target`

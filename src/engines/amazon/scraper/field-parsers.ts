@@ -23,6 +23,8 @@ import {
   AMAZON_PRIME_BADGE_LABEL_PATTERN,
   AMAZON_PRIME_INGRESS_TEXT_PATTERN,
   AMAZON_SELECTORS,
+  AMAZON_SPONSORED_LEAF_PATTERN,
+  AMAZON_SPONSORED_WORD_PATTERN,
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
@@ -1879,10 +1881,7 @@ export function extractCardIsSponsored(card: Element): boolean {
       const text = normalizeWhitespace(
         el.getAttribute('aria-label') || el.textContent,
       );
-      if (
-        !text ||
-        /sponsored|gesponsert|sponsorisé|patrocinado|スポンサー/i.test(text)
-      ) {
+      if (!text || AMAZON_SPONSORED_WORD_PATTERN.test(text)) {
         return true;
       }
     }
@@ -1891,7 +1890,7 @@ export function extractCardIsSponsored(card: Element): boolean {
   for (const node of leafNodes) {
     if (node.children.length > 0) continue;
     const text = normalizeWhitespace(node.textContent);
-    if (/^(?:Sponsored|Gesponsert|Sponsorisé|Patrocinado|スポンサー)$/i.test(text)) {
+    if (AMAZON_SPONSORED_LEAF_PATTERN.test(text)) {
       return true;
     }
   }
