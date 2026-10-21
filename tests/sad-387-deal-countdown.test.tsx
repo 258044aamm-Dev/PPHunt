@@ -11,7 +11,7 @@
  * amazon.nl, amazon.de — all HTTP 200, zero occurrences), so the cases below test
  * the *token pattern* rather than one page shape.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   dealBadgeForDisplay,
   sanitizeDealBadge,
@@ -207,5 +207,160 @@ describe('SAD-387: the ticket blob never reaches a product', () => {
     expect(product?.dealBadge).toBe('Limited time deal');
     // Provenance: a printed label, never the derived token.
     expect(product?.dealBadge).not.toBe('Deal');
+  });
+});
+
+/**
+ * Read path (D2): a row saved *before* this fix still holds the blob. Nothing
+ * rewrites the row — the cell, the export and the search clean it where it is
+ * shown. `dealBadge` is a fill-only field, so re-enrichment cannot repair it.
+ */
+import { EXPORT_COLUMNS } from '@/engines/amazon/export/types';
+import { getAmazonColumnsForSettings } from '@/engines/amazon/ui/table/columns';
+import type { AmazonProduct } from '@/engines/amazon/types/product';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+const LEGACY_ROW = {
+  asin: 'B0LEGACY01',
+  title: 'Legacy Row',
+  dealBadge: TICKET_TEXT,
+} as unknown as AmazonProduct;
+
+const CLEAN_ROW = {
+  asin: 'B0CLEAN001',
+  title: 'Clean Row',
+  dealBadge: 'Prime Big Deal',
+} as unknown as AmazonProduct;
+
+describe('SAD-387: rows saved before the fix are cleaned where they are shown', () => {
+  it('CSV / Excel / clipboard export shows the label', () => {
+    const dealColumn = EXPORT_COLUMNS.Deal;
+    expect(typeof dealColumn).toBe('function');
+    if (typeof dealColumn !== 'function') return;
+    expect(dealColumn(LEGACY_ROW)).toBe('Limited time deal');
+    expect(dealColumn(CLEAN_ROW)).toBe('Prime Big Deal');
+  });
+
+  it('the table cell, its tooltip and the expand modal show the label', () => {
+    const dealColumn = getAmazonColumnsForSettings({} as never).find(
+      (column) => (column as { accessorKey?: string }).accessorKey === 'dealBadge',
+    );
+    expect(dealColumn).toBeDefined();
+    const cell = dealColumn?.cell;
+    expect(typeof cell).toBe('function');
+    if (typeof cell !== 'function') return;
+
+    const html = renderToStaticMarkup(
+      cell({
+        getValue: () => TICKET_TEXT,
+        row: { original: LEGACY_ROW },
+        table: { options: { meta: { onExpand: () => {} } } },
+      } as never) as never,
+    );
+    expect(html).toContain('Limited time deal');
+    expect(html).not.toContain('NO_OF_');
+  });
+
+  it('an empty deal still renders "No"', () => {
+    const dealColumn = getAmazonColumnsForSettings({} as never).find(
+      (column) => (column as { accessorKey?: string }).accessorKey === 'dealBadge',
+    );
+    const cell = dealColumn?.cell;
+    if (typeof cell !== 'function') return;
+    const html = renderToStaticMarkup(
+      cell({
+        getValue: () => null,
+        row: { original: { ...LEGACY_ROW, dealBadge: null } },
+        table: { options: { meta: undefined } },
+      } as never) as never,
+    );
+    expect(html).toContain('No');
+  });
+});
+
+/**
+ * Search surface: the table must match what the cell shows. A legacy row whose
+ * stored value is the blob must be findable by its label and NOT by `no_of`.
+ */
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { AmazonProductTable } from '@/engines/amazon/ui/table/AmazonProductTable';
+import { db } from '@/lib/db/database';
+
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 52,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        index,
+        key: index,
+        start: index * 52,
+        end: (index + 1) * 52,
+        size: 52,
+      })),
+    measureElement: () => {},
+    scrollToIndex: () => {},
+  }),
+}));
+
+const SEARCH_SESSION = 'sad387-search-session';
+
+async function seedLegacyRow() {
+  await db.delete();
+  await db.open();
+  await db.products.bulkAdd([
+    {
+      asin: 'B0LEGACY01',
+      title: 'Legacy Row',
+      price: 19.99,
+      currency: 'USD',
+      rating: 4.5,
+      reviewCount: 10,
+      brand: 'BrandCo',
+      seller: 'Amazon',
+      availability: 'In Stock',
+      isSponsored: false,
+      isPrime: true,
+      imageUrl: null,
+      description: null,
+      features: [],
+      source: 'search',
+      pageUrl: 'https://www.amazon.com/s?k=deal',
+      sessionKey: SEARCH_SESSION,
+      collectedAt: '2026-10-21T10:00:00.000Z',
+      url: 'https://www.amazon.com/dp/B0LEGACY01',
+      dealBadge: TICKET_TEXT,
+    },
+  ]);
+}
+
+function rowCount(): number {
+  return document.querySelectorAll('tbody tr[data-index]').length;
+}
+
+describe('SAD-387: table search matches the cleaned label', () => {
+  afterEach(async () => {
+    cleanup();
+    await db.delete();
+  });
+
+  it('finds the row by the label it displays', async () => {
+    await seedLegacyRow();
+    render(
+      <AmazonProductTable
+        fullHeight
+        sessionKey={SEARCH_SESSION}
+        initialGlobalFilter="limited time deal"
+      />,
+    );
+    await waitFor(() => expect(rowCount()).toBe(1));
+    expect(screen.getAllByText('Limited time deal').length).toBeGreaterThan(0);
+  });
+
+  it('does not match the placeholder tokens any more', async () => {
+    await seedLegacyRow();
+    render(
+      <AmazonProductTable fullHeight sessionKey={SEARCH_SESSION} initialGlobalFilter="no_of" />,
+    );
+    await waitFor(() => expect(rowCount()).toBe(0));
   });
 });

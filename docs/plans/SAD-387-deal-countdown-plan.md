@@ -231,7 +231,7 @@ Temu's columns are not touched (D3); its parser rejects text over 90 characters
 
 ---
 
-## 4. Tests — `tests/sad-387-deal-countdown.test.ts`
+## 4. Tests — `tests/sad-387-deal-countdown.test.tsx`
 
 | # | Case | Asserts |
 |---|---|---|

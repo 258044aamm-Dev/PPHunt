@@ -30,6 +30,10 @@ templates in the markup, so a single `textContent` read concatenates all of them
 - The rule is applied on every write path: the search/category card, the
   ad-attributes `dealString`, the product page's badge scan and the bounded
   evidence scan, so no workflow can store the template.
+- The same rule runs when a stored value is **shown**, so rows saved before this
+  change display correctly without being rewritten: the table cell (its tooltip
+  and expand modal follow), CSV/Excel/clipboard export, and table search — which
+  now matches the label instead of the placeholder tokens.
 
 ### Unchanged
 - Any badge without a `NO_OF_*` template keeps its exact bytes, including
