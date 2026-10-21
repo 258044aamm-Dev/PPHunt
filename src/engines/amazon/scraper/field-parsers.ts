@@ -1606,6 +1606,63 @@ export function extractCardBadge(card: Element): string | undefined {
   return undefined;
 }
 
+/** Words that identify a delivery message in the locales the card parser already read. */
+const DELIVERY_WORD_PATTERN = /delivery|lieferung|livraison|entrega/i;
+/** Stock warnings Amazon prints inside the delivery recipe. */
+const DELIVERY_RECIPE_STOCK_PATTERN = /left in stock|out of stock|unavailable/i;
+
+/**
+ * SAD-391 (F5): `textContent` minus inline `<style>` / `<script>` / `<template>` /
+ * `<noscript>` subtrees.
+ *
+ * Amazon's unified delivery message embeds both a `<style>` and a `<script>`
+ * inside `.udm-primary-delivery-message` for the non-member "Join Prime"
+ * ingress, so `textContent` produced
+ * `".prime-brand-color {color: #0064f9; }Join Prime(function(f){…"` (measured
+ * on 6/16 live cards). Text nodes are concatenated without a separator, exactly
+ * like `textContent`, so markup without inline code yields a byte-identical
+ * string.
+ */
+export function visibleTextContent(root: Node | null | undefined): string {
+  if (!root) return '';
+  const parts: string[] = [];
+  const walk = (node: Node): void => {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      // 3 = TEXT_NODE, 1 = ELEMENT_NODE (numeric so the walk needs no `Node` global)
+      if (child.nodeType === 3) {
+        parts.push(child.nodeValue ?? '');
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      const tag = (child as Element).tagName;
+      if (
+        tag === 'STYLE' ||
+        tag === 'SCRIPT' ||
+        tag === 'TEMPLATE' ||
+        tag === 'NOSCRIPT'
+      ) {
+        continue;
+      }
+      walk(child);
+    }
+  };
+  walk(root);
+  return parts.join('');
+}
+
+/**
+ * Delivery message and stock warning of a listing card.
+ *
+ * SAD-391 (F5): the unified delivery message (`.udm-primary-delivery-message`
+ * + `.udm-secondary-delivery-message`, 2025 markup) is read structurally
+ * first. Before, the recipe took the *first* `[aria-label]` — on the live
+ * markup that is the stock warning (`span[aria-label="Only 7 left in stock…"]`),
+ * which fails the delivery-word test, and the text fallback was then skipped
+ * because `availability` was already set, so the card lost its delivery
+ * message (4/16 live cards). The stock warning is still returned as
+ * `availability`; it simply no longer pre-empts `delivery`. Legacy markup
+ * (`span[aria-label="FREE delivery …"]`, plain text) is read exactly as before.
+ */
 export function extractCardDeliveryAndAvailability(card: Element): {
   delivery?: string;
   availability: string | null;
@@ -1617,22 +1674,57 @@ export function extractCardDeliveryAndAvailability(card: Element): {
   if (deliveryBlock) {
     const stockSpan = safeQuerySelector(deliveryBlock, '.a-color-price');
     const stockText = normalizeWhitespace(stockSpan?.textContent);
-    if (stockText && /left in stock|out of stock|unavailable/i.test(stockText)) {
+    if (stockText && DELIVERY_RECIPE_STOCK_PATTERN.test(stockText)) {
       availability = stockText;
     }
 
-    const ariaEl = safeQuerySelector(deliveryBlock, '[aria-label]');
-    const ariaText = normalizeWhitespace(
-      ariaEl?.getAttribute('aria-label') || ariaEl?.textContent,
+    // 1. Unified delivery message (structural).
+    const primaryMessage = safeQuerySelector(
+      deliveryBlock,
+      '.udm-primary-delivery-message',
     );
-    if (ariaText && /delivery|lieferung|livraison|entrega/i.test(ariaText)) {
-      delivery = ariaText;
-    } else if (!availability) {
-      const fallbackText = normalizeWhitespace(deliveryBlock.textContent);
-      if (
-        fallbackText &&
-        /delivery|lieferung|livraison|entrega/i.test(fallbackText)
-      ) {
+    if (primaryMessage) {
+      const primaryText = normalizeWhitespace(
+        visibleTextContent(primaryMessage),
+      );
+      const secondaryText = normalizeWhitespace(
+        visibleTextContent(
+          safeQuerySelector(deliveryBlock, '.udm-secondary-delivery-message'),
+        ),
+      );
+      const combined = [primaryText, secondaryText].filter(Boolean).join(' ');
+      if (combined) {
+        delivery = combined;
+      }
+    }
+
+    // 2. Legacy: the first `[aria-label]` that reads as a delivery message.
+    //    A stock-warning label is skipped instead of ending the search.
+    if (delivery === undefined) {
+      for (const ariaEl of safeQuerySelectorAll(deliveryBlock, '[aria-label]')) {
+        const ariaText = normalizeWhitespace(
+          ariaEl.getAttribute('aria-label') || ariaEl.textContent,
+        );
+        if (!ariaText) continue;
+        if (DELIVERY_WORD_PATTERN.test(ariaText)) {
+          delivery = ariaText;
+          break;
+        }
+        if (DELIVERY_RECIPE_STOCK_PATTERN.test(ariaText)) continue;
+        // Any other label ends the search, as the single-label read did before.
+        break;
+      }
+    }
+
+    // 3. Legacy: the recipe's own text, minus the stock warning it may contain.
+    if (delivery === undefined) {
+      let fallbackText = normalizeWhitespace(visibleTextContent(deliveryBlock));
+      if (availability && fallbackText.includes(availability)) {
+        fallbackText = normalizeWhitespace(
+          fallbackText.replace(availability, ' '),
+        );
+      }
+      if (fallbackText && DELIVERY_WORD_PATTERN.test(fallbackText)) {
         delivery = fallbackText;
       }
     }
