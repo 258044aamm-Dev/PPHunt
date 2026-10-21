@@ -234,6 +234,12 @@
       goodsDetail: treeOf(details),
       rightContent: treeOf(right),
     },
+    // SAD-381 step 4: the two containers' markup, so `tests/temu-pdp-captures.test.ts`
+    // can replay the real parser offline against this exact page.
+    dom: {
+      goodsDetail: details ? details.outerHTML : null,
+      rightContent: right ? right.outerHTML : null,
+    },
   };
 
   const json = JSON.stringify(payload, null, 2);
