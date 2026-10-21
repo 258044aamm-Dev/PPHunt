@@ -5,6 +5,43 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Temu list-price extraction (SAD-380)
+
+Temu products were storing a blank **List Price** even for discounted items.
+A live capture (see `docs/plans/SAD-380-step1-capture-2026-10-21.md`) showed the
+extractor's assumed struck-price hooks carrying no price on rendered cards
+(`[data-type="priceText"]` held promo text, no `del`/`s`), and code audit found
+the PDP's `#rightContent` fallback selector was never wired, a candidate equal
+to — or below — the selling price could win or survive validation, and
+dual-price accessible strings depended on which price was printed first.
+
+### Fixed
+- **Temu `listPrice` is chosen from a validated candidate pool.** Semantic
+  selector matches, reference-price `aria-label`s, the `.srOnly` labelled
+  segment, and — only inside the existing price scope — a struck
+  (line-through, Temu's "strikethrough price") currency leaf are collected,
+  de-duplicated, filtered (currency token required; strictly above the
+  selling price; unit-price/discount scopes excluded) and ranked. At most one
+  value is ever assigned; nothing is calculated.
+- **PDPs search beyond `#goods_price`.** If the price container has no list
+  price, one extra pass over `#rightContent` supplies only `listPrice`;
+  selling price and discount results are unchanged.
+- **Dual-price strings are order-safe.** "original price is: $X, current price
+  is: $Y" (either order) now assigns each amount to its own field, and
+  diagnostics report the source that actually supplied the value, with precise
+  rejection reasons (`none above selling price`, `only in excluded nodes`).
+
+### Changed
+- A `listPrice` at or below the selling price is now stored as blank (it was
+  previously kept whenever it merely differed) — such a value is a different
+  price misassigned, matching the Amazon engine's rule. Previously stored
+  blanks heal automatically on re-collection; no migration is performed.
+- No new field was added: live capture showed two displayed prices only, so
+  the proposed `discountPrice` field was dropped rather than fabricated
+  (SAD-380 gate G1). Amazon extraction, all other Temu fields, exports,
+  settings and database shape are unchanged (verified by fixture parity and
+  an empty Amazon diff).
+
 ## [Unreleased] — Preview horizontal scrolling (SAD-378)
 
 The preview table could not be scrolled sideways while **Separate collapsible

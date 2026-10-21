@@ -1,8 +1,9 @@
 # SAD-380 — Temu Engine `listPrice` Extraction (＋ gated `discountPrice`): Detailed Implementation Plan
 
-> **Status: PLAN ONLY (Step 0). No source code has been changed.**
-> This document is the deliverable of the planning task. Implementation must not start
-> until the gates in §8 (`G0`, `G1`) are closed with evidence.
+> **Status: implemented on `feat/temu-engine` (Steps 0–3 + 5; Step 4 dropped at G1) — In Review.**
+> §14 records commits, gates and measured results. One acceptance item remains open by
+> design: live **authenticated** validation on search/category/PDP (sandbox was login- and
+> verification-walled; owner capture instructions in the Step-1 summary).
 >
 > Linear: <https://linear.app/sad-mod/issue/SAD-380/the-existing-temu-engine-is-not-extracting-the-listprice-field>
 > Team: Sad_mod · Project: PPHunt · Label: Bug · Priority: 1 (Urgent) · State at planning: Todo
@@ -657,6 +658,47 @@ Full record: [`SAD-380-step1-capture-2026-10-21.md`](./SAD-380-step1-capture-202
   (Temu's own "strikethrough price" presentation), all hash-free and fixture-proven. D4 stands
   (no range counterexample could be observed through the walls; range PDPs go on the owner
   validation checklist in Step 5).
+
+### Step 2 — failing-first fixtures (2026-10-21, `ef4403a`)
+
+`tests/temu-listprice-sad380.test.ts` (14 tests): **10 red / 4 green locks** on the unmodified
+extractor (C1 struck span, C2 lower-first lock-in, C3 at/below rejection, C4 srOnly
+original-first, C5 provenance, C8b "List price" aria, C9 currency-less `del`, P1 PDP second
+scope, P3 PDP struck span, V1 validator; locks C7/C10/P2/V2). Existing suites untouched.
+
+### Step 3 — the fix (2026-10-21, `e31649d`)
+
+Three files only (`field-parsers.ts`, `product-detail.ts`, `selectors.ts`, +309/−30):
+
+* Candidate pool in `extractTemuPricing` §2 (semantic → reference-aria scan → srOnly segment →
+  scoped struck-leaf fallback), one ranking, `> price` + currency-token filters, wrapper
+  de-dupe, unit/discount exclusion; diagnostics report the winning selector and the new static
+  reasons (`none above selling price`, `only in excluded (unit/discount) nodes`).
+* srOnly/aria dual-price strings parsed as labelled segments (either order; reference segment
+  stripped before the selling parse); shared reference-price vocabulary across selector,
+  reference-node test, segment parser and heuristic exclusion.
+* Validator: `listPrice > price` (D4). PDP: diagnostics-free second pass over `pdpScope` for
+  `listPrice` only when `#goods_price` yielded none (F1, `recordFallback` attribution).
+* Measured: new suite 14/14; Temu suites 151/151 incl. SAD-360 parity; `tsc` clean;
+  `check:dead-exports` pass; **Amazon diff empty**. Step 4 (`discountPrice` plumbing) did not
+  execute — dropped at G1.
+
+### Step 5 — verification & docs (2026-10-21)
+
+* `npm run verify` (tsc + full vitest + `wxt build` + `npm audit --omit=dev`): **pass**,
+  0 vulnerabilities; full suite re-counted with `dist/` built: **106 files / 1238 tests, all
+  passed**. (An earlier parallel full run before the build showed 1227 passed + 1 suite-level
+  error; the suspect manifest/docs/perf suites pass standalone and in the final count.)
+* Sandbox live replay re-attempt: still `/login.html` on every surface — **live authenticated
+  validation remains the single open acceptance item** (§12), to be closed with the owner's
+  capture from the Step-1 summary (service-worker `listPrice` diagnostics + in-page probe on
+  CA category + one PDP, incl. a variant/range PDP for the D4 watch). Do not merge past review
+  on fixture evidence alone if the owner capture contradicts a source assumption — the four
+  pool sources are independently removable.
+* `CHANGELOG.md` gained the SAD-380 entry (incl. the `<= price` → blank behavior change and the
+  no-migration note). `ARCHITECTURE.md` needed no change (field counts/diag contract unchanged).
+* Linear: Step 0/1/2/3 comments per step; issue moved to **In Review** with the open live-gate
+  stated in the final comment.
 
 ---
 
