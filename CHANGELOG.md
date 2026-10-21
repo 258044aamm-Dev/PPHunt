@@ -51,6 +51,14 @@ list price extracted, discount and deal empty.
   **2 s** (`DEFAULT_PARSE_CACHE_TTL_MS`, clock injectable); an immediate second
   pass is still served from the cache, so the performance contract is unchanged.
 
+### Added (diagnostics only — stored rows are unchanged)
+- **`PARSE_FAILED` for these two fields.** A percentage node that exists but
+  reads as a coupon, an out-of-range value or unreadable text is reported as
+  `PARSE_FAILED` with a reason instead of `MISSING`. Before this, "the page had
+  nothing" and "we could not read what it had" were indistinguishable, so the
+  field this ticket is about could not be measured in a live session.
+- **`source: 'derived'`** on a `dealBadge` that was proven rather than printed.
+
 ### Changed
 - A discount node is judged by its **text**, not by whether it has more than one
   child, so a percentage wrapped in markup (`<span><b>-68%</b></span>`) is read.

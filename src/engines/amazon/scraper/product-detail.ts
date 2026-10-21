@@ -1064,6 +1064,8 @@ export function parseAmazonProductDetail(
       diag?.missing('listPrice', 'no list price shown on the page', { source: 'dom' });
     }
 
+    // SAD-386 (diagnostics-only): a percentage node existed but was refused.
+    let discountNodeSeen = false;
     const savingsSelector =
       '#corePriceDisplay_desktop_feature_div .savingsPercentage, #corePrice_feature_div .savingsPercentage, #apex_desktop .savingsPercentage';
     let savingsRejected = false;
@@ -1080,9 +1082,16 @@ export function parseAmazonProductDetail(
     }
     if (discountPercentage !== undefined) {
       diag?.extracted('discountPercentage', {
-        source: 'dom',
+        source: discountSelector === 'detail-root:bounded-scan' ? 'derived' : 'dom',
         selector: discountSelector,
       });
+    } else if (discountNodeSeen) {
+      // SAD-386: honest status — a node was present and the parser refused it.
+      diag?.parseFailed(
+        'discountPercentage',
+        'a percentage node is present but its text is not a product discount (coupon, out of range, or unreadable)',
+        { selector: savingsSelector },
+      );
     } else if (savingsRejected) {
       diag?.parseFailed(
         'discountPercentage',
@@ -1108,6 +1117,7 @@ export function parseAmazonProductDetail(
         discountPercentage = scanned.value;
         discountSelector = 'detail-root:bounded-scan';
       }
+      if (scanned.nodeSeen) discountNodeSeen = true;
     }
 
     let dealBadgeRejectedSelector: string | undefined;
@@ -1169,7 +1179,10 @@ export function parseAmazonProductDetail(
       }
     }
     if (dealBadge !== undefined) {
-      diag?.extracted('dealBadge', { source: 'dom', selector: dealBadgeSelector });
+      diag?.extracted('dealBadge', {
+        source: dealBadgeDerived ? 'derived' : 'dom',
+        selector: dealBadgeSelector,
+      });
     } else if (dealBadgeRejectedSelector) {
       diag?.parseFailed('dealBadge', 'badge-like node present but its text is not a deal badge', {
         selector: dealBadgeRejectedSelector,
