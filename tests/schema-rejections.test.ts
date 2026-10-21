@@ -213,10 +213,19 @@ describe('M-7: background stores valid siblings and reports rejections', () => {
         expect.objectContaining({ asin: 'B0BADC0001', issues: expect.any(String) }),
       ])
     );
-    // reported on UPDATE_PROGRESS for the panel's attention toast
+    // reported on UPDATE_PROGRESS for the panel's attention toast.
+    // Scoped by session key, not "the first UPDATE_PROGRESS": the background
+    // reads `browser.runtime.sendMessage` lazily, so a previous test's async
+    // enrichment tail can land in *this* test's mock on a slow runner (measured
+    // in CI run 39583104219 — the stale message carried sessionKey
+    // 0_1792577732705 and had the same rejected/rejectedOf shape as this batch).
+    const sessionKey = (stored[0] as { sessionKey?: string } | undefined)?.sessionKey;
+    expect(sessionKey).toBeTruthy();
     const progress = runtimeSendMessage.mock.calls
-      .map((c) => c[0])
-      .find((m) => m?.type === 'UPDATE_PROGRESS');
+      .map((c) => c[0] as { type?: string; payload?: Record<string, unknown> })
+      .find(
+        (m) => m?.type === 'UPDATE_PROGRESS' && m?.payload?.sessionKey === sessionKey
+      );
     expect(progress?.payload?.rejected).toBe(1);
     expect(progress?.payload?.rejectedOf).toBe(3);
     warn.mockRestore();
@@ -235,11 +244,16 @@ describe('M-7: background stores valid siblings and reports rejections', () => {
       expect.stringContaining('ProductSchema rejected 2/2'),
       expect.any(Array)
     );
-    // no UPDATE_PROGRESS for an empty validated batch (behaviour preserved)
+    // no UPDATE_PROGRESS for an empty validated batch (behaviour preserved).
+    // Scoped to this batch's shape (2 rejected of 2): a stale message from a
+    // previous test's collection must not be mistaken for one of our own.
     const progress = runtimeSendMessage.mock.calls
-      .map((c) => c[0])
+      .map((c) => c[0] as { type?: string; payload?: Record<string, unknown> })
       .find(
-        (m) => m?.type === 'UPDATE_PROGRESS' && m?.payload?.status === 'collecting'
+        (m) =>
+          m?.type === 'UPDATE_PROGRESS' &&
+          m?.payload?.rejectedOf === 2 &&
+          m?.payload?.rejected === 2
       );
     expect(progress).toBeUndefined();
     warn.mockRestore();
