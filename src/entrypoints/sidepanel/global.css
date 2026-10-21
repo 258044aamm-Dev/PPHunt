@@ -95,6 +95,9 @@
   /* High-visibility pinned horizontal & vertical scrollbar for Preview table (SAD-138) */
   .preview-table-scroll {
     scrollbar-gutter: stable;
+    /* SAD-378: the table area is a size container so Sections-mode header bars
+       can be pinned to the visible width (`100cqw`) instead of the table width. */
+    container-type: inline-size;
   }
 
   .preview-table-scroll::-webkit-scrollbar {

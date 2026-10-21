@@ -372,7 +372,7 @@ export function AmazonProductTable({
       >
         {separateCategorySections ? (
           <div
-            className="flex flex-col gap-3 p-2.5"
+            className="flex flex-col gap-3 p-2.5 w-max min-w-full"
             data-testid="collapsible-category-sections"
           >
             {(
@@ -424,14 +424,14 @@ export function AmazonProductTable({
                   <div
                     key={section.category}
                     data-testid={`category-section-${section.category}`}
-                    className="border border-hairline-soft rounded-sm overflow-hidden bg-surface"
+                    className="border border-hairline-soft rounded-sm overflow-clip bg-surface"
                   >
                     <button
                       type="button"
                       data-testid={`category-section-toggle-${section.category}`}
                       aria-expanded={!isCollapsed}
                       onClick={() => toggleSectionCollapsed(section.category)}
-                      className={`w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-hairline-soft text-left transition-colors cursor-pointer ${section.headerClass}`}
+                      className={`sticky left-0 z-10 w-[100cqw] flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-hairline-soft text-left transition-colors cursor-pointer ${section.headerClass}`}
                     >
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono text-xs">
@@ -456,7 +456,7 @@ export function AmazonProductTable({
                     </button>
 
                     {!isCollapsed && (
-                      <div className="overflow-x-auto">
+                      <div>
                         <table
                           className="border-collapse table-fixed"
                           style={{

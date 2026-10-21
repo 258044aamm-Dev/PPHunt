@@ -161,13 +161,13 @@ export function TableToolbar({
         </div>
 
         {onSortingChange && (
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0 max-w-full">
             <select
               aria-label="Sort products"
               data-testid="table-sort-preset-select"
               value={activePresetId}
               onChange={handlePresetChange}
-              className="bg-surface border border-hairline rounded-sm text-ink font-sans text-xs px-2.5 py-2 focus:border-ink focus:outline-none transition-colors cursor-pointer"
+              className="bg-surface border border-hairline rounded-sm text-ink font-sans text-xs px-2.5 py-2 max-w-full focus:border-ink focus:outline-none transition-colors cursor-pointer"
             >
               {presets.map((preset) => (
                 <option key={preset.id} value={preset.id}>
@@ -189,7 +189,7 @@ export function TableToolbar({
                 value=""
                 onChange={handleAddSortField}
                 title="Add another sort column (or Shift+Click any table header)"
-                className="bg-surface-card border border-hairline-soft rounded-sm text-ink-muted hover:text-ink font-sans text-xs px-2 py-2 focus:border-ink focus:outline-none transition-colors cursor-pointer"
+                className="bg-surface-card border border-hairline-soft rounded-sm text-ink-muted hover:text-ink font-sans text-xs px-2 py-2 max-w-full focus:border-ink focus:outline-none transition-colors cursor-pointer"
               >
                 <option value="">
                   {sorting.length === 0 ? '+ Sort Field' : '+ Then By…'}
