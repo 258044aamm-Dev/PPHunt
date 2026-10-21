@@ -44,6 +44,13 @@ list price extracted, discount and deal empty.
   excluded-subtree rule, so a similar-items carousel can never answer for the
   product (that leak was caught by a test during this change).
 
+- **A badge that arrives a moment late is no longer lost.** The parse cache kept
+  a card forever once price and image existed, so a card parsed before its badge
+  or percentage hydrated answered "no deal" for the rest of the run — the
+  measured cause of the "inconsistent" discount. Entries now stay valid for
+  **2 s** (`DEFAULT_PARSE_CACHE_TTL_MS`, clock injectable); an immediate second
+  pass is still served from the cache, so the performance contract is unchanged.
+
 ### Changed
 - A discount node is judged by its **text**, not by whether it has more than one
   child, so a percentage wrapped in markup (`<span><b>-68%</b></span>`) is read.
