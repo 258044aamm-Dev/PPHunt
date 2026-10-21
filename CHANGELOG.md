@@ -26,6 +26,11 @@ templates in the markup, so a single `textContent` read concatenates all of them
   cell, its tooltip and expand modal, CSV/Excel/clipboard export, and table
   search. The stored row is not rewritten.
 
+### Changed
+- The rule is applied on every write path: the search/category card, the
+  ad-attributes `dealString`, the product page's badge scan and the bounded
+  evidence scan, so no workflow can store the template.
+
 ### Unchanged
 - Any badge without a `NO_OF_*` template keeps its exact bytes, including
   `Limited time deal`, `Prime Big Deal` and `Amazon's Choice`.

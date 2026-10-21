@@ -9,6 +9,7 @@ import {
   resolveProductUrl,
 } from '../utils/amazon-url';
 import { isIsoCurrency, resolvePageCurrency } from '../utils/currency';
+import { sanitizeDealBadge } from '../utils/deal-text';
 import { parsePrice } from '../utils/price-parser';
 import {
   cleanAvailability,
@@ -1139,7 +1140,8 @@ export function parseAmazonProductDetail(
         const els = safeQuerySelectorAll(doc, selector);
         for (const el of els) {
           if (isInsideExcludedDetailSubtree(el)) continue;
-          const text = normalizeWhitespace(el.textContent);
+          // SAD-387: same countdown-template rule as the card path.
+          const text = sanitizeDealBadge(normalizeWhitespace(el.textContent));
           if (text && DEAL_LABEL_PATTERN.test(text)) {
             printedBadge = text;
             printedBadgeSelector = selector;

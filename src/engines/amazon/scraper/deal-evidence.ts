@@ -19,6 +19,7 @@
  * the only dependency is the safe query helper.
  */
 import { safeQuerySelectorAll } from './selectors';
+import { sanitizeDealBadge } from '../utils/deal-text';
 
 /** SAD-386 (operator decision D1): the text stored when a deal is proven without a badge. */
 export const DERIVED_DEAL_LABEL = 'Deal';
@@ -136,7 +137,9 @@ export function detectDealEvidence(
   for (const selector of DEAL_SPECIFIC_CONTAINER_SELECTORS) {
     for (const el of safeQuerySelectorAll(root, selector)) {
       if (skip(el)) continue;
-      const text = clean(el.textContent);
+      // SAD-387: strip Amazon's countdown templates before the length/vocabulary
+      // checks, so a template blob is judged by the label it actually carries.
+      const text = sanitizeDealBadge(clean(el.textContent)) ?? '';
       if (!text) {
         emptyContainerSeen = true;
         continue;
@@ -153,7 +156,9 @@ export function detectDealEvidence(
   for (const selector of AMBIGUOUS_CONTAINER_SELECTORS) {
     for (const el of safeQuerySelectorAll(root, selector)) {
       if (skip(el)) continue;
-      const text = clean(el.textContent);
+      // SAD-387: strip Amazon's countdown templates before the length/vocabulary
+      // checks, so a template blob is judged by the label it actually carries.
+      const text = sanitizeDealBadge(clean(el.textContent)) ?? '';
       if (!text) {
         emptyContainerSeen = true;
         continue;
@@ -174,7 +179,9 @@ export function detectDealEvidence(
     if (skip(el)) continue;
     if (el.closest(NON_BADGE_REGIONS.join(', '))) continue;
     if (el.querySelector('a[href*="/dp/"]')) continue; // a title link is not a badge
-    const text = clean(el.textContent);
+    // SAD-387: strip Amazon's countdown templates before the length/vocabulary
+      // checks, so a template blob is judged by the label it actually carries.
+      const text = sanitizeDealBadge(clean(el.textContent)) ?? '';
     if (!text || text.length > MAX_BADGE_TEXT_LENGTH) continue;
     if (PRICE_TOKEN.test(text)) continue;
     if (DEAL_LABEL_PATTERN.test(text)) {

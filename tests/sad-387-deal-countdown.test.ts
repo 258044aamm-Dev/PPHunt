@@ -110,3 +110,102 @@ describe('SAD-387: countdown templates never reach the Deal field', () => {
     expect(dealBadgeForDisplay(undefined)).toBe(null);
   });
 });
+
+/**
+ * Integration: the rule applied through every write path, on markup captured
+ * live from amazon.com (the `.real.html` fixtures) plus the ticket's string
+ * injected into that same real badge container.
+ */
+import { readFileSync } from 'node:fs';
+import {
+  parseAmazonProductDetail,
+  parseAmazonSearchResults,
+} from '@/engines/amazon/scraper';
+import { extractProductFromCard } from '@/engines/amazon/content/save-product';
+import { parsePdpHtml } from '@/engines/amazon/offscreen/parse';
+
+const URL_SEARCH = 'https://www.amazon.com/s?k=limited+time+deal';
+const URL_PDP = 'https://www.amazon.com/dp/B087GMJXMC';
+
+function fixture(name: string): string {
+  return readFileSync(`docs/plans/SAD-387-fixtures/${name}`, 'utf8');
+}
+
+function docOf(html: string): Document {
+  return new DOMParser().parseFromString(html, 'text/html');
+}
+
+/** Runs the real collection path over one captured card. */
+function collect(card: string) {
+  const doc = docOf(`<div class="s-main-slot">${card}</div>`);
+  return parseAmazonSearchResults(doc, URL_SEARCH)[0];
+}
+
+const REAL_LIMITED = fixture('search-card-limited-time-deal.real.html');
+const REAL_ENDS_IN = fixture('search-card-ends-in-countdown.real.html');
+
+describe('SAD-387: real captured cards keep working', () => {
+  it('reads the printed label from the real "Limited time deal" card', () => {
+    expect(collect(REAL_LIMITED)?.dealBadge).toBe('Limited time deal');
+  });
+
+  it('reads the countdown from the real "Ends in" card (already correct — pinned)', () => {
+    expect(collect(REAL_ENDS_IN)?.dealBadge).toBe('Ends in 15:00:26');
+  });
+});
+
+describe('SAD-387: the ticket blob never reaches a product', () => {
+  const brokenCard = REAL_LIMITED.replace(/>Limited time deal</, `>${TICKET_TEXT}<`);
+
+  it('collection path stores the page label', () => {
+    const product = collect(brokenCard);
+    expect(product?.dealBadge).toBe('Limited time deal');
+    expect(product?.dealBadge).not.toContain('NO_OF_');
+  });
+
+  it('one-click / right-click card save stores the same label', () => {
+    const card = docOf(`<div class="s-main-slot">${brokenCard}</div>`).querySelector(
+      '[data-component-type="s-search-result"]',
+    )!;
+    expect(extractProductFromCard(card, URL_SEARCH)?.dealBadge).toBe('Limited time deal');
+  });
+
+  it('product-page detail stores the page label', () => {
+    const html = `
+      <html><body>
+        <span id="productTitle">Countdown Product</span>
+        <div id="corePriceDisplay_desktop_feature_div">
+          <div id="dealBadge_feature_div"><span class="dealBadgeText">${TICKET_TEXT}</span></div>
+          <span class="a-price"><span class="a-offscreen">$199.99</span></span>
+        </div>
+      </body></html>`;
+    expect(parseAmazonProductDetail(docOf(html), URL_PDP)?.dealBadge).toBe('Limited time deal');
+  });
+
+  it('offscreen PDP enrichment stores the page label', () => {
+    const html = `
+      <html><body>
+        <span id="productTitle">Countdown Product</span>
+        <div id="corePriceDisplay_desktop_feature_div">
+          <div id="dealBadge_feature_div"><span class="dealBadgeText">${TICKET_TEXT}</span></div>
+          <span class="a-price"><span class="a-offscreen">$199.99</span></span>
+        </div>
+      </body></html>`;
+    const offscreen = parsePdpHtml(html, URL_PDP);
+    expect(offscreen.ok).toBe(true);
+    expect(offscreen.ok ? offscreen.product.dealBadge : undefined).toBe(
+      'Limited time deal',
+    );
+  });
+
+  it('a blob in a plain wrapper is reported as printed, not derived', () => {
+    const card = REAL_LIMITED.replace(
+      /<span class="a-badge-text"[^>]*>Limited time deal<\/span>/,
+      `<span>${TICKET_TEXT}</span>`,
+    );
+    const product = collect(card);
+    expect(product?.dealBadge).toBe('Limited time deal');
+    // Provenance: a printed label, never the derived token.
+    expect(product?.dealBadge).not.toBe('Deal');
+  });
+});
