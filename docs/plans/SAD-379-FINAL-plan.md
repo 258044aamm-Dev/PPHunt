@@ -378,3 +378,64 @@ no parser or protocol change, and zero behaviour difference until the switch is 
 Parity then means *the same treatment a save gets* — median 19 fields, not 24 — with the
 3 MB fetch hole closing in SAD-370 step 1, the offerless-PDP share accepted permanently,
 and eleven trade-offs written down in §8 with the ten that expire.
+
+---
+
+## 14. Implementation record (what actually shipped)
+
+Three commits on `main`, in the order §7 set out. Every step was gated by
+`tsc --noEmit` + `wxt build` + the whole `vitest` suite, and no existing test was
+modified.
+
+| Step | Commit | Content |
+|---|---|---|
+| 0 | `2745288` | the investigation, the decision record and this plan |
+| 1 | `dd6306d` | `enrichment-pump.ts`, `enrich-collected-flag.ts`, the two settings, handler wiring, 20 tests |
+| 2 | `fbab2bd` | the Settings UI (switch + 25/50/all), Restore Defaults mirror, 6 tests |
+| 3 | *(this commit)* | the differential parity proof, the changelog, this record |
+
+Final suite: **106 files / 1227 tests** (1193 pre-existing + 5 from upstream
+SAD-378 + 29 new).
+
+### Where the implementation departed from the plan, and why
+
+1. **The dependency has to be passed on the envelope fast-path, not the switch.**
+   §4.2 said "handler `:844`". That line is the `switch` case, and it is
+   unreachable for a valid `PRODUCTS_COLLECTED`: the envelope fast-path at
+   `handler.ts:791` handles the message and `return false`s first. A dep wired
+   only at the switch would have been dead code that typechecks and never runs.
+   Both sites now pass it; the fast-path is the live one.
+2. **The settings are written immediately, not through the hook's debounce.**
+   The plan assumed `useAmazonSettings().updateSettings`. Writing the step-2 test
+   exposed an ordering hazard: a debounce queued before *Restore Defaults* lands
+   *after* the reset and re-enables what the user just cleared. For a switch that
+   causes extra outbound requests, a stale "on" after a reset is the wrong failure
+   mode, so these two keys persist in the same tick as the `storage.local` mirror.
+   (`QuickSaveBehavior` has the same latent shape through the debounced writer;
+   not touched — out of scope.)
+3. **A start-up settings read can no longer clobber a newer write**
+   (`utils/enrich-collected-flag.ts`, epoch guard). Not in the plan. A worker
+   booting while the user toggles the switch restored the stale value on read
+   resolution; the guard drops a read that a write has superseded.
+4. **`ENRICH_COLLECTED_LIMIT_OPTIONS` lives in `constants/defaults.ts`**, not in
+   the schema, so the settings UI iterates the same tuple the schema validates
+   against — one list, not two that can drift.
+
+### The parity proof (`tests/collection-save-parity.test.ts`)
+
+The ticket's acceptance criterion, stated differentially: one card, one ASIN, two
+runs — a `SAVE_PRODUCT` job and a `PRODUCTS_COLLECTED` batch with the switch on —
+through the real background listener, the real `enrichSavedProduct` and a single
+canned PDP. The two rows are `toEqual` after removing only `id` and `sessionKey`
+(identity and provenance, not product data), and both carry the detail-page
+fields (`rating 4.6`, `reviewCount 1204`, `seller`, `description`, `weight`,
+`warrantyDescription`) with the listing price (19.99) still winning over the
+detail price. A second test asserts both pipelines write exactly one detail
+snapshot; a third pins the off-by-default behaviour: the collected row keeps the
+card-only shape and no snapshot is written.
+
+### Trade-offs still open
+
+T1–T4, T6, T7 and T10 expire exactly as §8 records; T5, T8, T9 and the
+offerless-PDP share of T3 are permanent. The in-memory queue limitation (T4) is
+now stated in the changelog as a known limitation rather than only in this plan.

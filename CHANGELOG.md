@@ -5,6 +5,41 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Collection enrichment (SAD-379)
+
+A collection used to stop where a save kept going. Both pipelines parse the same
+listing card, but a save then fetches the product page and merges the detail
+fields, while a collection wrote the card and moved on — so a collected row
+carried what the card printed (measured: 7 fields) and a saved row carried what
+the product page added (median 19). Same card, same scraper, different result.
+
+A collection now runs the save pipeline's enrichment stage.
+
+### Added
+- **Settings → Collection Enrichment.** *Enrich collected products* is **off by
+  default**; when on, a per-run limit of **25 / 50 / every collected product**
+  (default 50) bounds how many products pay for an extra request.
+- A collection that enriches writes the same detail snapshot a save does, with a
+  deterministic per-collection job id, so a repeated batch cannot invent a second
+  observation for the same product.
+
+### Unchanged
+- With the switch off (the default) a collection run is byte-identical to before:
+  no fetch, no queue, no storage write.
+- `enrichSavedProduct` itself is untouched — collection calls the same function,
+  so merged fields, the price-family rules (the listing price still wins), the
+  currency-mismatch freeze and the diagnostics log apply identically.
+- One failed enrichment leaves the collected row exactly as it was and never
+  fails the collection; a `skipped` outcome (breaker open or no host permission)
+  stops the run's remaining fetches instead of hammering Amazon.
+- Nothing is awaited by the collection's message path, so progress messages and
+  Stop Collection never wait on a product-page fetch.
+
+### Known limitations
+- The pending queue is in memory: an MV3 worker suspension mid-run drops the
+  remaining tail (rows are untouched). The `job-store` recovery pattern remains
+  the upgrade path if this is observed in the field.
+
 ## [Unreleased] — Preview horizontal scrolling (SAD-378)
 
 The preview table could not be scrolled sideways while **Separate collapsible
