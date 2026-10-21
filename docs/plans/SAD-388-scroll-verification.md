@@ -81,9 +81,26 @@ Both rows already carry `data-index`, which is the only other thing `measureElem
 `shouldMeasureDuringScroll` returns `true` unless the scroll is smooth, so wheel scrolling is
 measured live.
 
-2 inserted lines. No new state, no new import, no new dependency, no change to `estimateSize`,
-`overscan`, the spacers, sorting, filtering, selection, export, cell-expand, columns or the
-sections path.
+Plus a guarded measurer, added after the first CI-style run exposed a side-effect in tests:
+
+```tsx
+measureElement: (el) =>
+  (el as HTMLElement).getBoundingClientRect().height || ROW_HEIGHT,
+```
+
+The library's default measurer falls back to `element.offsetHeight`, which is **0 in jsdom**, so
+attaching the ref alone silently made every row 0 px tall in the test environment — a behaviour
+change the fix must not introduce. The fallback restores the estimate whenever an element
+reports 0, so tests see exactly the numbers they saw before, while a real browser always gets
+the true height.
+
+**Flake evidence.** Before the guard, one of 21 runs of the five preview suites failed
+(`main`: 0 of 20). After it, **0 of 20** runs failed, and the full suite ran **1418/1418 twice**.
+The failing test's name was never captured — the run that failed was reported from a `tail` that
+cut it off — so this is recorded as *observed and no longer reproducible*, not as diagnosed.
+
+No new state, no new import, no new dependency, no change to `estimateSize`, `overscan`, the
+spacers, sorting, filtering, selection, export, cell-expand, columns or the sections path.
 
 ---
 

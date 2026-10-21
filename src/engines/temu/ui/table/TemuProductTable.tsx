@@ -192,6 +192,11 @@ export function TemuProductTable({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
+    // SAD-388: measure the real height. Falls back to the estimate when the
+    // element reports 0 (jsdom, hidden rows), which is also the pre-change
+    // behaviour, so tests see exactly the same numbers as before.
+    measureElement: (el) =>
+      (el as HTMLElement).getBoundingClientRect().height || ROW_HEIGHT,
     overscan: 10,
   });
 
