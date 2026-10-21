@@ -5,6 +5,30 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Deal and discount extraction (SAD-386)
+
+The *Discount* and *Deal* columns were the two least reliable fields in the
+preview table: the discount normaliser only understood ASCII `-68%` / `68% off`,
+and the deal badge was only read from containers a listing card does not
+necessarily use. Measured on the repo's own real `/deals` fixture: price and
+list price extracted, discount and deal empty.
+
+### Fixed
+- **Discounts printed with a typographic minus.** `−68%` (U+2212 MINUS SIGN),
+  `–68%` (en dash), `—68%` (em dash) and parenthesised forms now normalise to
+  `68% off`. ASCII `-68%` and `68% off` are unchanged, byte for byte.
+- **`Save 68%`** is now read.
+- **A coupon is no longer stored as a discount.** A card whose only percentage
+  sat inside `Save 15% off with coupon` used to store `15% off` as the product
+  discount; coupon/voucher/`Save $` text is now rejected by the normaliser.
+
+### Unchanged
+- Output format (`"NN% off"`), the range rule (`0 < N < 100`, integers only),
+  every field other than `discountPercentage`/`dealBadge`, the Temu engine, the
+  DB schema, exports, settings and the 24-field diagnostics report.
+
+---
+
 ## [Unreleased] — Collection enrichment (SAD-379)
 
 A collection used to stop where a save kept going. Both pipelines parse the same

@@ -45,6 +45,15 @@ export interface CardPricingAndDiscounts {
    * priceTier are byte-identical with and without it.
    */
   unparseablePriceTier?: AmazonExtractionTier;
+  /**
+   * SAD-386 (diagnostics-only): a discount-looking node was present but its
+   * text did not normalise to a percentage (e.g. a coupon-style "Save 15% with
+   * coupon", a bare out-of-range "100%", or a currency amount). Lets the card
+   * report say PARSE_FAILED instead of claiming the discount was absent.
+   */
+  unparseableDiscountNode?: boolean;
+  /** SAD-386 (diagnostics-only): the deal value came from evidence, not a printed badge. */
+  dealBadgeDerived?: boolean;
 }
 
 const RATING_PATTERNS: readonly RegExp[] = [
@@ -833,15 +842,46 @@ function parseAsinAdAttributesProps(
 }
 
 /**
- * Normalizes a discount string ("-68%", "19% off") into `"68% off"`.
+ * SAD-386: text that proves the node is *not* a product discount.
+ *
+ * Measured before this change (probe P02/G): a card whose only percentage sat
+ * inside `Save 15% off with coupon` stored `15% off` as the product's discount.
+ * That is a wrong value, not a missing one, so it is rejected here for every
+ * caller.
+ */
+const NON_DISCOUNT_TEXT =
+  /coupon|voucher|rabatt|remise|with\s+coupon|save\s*[$\u20ac\u00a3\u20b9\u00a5]/i;
+
+/**
+ * SAD-386: the discount forms Amazon prints, in one place.
+ *
+ * ASCII hyphen kept first (the form that already worked and is pinned by
+ * existing fixtures); then the typographic minus/en-dash/em-dash that other
+ * layouts and locales emit, optionally wrapped in parens; then `NN% off`;
+ * then `Save NN%`; then a bare `NN%` which is only accepted when the caller
+ * proved the node is a savings node (`allowBare`).
+ */
+const DISCOUNT_PATTERN =
+  /(?:[-\u2212\u2013\u2014]\s*(\d{1,2})\s*%)|(?:\(?\s*(\d{1,2})\s*%\s*off\s*\)?)|(?:save\s*(\d{1,2})\s*%)|(?:^\s*\(?\s*(\d{1,2})\s*%\s*\)?\s*$)/i;
+
+/**
+ * Normalizes a discount string ("-68%", "19% off", "\u221268%", "Save 68%") into
+ * `"68% off"`.
+ *
+ * SAD-386 added the typographic-minus, paren, `Save NN%` and (opt-in) bare
+ * forms. The output format is unchanged, and every string that normalised
+ * before still normalises to the same value.
  */
 export function normalizeDiscountBadge(
   raw: string | null | undefined,
+  options: { allowBare?: boolean } = {},
 ): string | undefined {
   const text = normalizeWhitespace(raw);
   if (!text) return undefined;
-  const match = /-\s*(\d{1,2})\s*%|(\d{1,2})\s*%\s*off/i.exec(text);
-  const pct = match?.[1] ?? match?.[2];
+  if (NON_DISCOUNT_TEXT.test(text)) return undefined;
+  const match = DISCOUNT_PATTERN.exec(text);
+  if (!match) return undefined;
+  const pct = match[1] ?? match[2] ?? match[3] ?? (options.allowBare ? match[4] : undefined);
   if (!pct) return undefined;
   const num = Number.parseInt(pct, 10);
   if (!Number.isFinite(num) || num <= 0 || num >= 100) return undefined;
