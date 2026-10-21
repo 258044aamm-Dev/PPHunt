@@ -48,6 +48,23 @@ describe('normalizeWarrantyDescription', () => {
     ['24 months', '24-month'],
     ['twenty-four year', '24-year'],
     ['Limited lifetime warranty', 'lifetime'],
+    // SAD-393 step 5 (P-W2 probe table): the fraction the seller printed is
+    // the token — '1.5 years' used to garble to '5-year' (matched mid-number).
+    ['1.5 years', '1.5-year'],
+    ['1.5-Year Limited Warranty', '1.5-year'],
+    ['12.5 years', '12.5-year'],
+    ['2.5 years', '2.5-year'],
+    // Parenthesized digit forms used to yield nothing.
+    ['Five (5) Year', '5-year'],
+    ['One (1) Year', '1-year'],
+    ['(3) Year Limited Warranty', '3-year'],
+    // Typographic dashes used to yield nothing (folded inside the
+    // normalizer only, never in the shared whitespace pass).
+    ['2 year', '2-year'],
+    ['2 year', '2-year'],
+    ['3-yr', '3-year'],
+    // A quantity never starts mid-number: no salvage from a version string.
+    ['Version 2.5.1 years', null],
     // the boilerplate + non-durations must yield nothing
     ['For warranty information about this product, please click here', null],
     ['Product Warranty: For warranty information about this product, please click here', null],

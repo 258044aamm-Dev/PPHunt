@@ -293,9 +293,19 @@ const WARRANTY_WORD_NUMBERS: Readonly<Record<string, number>> = {
  * SAD-349: `<quantity><unit>` inside a warranty cell. Compound spelled numbers
  * are listed first so "twenty-four year" cannot be mis-read as "four year", and
  * the unit alternation accepts every plural/abbrev spelling Amazon uses.
+ *
+ * SAD-393: three narrow extensions, each pinned by the P-W2 probe table:
+ * - the consumed prefix `(?:^|[^\w.,])` (the weight matcher's shape) stops a
+ *   quantity from starting *mid-number* — "1.5 years" used to match the "5"
+ *   and store `5-year`, wrong data rather than missing data;
+ * - `\d{1,3}(?:\.\d+)?` accepts the fraction the seller printed, emitting the
+ *   exact token (`1.5-year`);
+ * - `(5)` accepts the parenthesized digit of "Five (5) Year" / "One (1) Year",
+ *   the form device/tool manufacturers print (the bare word alone fails
+ *   there: the parenthesis blocks the unit).
  */
 const WARRANTY_DURATION_RE =
-  /\b((?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
+  /(?:^|[^\w.,])(\(\s*\d{1,3}\s*\)|(?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
 
 /** Maps each unit spelling onto the one canonical singular form. */
 const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
@@ -315,7 +325,8 @@ const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
 
 /**
  * SAD-349: reduces an Amazon warranty cell to a compact, sortable token
- * (`1-year`, `2-year`, `90-day`, `lifetime`).
+ * (`1-year`, `2-year`, `90-day`, `lifetime`; SAD-393 adds the seller's exact
+ * fraction when printed, e.g. `1.5-year`).
  *
  * Returning `null` when the cell states no coverage period is deliberate and
  * load-bearing. The "Warranty & Support" block on essentially every amazon.com
@@ -334,7 +345,12 @@ const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
 export function normalizeWarrantyDescription(
   raw: string | null | undefined,
 ): string | null {
-  const text = normalizeWhitespace(raw);
+  // SAD-393: fold typographic dashes (U+2010–U+2015, U+2212 — the SAD-386
+  // discount set) to '-' inside THIS function only. Sellers print them
+  // ("2–year", "2 year"); the shared `normalizeWhitespace` stays untouched
+  // so no other field's parsing changes. `warrantyDescriptionRaw` is the
+  // caller's verbatim cell and is not affected.
+  const text = normalizeWhitespace(raw).replace(/[\u2010-\u2015\u2212]/g, '-');
   if (!text) return null;
 
   // "Limited lifetime warranty" states coverage that is not a duration.
@@ -343,9 +359,15 @@ export function normalizeWarrantyDescription(
   const match = WARRANTY_DURATION_RE.exec(text);
   if (!match) return null;
 
-  const quantityText = match[1]!.toLowerCase().replace(/\s+/g, '-');
-  const quantity = /^\d+$/.test(quantityText)
-    ? Number.parseInt(quantityText, 10)
+  // Parentheses belong to the "(5)" form only; stripping them leaves the
+  // plain digit (or word-number) the quantity lookup below already knows.
+  const quantityText = match[1]!
+    .toLowerCase()
+    .replace(/[()]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+  const quantity = /^\d+(?:\.\d+)?$/.test(quantityText)
+    ? Number.parseFloat(quantityText)
     : WARRANTY_WORD_NUMBERS[quantityText];
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
     return null;
