@@ -124,28 +124,42 @@ export function mergeScrapedProductFields(
     changed = true;
   }
 
+  // SAD-391 (F7): a source that carries no listing information at all — the
+  // quick-save volatile refresh object, an enrichment patch — must not be
+  // read as "an organic, unsponsored observation". Without this guard the
+  // placement union invented 'Organic Search', `listingCategory` was
+  // recomputed to 'organic' and `isSponsored` was overwritten with
+  // `undefined` on every re-save of a sponsored product.
+  const sourceHasListingContext =
+    (Array.isArray(source.placements) && source.placements.length > 0) ||
+    Boolean(source.sectionLabel) ||
+    source.listingCategory !== undefined ||
+    typeof source.isSponsored === 'boolean';
+
   // Record multi-placement context before overwriting `isSponsored` / `listingCategory`
-  const targetPlacements = resolveProductPlacements(target);
-  const sourcePlacements = resolveProductPlacements(source);
-  const orderedPlacements = preferSource
-    ? [...sourcePlacements, ...targetPlacements]
-    : [...targetPlacements, ...sourcePlacements];
-  const distinctPlacements: string[] = [];
-  for (const p of orderedPlacements) {
-    if (p && !distinctPlacements.includes(p)) {
-      distinctPlacements.push(p);
+  if (sourceHasListingContext) {
+    const targetPlacements = resolveProductPlacements(target);
+    const sourcePlacements = resolveProductPlacements(source);
+    const orderedPlacements = preferSource
+      ? [...sourcePlacements, ...targetPlacements]
+      : [...targetPlacements, ...sourcePlacements];
+    const distinctPlacements: string[] = [];
+    for (const p of orderedPlacements) {
+      if (p && !distinctPlacements.includes(p)) {
+        distinctPlacements.push(p);
+      }
     }
-  }
-  if (distinctPlacements.length > 1) {
-    const prevKey = (target.placements ?? []).join('|');
-    const nextKey = distinctPlacements.join('|');
-    if (prevKey !== nextKey) {
-      target.placements = distinctPlacements;
-      changed = true;
+    if (distinctPlacements.length > 1) {
+      const prevKey = (target.placements ?? []).join('|');
+      const nextKey = distinctPlacements.join('|');
+      if (prevKey !== nextKey) {
+        target.placements = distinctPlacements;
+        changed = true;
+      }
     }
   }
 
-  if (preferSource) {
+  if (preferSource && sourceHasListingContext) {
     const nextCategory = source.listingCategory ?? resolveListingCategory(source);
     if (target.listingCategory && target.listingCategory !== nextCategory) {
       target.listingCategory = nextCategory;
@@ -165,7 +179,11 @@ export function mergeScrapedProductFields(
     changed = true;
   }
 
-  if (preferSource && target.isSponsored !== source.isSponsored) {
+  if (
+    preferSource &&
+    typeof source.isSponsored === 'boolean' &&
+    target.isSponsored !== source.isSponsored
+  ) {
     target.isSponsored = source.isSponsored;
     changed = true;
   }
