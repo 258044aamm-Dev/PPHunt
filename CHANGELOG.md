@@ -5,6 +5,33 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Collection brand and Best Sellers Rank (SAD-384)
+
+### Fixed
+- Manual and Automatic collections attempt missing brand/Best Sellers Rank even
+  with full enrichment off or beyond the 25/50 cap. Those requests fill only the
+  two missing fields, preserving all other listing observations.
+- Eligible full-detail products share one request with the fallback; the existing
+  full-enrichment switch, defaults, budget and save merge behavior remain intact.
+- A skipped row no longer discards unrelated queue items. Host cooldowns defer
+  only that host, with bounded reattempts via the `alarms` permission.
+
+### Changed
+- Collection queue metadata is mirrored into a dedicated `storage.session` key
+  before dispatch and recovered after worker suspension, preserving scopes and
+  budgets. At most two dispatches per item; terminal dedupe retained for 24h.
+- Settings now explain that the cap controls full details, not all PDP requests.
+  STOP and collection completion still do not wait for network enrichment.
+
+### Limitations
+- Amazon can omit fields or block requests; nothing is inferred or fabricated.
+- Session metadata does not survive browser exit. Recovery-storage failures log
+  a warning and preserve listing rows, but cannot guarantee pending-tail recovery.
+- Existing historical collections are not automatically backfilled.
+
+The SAD-379 entry below records the previous behavior; its off/no-fetch and
+in-memory-only statements are superseded by SAD-384.
+
 ## [Unreleased] — Collection enrichment (SAD-379)
 
 A collection used to stop where a save kept going. Both pipelines parse the same

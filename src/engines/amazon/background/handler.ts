@@ -305,8 +305,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
 
     finalizedSessionKeys.delete(sessionKey);
     lastFinalizedSession = null;
-    // SAD-379: a (re)started run begins with an empty enrichment budget.
-    // Preserve budget and dedupe if this session is resumed.
+    // SAD-384: preserve budget and dedupe if this session is resumed.
 
     activeCollection = {
       tabId,
@@ -430,10 +429,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     }
 
     if (active) {
-      // SAD-379: the run is over; its per-run queue bookkeeping must not leak
-      // into the next run. Already-queued work is left alone on purpose — those
-      // rows exist and enriching them is still correct.
-      // Retain dedupe/budget through trailing batches after STOP.
+      // SAD-384: already queued work remains eligible after STOP; retain its
+      // dedupe/budget so trailing batches cannot restart the same requests.
     }
 
     activeCollection = null;
@@ -700,8 +697,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
         completedAt: new Date().toISOString(),
         status: 'completed',
       });
-      // SAD-379: same per-run reset as STOP.
-      // Retain dedupe/budget through trailing completion batches.
+      // SAD-384: retain dedupe/budget through trailing completion batches.
       activeCollection = null;
       await clearActiveSession();
     } else if (active) {

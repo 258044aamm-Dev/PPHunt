@@ -168,6 +168,7 @@ src/
 | `activeTab` | Access the current tab when the user clicks the icon |
 | `tabs` | Track tab events, detect Amazon pages, send messages |
 | `storage` | Persist user preferences (UI mode, overlay width) and the one-click collection pointer |
+| `alarms` | Resume queued collection detail requests after an Amazon host cooldown |
 | `scripting` | Re-inject content script after tab reload for session recovery |
 | `contextMenus` | The right-click **Save Product Details** item |
 | `offscreen` | A hidden document that owns `DOMParser` and `URL.createObjectURL`, which an MV3 service worker does not have |
@@ -253,3 +254,22 @@ MIT
 ---
 
 *Built with care by the PPHunt team.*
+
+## Collection detail fallback (SAD-384)
+
+Manual and Automatic collections fetch missing **Brand** and **Best Sellers Rank**
+from product pages independently of Settings → Collection Enrichment. That switch
+and its 25/50/all limit control additional full details only. Outside that budget,
+only missing brand/rank values are filled; other listing fields are preserved.
+When both fields already exist, no fallback request is needed. This means the
+switch being off no longer means zero additional product-page requests.
+
+Fields appear asynchronously and may finish after collection completes or stops.
+Amazon may omit a field or refuse a request; missing values are never invented.
+The existing CAPTCHA, permission, timeout and rate-limit safeguards still apply.
+Collection metadata survives worker suspension via `storage.session`, with at most
+one restart/cooldown reattempt, and terminal dedupe records expire after 24 hours.
+Pending work is not retained across browser exit. If recovery storage fails,
+saved listing rows remain intact and a warning is logged. Existing collections
+are not retroactively backfilled, and right-click/icon saves retain full detail
+behavior.
