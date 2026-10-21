@@ -22,7 +22,7 @@ import type {
   ExtractionDiagnosticsSink,
   FieldDiagnosticsCollector,
 } from './extraction-diagnostics';
-import type { CardPricingAndDiscounts } from './field-parsers';
+import type { CardPricingAndDiscounts, TieredValue } from './field-parsers';
 
 /** The 4 modelled fields a listing card can never carry (SAD-369 D4). */
 export const CARD_INAPPLICABLE_FIELDS = [
@@ -41,8 +41,10 @@ export interface CardDiagnosticsInput {
   title: { value: string; tier: AmazonExtractionTier };
   brand: string | null;
   pricing: CardPricingAndDiscounts;
-  rating: { value: number | null; tier: AmazonExtractionTier };
-  reviewCount: { value: number | null; tier: AmazonExtractionTier };
+  // SAD-383: `TieredValue` so `nodeSeen` (did a node exist at all?) reaches the
+  // report. Optional on the type, so every existing caller still compiles.
+  rating: TieredValue<number | null>;
+  reviewCount: TieredValue<number | null>;
   image: { value: string | null; tier: AmazonExtractionTier };
   pastMonthSales?: string;
   delivery?: string;
@@ -141,10 +143,23 @@ export function recordCardDiagnostics(
     );
   }
 
+  // SAD-383: a node that exists but does not parse is a selector/parser defect; a
+  // layout that never prints the field is not. The old single reason made those
+  // two states indistinguishable in the report.
   if (input.rating.value !== null) {
     collector.extracted('rating', { ...dom, tier: input.rating.tier });
+  } else if (input.rating.nodeSeen) {
+    collector.missing(
+      'rating',
+      'rating node present on the card but its text did not parse',
+      dom,
+    );
   } else {
-    collector.missing('rating', 'no rating node found on the card', dom);
+    collector.missing(
+      'rating',
+      'this card layout prints no rating node — only the product page carries it',
+      dom,
+    );
   }
 
   if (input.reviewCount.value !== null) {
@@ -152,10 +167,16 @@ export function recordCardDiagnostics(
       ...dom,
       tier: input.reviewCount.tier,
     });
+  } else if (input.reviewCount.nodeSeen) {
+    collector.missing(
+      'reviewCount',
+      'review-count node present on the card but its text did not parse',
+      dom,
+    );
   } else {
     collector.missing(
       'reviewCount',
-      'no review count node found on the card',
+      'this card layout prints no review-count node — only the product page carries it',
       dom,
     );
   }
