@@ -894,6 +894,44 @@ export function normalizeDiscountBadge(
 }
 
 /**
+ * SAD-386: the ONE bounded scan for a printed savings percentage inside `root`.
+ *
+ * Rules (identical for listing cards and product pages):
+ * - short text only (a badge, not a paragraph),
+ * - the text must contain a `%`,
+ * - a bare `NN%` is only accepted on a node whose class/id/aria-label says it is
+ *   a savings node; `-NN%`, `NN% off`, `Save NN%` and the typographic variants
+ *   are accepted anywhere the other guards allow.
+ *
+ * Returns the normalised value and whether a percentage-looking node was present
+ * but refused (used by the diagnostics lane).
+ */
+export function scanDiscountNodes(
+  root: Element,
+  options: { skip?: (el: Element) => boolean } = {},
+): {
+  value?: string;
+  nodeSeen: boolean;
+} {
+  const skip = options.skip ?? (() => false);
+  let nodeSeen = false;
+  for (const el of safeQuerySelectorAll(root, 'span, div, b, strong')) {
+    if (el.children.length > 2) continue;
+    if (skip(el)) continue;
+    const rawText = normalizeWhitespace(el.textContent);
+    if (!rawText || rawText.length > 24 || !rawText.includes('%')) continue;
+    const label = `${el.className} ${el.id} ${el.getAttribute('aria-label') ?? ''}`;
+    const looksLikeSavings = /saving|discount|percent|\boff\b/i.test(label);
+    const normalized = normalizeDiscountBadge(rawText, {
+      allowBare: looksLikeSavings,
+    });
+    if (normalized) return { value: normalized, nodeSeen };
+    nodeSeen = true;
+  }
+  return { nodeSeen };
+}
+
+/**
  * Extracts selling price, currency, struck-through list price, discount percentage,
  * deal badge, and coupon from a product card or buybox container.
  * Never confuses struck-through list prices (`data-a-strike="true"`) with selling prices,
@@ -1110,8 +1148,7 @@ export function extractCardPricingAndDiscounts(
   }
 
   // SAD-386: one bounded fallback pass inside the price area, never ahead of the
-  // declarative list above. Only a node whose class/id/aria-label says it is a
-  // savings node may rely on a bare `NN%` (see `normalizeDiscountBadge`).
+  // declarative list above. Same rules as the product-page path.
   if (discountPercentage === undefined) {
     const priceNode = safeQuerySelector(
       card,
@@ -1121,21 +1158,9 @@ export function extractCardPricingAndDiscounts(
       safeQuerySelector(card, '[data-cy="price-recipe"]') ??
       priceNode?.parentElement ??
       card;
-    for (const el of safeQuerySelectorAll(priceArea, 'span, div, b, strong')) {
-      if (el.children.length > 2) continue;
-      const rawText = normalizeWhitespace(el.textContent);
-      if (!rawText || rawText.length > 24 || !rawText.includes('%')) continue;
-      const label = `${el.className} ${el.id} ${el.getAttribute('aria-label') ?? ''}`;
-      const looksLikeSavings = /saving|discount|percent|\boff\b/i.test(label);
-      const normalized = normalizeDiscountBadge(rawText, {
-        allowBare: looksLikeSavings,
-      });
-      if (normalized) {
-        discountPercentage = normalized;
-        break;
-      }
-      discountNodeSeen = true;
-    }
+    const scanned = scanDiscountNodes(priceArea);
+    if (scanned.value !== undefined) discountPercentage = scanned.value;
+    if (scanned.nodeSeen) discountNodeSeen = true;
   }
 
   // Deal Badge (`Limited-time deal`, etc.)

@@ -34,6 +34,16 @@ list price extracted, discount and deal empty.
 - **One deal vocabulary** shared by the card and product-page paths; the two
   copies had already drifted (no `cyber monday`, no locale words on the PDP).
 
+- **A product page reads its whole price area.** The buybox loop used to stop at
+  the first scope that produced a price, so a percentage, deal badge or coupon
+  rendered further down the column was never read. Every field is still
+  first-wins — the price that wins today still wins — and the loop now stops only
+  when price, list price, discount, deal and coupon are all settled.
+- **A bounded scan of the central column** for a printed percentage and a deal
+  label, using the same rules as the listing path. It honours the existing
+  excluded-subtree rule, so a similar-items carousel can never answer for the
+  product (that leak was caught by a test during this change).
+
 ### Changed
 - A discount node is judged by its **text**, not by whether it has more than one
   child, so a percentage wrapped in markup (`<span><b>-68%</b></span>`) is read.

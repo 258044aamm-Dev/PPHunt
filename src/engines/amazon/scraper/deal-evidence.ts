@@ -100,6 +100,16 @@ function clean(raw: string | null | undefined): string {
     .trim();
 }
 
+export interface EvidenceOptions {
+  /**
+   * SAD-386: nodes this predicate rejects are invisible to the scan. The product
+   * page passes its excluded-subtree rule here so a similar-items carousel can
+   * never answer for the product ("-90%" and "Limited time deal" leaked from
+   * `#sims-consolidated` before this parameter existed).
+   */
+  skip?: (el: Element) => boolean;
+}
+
 export interface DealEvidence {
   /** The text to store: the page's own badge text, or `DERIVED_DEAL_LABEL`. */
   value: string;
@@ -114,13 +124,18 @@ export interface DealEvidence {
  * → a container that exists but carries no label (derived).
  * A struck list price is handled by the caller, which owns the prices.
  */
-export function detectDealEvidence(root: Element): DealEvidence | undefined {
+export function detectDealEvidence(
+  root: Element,
+  options: EvidenceOptions = {},
+): DealEvidence | undefined {
+  const skip = options.skip ?? (() => false);
   let emptyContainerSeen = false;
 
   // Deal-specific containers: the markup itself says "deal", so the page's own
   // text is the answer even if the wording is unusual ("Deal", "Blitzangebot").
   for (const selector of DEAL_SPECIFIC_CONTAINER_SELECTORS) {
     for (const el of safeQuerySelectorAll(root, selector)) {
+      if (skip(el)) continue;
       const text = clean(el.textContent);
       if (!text) {
         emptyContainerSeen = true;
@@ -137,6 +152,7 @@ export function detectDealEvidence(root: Element): DealEvidence | undefined {
   // is a deal, because the same slot also carries "Amazon's Choice".
   for (const selector of AMBIGUOUS_CONTAINER_SELECTORS) {
     for (const el of safeQuerySelectorAll(root, selector)) {
+      if (skip(el)) continue;
       const text = clean(el.textContent);
       if (!text) {
         emptyContainerSeen = true;
@@ -155,6 +171,7 @@ export function detectDealEvidence(root: Element): DealEvidence | undefined {
   for (const el of safeQuerySelectorAll(root, 'span, div, p, b, strong')) {
     // Leaf-ish nodes only: a container's text includes its children's text.
     if (el.children.length > 2) continue;
+    if (skip(el)) continue;
     if (el.closest(NON_BADGE_REGIONS.join(', '))) continue;
     if (el.querySelector('a[href*="/dp/"]')) continue; // a title link is not a badge
     const text = clean(el.textContent);
