@@ -41,6 +41,8 @@ import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
 import { getEnrichCollectedSettings } from '../utils/enrich-collected-flag';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
+import { enqueueRatingBackfill, resetRatingBackfill } from './rating-backfill';
+import { fetchRatingPopover } from './rating-fetch';
 import {
   enqueueCollectionEnrichment,
   resetCollectionEnrichment,
@@ -307,6 +309,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     lastFinalizedSession = null;
     // SAD-379: a (re)started run begins with an empty enrichment budget.
     resetCollectionEnrichment(sessionKey);
+    // SAD-383: same per-run bookkeeping for the rating backfill.
+    resetRatingBackfill(sessionKey);
 
     activeCollection = {
       tabId,
@@ -434,6 +438,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       // into the next run. Already-queued work is left alone on purpose — those
       // rows exist and enriching them is still correct.
       resetCollectionEnrichment(active.sessionKey);
+      resetRatingBackfill(active.sessionKey);
     }
 
     activeCollection = null;
@@ -452,7 +457,11 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     // SAD-379: the same enrichment dep the save path receives (handler.ts:863).
     // Absent in tests and in any caller that does not opt in, which keeps the
     // collection pipeline byte-identical when the switch is off.
-    deps: { enrich?: typeof enrichSavedProduct } = {},
+    deps: {
+      enrich?: typeof enrichSavedProduct;
+      /** SAD-383: injectable rating fetch; production uses `fetchRatingPopover`. */
+      fetchRating?: typeof fetchRatingPopover;
+    } = {},
   ): Promise<void> => {
     let active = await hydrateActiveCollection();
     if (!active && lastFinalizedSession) {
@@ -587,6 +596,23 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
           limit: enrichCollected.limit,
         });
       }
+
+      // SAD-383: the fields a listing card may not print. Independent of the
+      // SAD-379 switch above — that one merges the whole product page, this one
+      // fills rating/reviewCount from a 3 KB review popover, and each has its own
+      // setting. Never awaited: progress and Stop Collection must not wait.
+      // Off → no queue, no request, no write (identical to before this ticket).
+      try {
+        const settings = await getSettings();
+        if (settings.backfillCollectedRatings) {
+          enqueueRatingBackfill(validProducts, active.sessionKey, {
+            ...(deps.fetchRating ? { fetchRating: deps.fetchRating } : {}),
+          });
+        }
+      } catch {
+        // A settings read failure must never fail a collection: the rows are
+        // already stored, and the backfill is an upgrade.
+      }
     }
 
     active.lastCollectedCount = Math.max(
@@ -697,6 +723,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       });
       // SAD-379: same per-run reset as STOP.
       resetCollectionEnrichment(sessionKey);
+      resetRatingBackfill(sessionKey);
       activeCollection = null;
       await clearActiveSession();
     } else if (active) {

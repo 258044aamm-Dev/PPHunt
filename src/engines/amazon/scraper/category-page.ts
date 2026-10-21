@@ -169,7 +169,10 @@ export function parseAmazonCategoryCard(
       reviewCount: reviewResult.tier,
       imageUrl: imageResult.tier,
     };
-    telemetry.recordCardExtraction(fieldTiers);
+    telemetry.recordCardExtraction(fieldTiers, {
+      ratingNode: ratingResult.nodeSeen,
+      reviewNode: reviewResult.nodeSeen,
+    });
 
     const url = resolveProductUrl(null, asin, pageUrl);
 

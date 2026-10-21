@@ -62,8 +62,26 @@ PPHunt is a Chrome Extension (Manifest V3) with five entrypoints:
 5. Background:
    a. Inserts/enriches products in IndexedDB (bulkAdd / bulkPut, with per-row fallback)
    b. Sends UPDATE_PROGRESS → Side Panel
+   c. Queues the batch for the two post-write stages below; neither is awaited
+      by the message path, so progress and Stop Collection never wait on a fetch
        │
-6. Side Panel:
+6. Post-write stage — optional detail enrichment (SAD-379, off by default)
+    a. enrichCollectedProducts, bounded by enrichCollectedLimit (25/50/all)
+    b. same enrichSavedProduct a save uses: product page → offscreen parse →
+       fill descriptive fields, fill-only price family, snapshot
+       │
+7. Post-write stage — rating backfill (SAD-383, on by default)
+    a. For each product whose row has a null rating or reviewCount and whose card
+       printed neither: fetch the ACR popover for that ASIN (~3 KB),
+       credentials 'omit', one attempt, shared circuit breaker
+    b. offscreen parses stars + count; a payload of 0.0/0 is treated as "no
+       reviews" and discarded rather than written
+    c. backfillProductRating writes those two columns only — fill-only, never
+       overwrites a value the card printed, one fetch per ASIN per run
+    d. a failed fetch/parse/write is contained to that product; a `skipped`
+       outcome (breaker open) drains the rest of the run
+       │
+8. Side Panel:
    a. useLiveQuery detects new rows in IndexedDB
    b. Table re-renders with new products
    c. Counter and progress bar update
@@ -99,6 +117,18 @@ One pipeline serves both entry points — the context menu and the per-card butt
    storage.session, drops jobs older than 15 minutes and resumes each job at
    most once; a second death reports enrichmentStatus: 'interrupted'
 ```
+
+### Why a collection needs a second source for ratings (SAD-383)
+
+The save and collection pipelines parse the same card, so a rating that is
+missing from a collected row and present on a saved row cannot be a parser
+difference. It is a markup difference: on some collection surfaces the card has
+no rating node at all. Measured 2026-10-21 — `/gp/bestsellers/kitchen`: 30 cards,
+30 ratings; `/deals`: 8 faceouts, **0** rating markers. There is nothing for the
+card parser to read, so the pair is fetched after the write from Amazon's own
+average-customer-review popover, which serves the same numbers as the product
+page in ~3 KB instead of ~2.6 MB. Full evidence and the fixtures both stages are
+verified against: `docs/plans/SAD-383-evidence-2026-10-21.md`.
 
 Export is a separate, on-demand step: `EXPORT_SAVED_PRODUCT` (toast action or
 `quickSaveAutoDownload`) → `buildCollectionExport()` → offscreen builds

@@ -210,3 +210,44 @@ export async function deleteProducts(ids: number[]): Promise<void> {
   if (!ids || ids.length === 0) return;
   await db.products.bulkDelete(ids);
 }
+
+/**
+ * SAD-383: fill the two fields a listing card may not carry.
+ *
+ * Fill-only by design. If the card printed a rating, that is the value the user
+ * was looking at, and a background request must never overwrite it — the same
+ * rule `enrichStoredProductFields()` applies to every other nullable field.
+ *
+ * No snapshot is written: a collection does not create listing history
+ * (SAD-379 Q3), and a rating backfill is not a listing observation.
+ *
+ * Returns the field names that actually changed, so the caller can stay quiet
+ * when there is nothing to say.
+ */
+export async function backfillProductRating(
+  sessionKey: string,
+  asin: string,
+  values: { rating: number | null; reviewCount: number | null },
+): Promise<string[]> {
+  if (!sessionKey || !asin) return [];
+
+  const row = await db.products
+    .where('[sessionKey+asin]')
+    .equals([sessionKey, asin])
+    .first();
+  if (!row || row.id === undefined) return [];
+
+  const patch: Partial<Product> = {};
+  if (row.rating == null && values.rating != null) {
+    patch.rating = values.rating;
+  }
+  if (row.reviewCount == null && values.reviewCount != null) {
+    patch.reviewCount = values.reviewCount;
+  }
+
+  const changed = Object.keys(patch);
+  if (changed.length === 0) return [];
+
+  await db.products.update(row.id, patch);
+  return changed;
+}
