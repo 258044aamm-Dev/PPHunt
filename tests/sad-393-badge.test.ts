@@ -16,7 +16,10 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractCardBadge } from '@/engines/amazon/scraper/field-parsers';
-import { parseAmazonSearchResults } from '@/engines/amazon/scraper/search-results';
+import {
+  parseAmazonSearchCard,
+  parseAmazonSearchResults,
+} from '@/engines/amazon/scraper/search-results';
 import { parseAmazonCategoryCard } from '@/engines/amazon/scraper/category-page';
 import { extractProductFromCard } from '@/engines/amazon/content/save-product';
 
@@ -120,5 +123,58 @@ describe('extractCardBadge regressions (synthetic isolation)', () => {
     const card = cardWith(`
       <span class="rio-badge-label"><span>Climate Pledge Friendly</span></span>`);
     expect(extractCardBadge(card)).toBeUndefined();
+  });
+});
+
+describe('SAD-393 step 2: badge is visible to card diagnostics', () => {
+  const reportFor = (cardSufficientHtml: string) => {
+    const d = doc(cardSufficientHtml);
+    const card = d.querySelector('[data-asin]')!;
+    document.body.replaceChildren(...Array.from(d.body.childNodes));
+    const liveCard = document.querySelector('[data-asin]')!;
+    const sink = {
+      report: undefined as import('@/engines/amazon/scraper/extraction-diagnostics').ExtractionDiagnosticsReport | undefined,
+      accept(r: import('@/engines/amazon/scraper/extraction-diagnostics').ExtractionDiagnosticsReport) {
+        sink.report ??= r;
+      },
+    };
+    const product = parseAmazonSearchCard(liveCard, SEARCH_URL, { diagnosticsSink: sink });
+    expect(product).not.toBeNull();
+    return sink.report!;
+  };
+
+  const card = (extra: string) => `
+    <div data-component-type="s-search-result" data-asin="B0DIAG393A">
+      <h2><a href="/dp/B0DIAG393A"><span>Diag Widget</span></a></h2>
+      ${extra}
+    </div>`;
+
+  it('rio Best Seller card: badge EXTRACTED and the card report carries 25 fields', () => {
+    const report = reportFor(fixture('search-card-rio-bestseller-deal.real.html'));
+    expect(report.asin).toBe('B0725WFLMB');
+    expect(report.fields).toHaveLength(25);
+    const entry = report.fields.find((f) => f.field === 'badge');
+    expect(entry).toMatchObject({ status: 'EXTRACTED' });
+  });
+
+  it('no badge node at all: MISSING with a reason (honest absence)', () => {
+    const report = reportFor(card(''));
+    const entry = report.fields.find((f) => f.field === 'badge');
+    expect(entry).toMatchObject({ status: 'MISSING' });
+    expect(entry!.reason).toContain('no status badge present');
+  });
+
+  it('badge node with unknown text: PARSE_FAILED — a reskin is visible, not silent', () => {
+    const report = reportFor(card('<span class="rio-badge-label"><span>Top Rated Pick</span></span>'));
+    const entry = report.fields.find((f) => f.field === 'badge');
+    expect(entry).toMatchObject({ status: 'PARSE_FAILED' });
+  });
+
+  it('a deal-only card is MISSING for badge (the deal subtree is not badge evidence)', () => {
+    const report = reportFor(
+      card('<span class="a-badge" data-a-badge-type="deal"><span class="a-badge-label-inner">Limited time deal</span></span>'),
+    );
+    const entry = report.fields.find((f) => f.field === 'badge');
+    expect(entry).toMatchObject({ status: 'MISSING' });
   });
 });

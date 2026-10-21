@@ -10,7 +10,7 @@ import {
   discoverStructuralProductCards,
   dropNestedCards,
   extractCardAsinWithTier,
-  extractCardBadge,
+  extractCardBadgeResult,
   extractCardDeliveryAndAvailability,
   extractCardImageWithTier,
   extractCardIsPrime,
@@ -29,7 +29,10 @@ import {
   createFieldDiagnosticsCollector,
   type ExtractionDiagnosticsSink,
 } from './extraction-diagnostics';
-import { recordCardDiagnostics } from './card-diagnostics';
+import {
+  CARD_DIAGNOSTIC_FIELDS,
+  recordCardDiagnostics,
+} from './card-diagnostics';
 import {
   AmazonParseCache,
   defaultAmazonParseCache,
@@ -152,7 +155,8 @@ export function parseAmazonCategoryCard(
     const imageResult = extractCardImageWithTier(card);
     const bestSellersRank = extractCategoryCardBsr(card, options.categoryName);
     const pastMonthSales = extractCardPastMonthSales(card);
-    const badge = extractCardBadge(card);
+    const badgeResult = extractCardBadgeResult(card);
+    const badge = badgeResult.badge;
     const { delivery, availability } = extractCardDeliveryAndAvailability(card);
     const seller = extractCardSeller(card);
     const isPrime = extractCardIsPrime(card, delivery);
@@ -233,6 +237,7 @@ export function parseAmazonCategoryCard(
         title: titleResult,
         brand,
         pricing,
+        badge: { value: badge, nodeSeen: badgeResult.nodeSeen },
         rating: ratingResult,
         reviewCount: reviewResult,
         image: imageResult,
@@ -246,7 +251,7 @@ export function parseAmazonCategoryCard(
         url,
       });
       applyValidationResults(diagnostics, candidate, normalized);
-      options.diagnosticsSink!.accept(diagnostics.build());
+      options.diagnosticsSink!.accept(diagnostics.build(CARD_DIAGNOSTIC_FIELDS));
     }
     return normalized;
   } catch (err) {

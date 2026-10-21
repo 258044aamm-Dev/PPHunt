@@ -1598,7 +1598,19 @@ export function extractCardPastMonthSales(card: Element): string | undefined {
 const STATUS_BADGE_PATTERN =
   /best seller|amazon's choice|overall pick|popular|new release|most wished/i;
 
-export function extractCardBadge(card: Element): string | undefined {
+export interface CardBadgeResult {
+  badge?: string;
+  /**
+   * SAD-393: a non-deal badge candidate with readable text existed but was
+   * refused by the status-badge pattern. Diagnostics only — it is what turns
+   * "Amazon renamed the badge" into a visible PARSE_FAILED instead of a
+   * silent, permanent MISSING (the SAD-383 `nodeSeen` precedent).
+   */
+  nodeSeen: boolean;
+}
+
+export function extractCardBadgeResult(card: Element): CardBadgeResult {
+  let nodeSeen = false;
   for (const selector of AMAZON_SELECTORS.cardFields.statusBadge) {
     // SAD-393: every match, not just the first. `.a-badge-label-inner` is
     // shared with the deal badge, so a first-match read let a deal node end
@@ -1610,14 +1622,20 @@ export function extractCardBadge(card: Element): string | undefined {
       // other direction.
       if (el.closest('[data-a-badge-type="deal"]')) continue;
       const text = normalizeWhitespace(el?.textContent);
+      if (!text) continue;
       // Amazon prints both apostrophes (U+0027 and U+2019); folding is for
       // the comparison only, the page's original text is what is stored.
-      if (text && STATUS_BADGE_PATTERN.test(text.replace(/\u2019/g, "'"))) {
-        return text;
+      if (STATUS_BADGE_PATTERN.test(text.replace(/\u2019/g, "'"))) {
+        return { badge: text, nodeSeen: true };
       }
+      nodeSeen = true;
     }
   }
-  return undefined;
+  return { nodeSeen };
+}
+
+export function extractCardBadge(card: Element): string | undefined {
+  return extractCardBadgeResult(card).badge;
 }
 
 export function extractCardDeliveryAndAvailability(card: Element): {
