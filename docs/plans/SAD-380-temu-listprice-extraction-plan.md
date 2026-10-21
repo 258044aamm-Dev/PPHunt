@@ -627,9 +627,36 @@ suite stays green).
 
 ## 14. Implementation record
 
-*(Empty in plan-only mode. Steps 1–5 append: capture artifact links, G0 branch verdict per
-surface/locale, G1 definition as locked, commit SHAs, parity/verify outputs, live-validation
-table — following the SAD-360/SAD-378 record format.)*
+### Step 0 — plan (2026-10-21)
+
+* Branch `feat/temu-engine` fast-forwarded to `fbab2bd`; plan committed as `08cdc76` and pushed.
+* SAD-380 moved Todo → **In Progress** with a tracking comment (locked decisions, non-regression
+  contract).
+
+### Step 1 — live capture (2026-10-21): G0 partial, G1 dropped
+
+Full record: [`SAD-380-step1-capture-2026-10-21.md`](./SAD-380-step1-capture-2026-10-21.md) +
+[`sad-380-live-2026-10-21.json`](./sad-380-live-2026-10-21.json). Headlines (all measured):
+
+* Static HTML is a JS shell on search/category/PDP; the en i18n store contains the a11y label
+  **"Original price {0}"** and defines the **"strikethrough price"** as MSRP/merchant/reference
+  price. No SSR product payload (H3: no `marketPrice`/`listPrice` keys found — no structured
+  fallback will be built).
+* Unauthenticated headless renders of search/PDP/category/channel/CA-category all redirect to
+  `/login.html`; later attempts hit `/bgn_verification.html` ("Security verification", recorded,
+  not bypassed). **One** US home-feed render succeeded: 50 cards, `[data-type="price"]` ×50 with
+  duplicated selling text (`"$27.48$27.48"`), `[data-type="priceText"]` ×1 carrying `"Last day"`,
+  `del`/`s` ×0. On such cards the current candidate pool is empty/unparseable ⇒ `listPrice: null`
+  (§7 branch 1/2) — the card-side mechanism, consistent with the always-null symptom (D1). The
+  owner's own evidence places the failure live on `temu.com/ca` category pages.
+* **G1:** no third distinct price observed → per the owner's locked fallback, **`discountPrice`
+  is dropped** (no schema/UI/export change; §10 does not execute). Reopen only on owner evidence.
+* **Remaining G0 closure** (authenticated search/category/PDP node shapes) is assigned to the
+  owner capture in the Step-1 summary (service-worker diagnostics + in-page probe). Steps 2–3
+  proceed on the established basis: F1–F5/F7–F9 fixes + the scoped line-through fallback
+  (Temu's own "strikethrough price" presentation), all hash-free and fixture-proven. D4 stands
+  (no range counterexample could be observed through the walls; range PDPs go on the owner
+  validation checklist in Step 5).
 
 ---
 
