@@ -35,9 +35,17 @@ export const TEMU_SELECTORS = {
     sellingPrice:
       '[data-type="price"] [class*="srOnly"], [data-type="price"][aria-label], [data-type="price"]',
 
-    /** Reference / original struck-through price block */
+    /**
+     * Reference / original struck-through price block.
+     * SAD-380: aria vocabulary unified with the parsers (Original/Regular/
+     * List/Was). Note the step-1 live capture also showed `priceText`
+     * carrying promo text on feed cards — candidates from this selector are
+     * always validated (currency token + strictly above the selling price)
+     * in `extractTemuPricing`, which also has aria-scan and struck-leaf
+     * fallbacks; this selector alone never assigns a value.
+     */
     listPrice:
-      '[data-type="priceText"], [aria-label*="Original price" i], [aria-label*="Regular price" i], del, s',
+      '[data-type="priceText"], [aria-label*="Original price" i], [aria-label*="Regular price" i], [aria-label*="List price" i], [aria-label*="Was price" i], del, s',
 
     /** Discount percentage badge (`[data-type="discount"]` e.g. `-68%`) */
     discountPercentage:
@@ -100,5 +108,24 @@ export const TEMU_SELECTORS = {
 
     /** Breadcrumb navigation links */
     breadcrumb: 'nav[aria-label*="breadcrumb" i] a, ol li a[href*="-o"]',
+
+    /**
+     * SAD-381: product-details section. `GoodsDetailV2` emits this id
+     * unconditionally on a PDP (verified in Temu's own goods bundle).
+     */
+    detailsSection: '#goodsDetail',
+
+    /**
+     * SAD-381: Temu's stable module wrapper. Both the `Highlight` module and
+     * `DescriptionV2` render `data-id="module"`; the hashed class names beside
+     * it rotate per deploy and are never used.
+     */
+    moduleBlock: '[data-id="module"]',
+
+    /** SAD-381: `GoodsPropertyTable` rows (`<tr><th>key</th><td>value</td></tr>`). */
+    propertyTable: 'table tr',
+
+    /** SAD-381: the right column that carries the `Description` module. */
+    descriptionRegion: '#rightContent',
   },
 } as const;

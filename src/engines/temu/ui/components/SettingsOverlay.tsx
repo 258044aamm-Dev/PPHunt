@@ -394,6 +394,12 @@ export function TemuSettingsOverlay() {
                 checked={settings.soundNotifications}
                 onChange={(v) => updateSettings({ soundNotifications: v })}
               />
+              <ToggleSetting
+                label="Expand product details"
+                description="Click 'See all details' before extracting features and description"
+                checked={settings.expandProductDetails}
+                onChange={(v) => updateSettings({ expandProductDetails: v })}
+              />
             </div>
           </SettingsSection>
 

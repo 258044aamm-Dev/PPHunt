@@ -88,6 +88,8 @@ export const TemuCollectProductsMessageSchema = z.object({
     sessionId: z.string().uuid(),
     scroll: TemuScrollSettingsPayloadSchema.optional(),
     duplicateDetection: z.boolean().optional(),
+    /** SAD-381: expand collapsed detail rows before parsing (optional, default false). */
+    expandDetails: z.boolean().optional(),
     existingGoodsIds: z
       .array(z.string().regex(/^\d{6,22}$/))
       .max(2000)

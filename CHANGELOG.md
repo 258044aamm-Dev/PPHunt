@@ -5,6 +5,89 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Temu features & description extraction (SAD-381)
+
+Temu products were storing an empty **Features** list and a **Description** that
+was either missing or the page's SEO boilerplate. Code audit showed why:
+`features` scanned `li, tr` inside one of three containers, while Temu renders
+Highlights and property rows as `div`s — so nothing matched, and the one `<tr>`
+that did was stored as `th`+`td` concatenated with no separator. `description`
+fell back to `meta[name="description"]`, which on Temu is a template
+(" deals on … on Temu. Shop on Temu to start saving."), not product text.
+
+### Added
+- **`features` come from the product-details section.** Highlights rows
+  (`data-id="module"`), `Key: value` property rows and `GoodsPropertyTable`
+  rows are read from `#goodsDetail`, de-duplicated against a denylist of keys
+  that already have dedicated fields (seller, shipping, price, …), and capped
+  at 15. The right column's Highlights module is used only when the details
+  section yields nothing.
+- **`description` comes from the page's own "Description" module**, matched by
+  its localised title (from `window.__InitialI18nStore__`, read out of the
+  inline script text) and, failing that, by DescriptionV2's structural
+  signature. Rows are joined with ` · `.
+- **Field-level diagnostics** for both fields: `EXTRACTED` with the source
+  selector and a static reason, `PARTIAL` when a collapse control is still
+  present (evaluated **before** `EXTRACTED`), `MISSING` when nothing rendered,
+  `PARSE_FAILED` when every candidate was filtered.
+- **Opt-in "Expand product details" setting** (BEHAVIOR, default **off**): when
+  enabled, "See all details" is clicked on a PDP before the first parse so
+  collapsed rows are included. Off is byte-identical to the previous page
+  interaction — nothing is ever clicked.
+- `tests/temu-pdp-captures.test.ts` replays operator captures from
+  `tests/fixtures/temu-live/` through the real parser and enforces the
+  no-fabrication rules; `docs/plans/SAD-381-step4-verification.md` records the
+  before/after measurement and the open live-page checklist.
+
+### Changed
+- `meta[name="description"]` is no longer a source for Temu `description`, and
+  the old `li, tr` feature scan is gone. Both were stored values that were not
+  product data.
+- A page whose details section is collapsed now reports `PARTIAL` rather than
+  claiming a complete list.
+
+### Unchanged
+- JSON-LD keeps its existing precedence for `description`; every other Temu
+  field, Amazon extraction, exports, settings shape (one added key) and the
+  database schema are untouched. `src/engines/amazon` and `src/lib` diffs are
+  empty; the full suite is green.
+
+## [Unreleased] — Temu list-price extraction (SAD-380)
+
+Temu products were storing a blank **List Price** even for discounted items.
+A live capture (see `docs/plans/SAD-380-step1-capture-2026-10-21.md`) showed the
+extractor's assumed struck-price hooks carrying no price on rendered cards
+(`[data-type="priceText"]` held promo text, no `del`/`s`), and code audit found
+the PDP's `#rightContent` fallback selector was never wired, a candidate equal
+to — or below — the selling price could win or survive validation, and
+dual-price accessible strings depended on which price was printed first.
+
+### Fixed
+- **Temu `listPrice` is chosen from a validated candidate pool.** Semantic
+  selector matches, reference-price `aria-label`s, the `.srOnly` labelled
+  segment, and — only inside the existing price scope — a struck
+  (line-through, Temu's "strikethrough price") currency leaf are collected,
+  de-duplicated, filtered (currency token required; strictly above the
+  selling price; unit-price/discount scopes excluded) and ranked. At most one
+  value is ever assigned; nothing is calculated.
+- **PDPs search beyond `#goods_price`.** If the price container has no list
+  price, one extra pass over `#rightContent` supplies only `listPrice`;
+  selling price and discount results are unchanged.
+- **Dual-price strings are order-safe.** "original price is: $X, current price
+  is: $Y" (either order) now assigns each amount to its own field, and
+  diagnostics report the source that actually supplied the value, with precise
+  rejection reasons (`none above selling price`, `only in excluded nodes`).
+
+### Changed
+- A `listPrice` at or below the selling price is now stored as blank (it was
+  previously kept whenever it merely differed) — such a value is a different
+  price misassigned, matching the Amazon engine's rule. Previously stored
+  blanks heal automatically on re-collection; no migration is performed.
+- No new field was added: live capture showed two displayed prices only, so
+  the proposed `discountPrice` field was dropped rather than fabricated
+  (SAD-380 gate G1). Amazon extraction, all other Temu fields, exports,
+  settings and database shape are unchanged (verified by fixture parity and
+  an empty Amazon diff).
 ## [Unreleased] — Deal and discount extraction (SAD-386)
 
 The *Discount* and *Deal* columns were the two least reliable fields in the

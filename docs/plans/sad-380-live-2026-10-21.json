@@ -1,0 +1,64 @@
+{
+  "ticket": "SAD-380",
+  "title": "Temu listPrice — sandbox live capture (Step 1)",
+  "measuredAt": "2026-10-21",
+  "codeUnderTest": "feat/temu-engine @ 08cdc76 (unmodified extractor)",
+  "methods": [
+    "curl static HTML (US search, CA category, US PDP) + jsdom selector probe",
+    "Playwright Chromium 140 headless renders (fresh unauthenticated contexts)",
+    "Workspace fetch of temu.com search URL"
+  ],
+  "staticHtml": {
+    "result": "JS shell only on all three URLs: 0 anchors, 0 imgs, 0 goodContainer, 0 [data-type=price]/[priceText], 0 del/s, no JSON-LD.",
+    "largestInlineScript": "window.__InitialI18nStore__ (i18n labels only)",
+    "i18nEvidence": [
+      "a11y string: \"Original price {0}\" (en store, key originalPrice) — appears in search and goods bundles",
+      "linePriceExplain: \"Items on Temu.com may display a strikethrough price, which is the manufacturer's suggested retail price ... or the price provided by the merchandise partners ... a reference price for price comparison purposes.\"",
+      "minPrice/maxPrice hits were only search-filter input labels (minPriceInput/maxPriceInput), not product data",
+      "marketPrice/listPrice keys: 0 occurrences; no SSR product payload in static HTML"
+    ]
+  },
+  "headlessRenders": {
+    "loginWall": [
+      "US search_result -> redirect to /login.html (login_scene=2)",
+      "US PDP -g-601099769178067 -> redirect to /login.html",
+      "category /c/womens-dresses-o4-31.html -> login wall",
+      "channel/best-sellers.html -> login wall",
+      "CA /ca/category.html -> login wall"
+    ],
+    "successfulRender": {
+      "surface": "US home feed (https://www.temu.com/), first navigation of a fresh context, 2026-10-21",
+      "counts": {
+        "goodContainer": 50,
+        "dataTypePrice": 50,
+        "dataTypePriceText": 1,
+        "del": 0,
+        "s": 0,
+        "goodsListContainers": 0,
+        "goodsLinks": 40
+      },
+      "priceNodeSamples": ["$27.48$27.48", "$17.01$17.01", "$9.52$9.52", "$22.89$22.89"],
+      "priceTextSample": [{"tag": "DIV", "dataType": "priceText", "aria": null, "text": "Last day"}],
+      "reading": "Selling price renders per card in [data-type=price] (value duplicated: accessible + visual text). [data-type=priceText] is NOT a per-card struck price in this render — its single occurrence carries promo text. No del/s anywhere. The current extractTemuPricing list-price candidate pool on such cards is therefore empty or unparseable => listPrice null (plan section 7, branch 1/2), consistent with the owner-reported always-null symptom on cards.",
+      "caveat": "Whether these feed cards visibly showed a struck price to a human, and whether search/category/PDP use a different rendering, could not be observed: every subsequent render was login- or verification-walled (final attempt: /bgn_verification.html \"Security verification\", not bypassed per product rules). The serialized HTML of the successful render was overwritten by a later login-page capture; the counts/samples above are from the live in-page probe of that render."
+    }
+  },
+  "ownerEvidence": {
+    "received": "Browser page-console paste, 2026-10-21 10:54 local",
+    "lines": [
+      "[PPHunt:Temu] Content script loaded on: https://www.temu.com/ca/category.html?opt_id=-13&opt_level=1&title=Featured&...",
+      "[PPHunt:Temu] Page type: category"
+    ],
+    "reading": "The failure is observed live on Temu Canada category pages with the extension active. The [PPHunt][Temu][Diagnostics] listPrice lines live in the service-worker console, not the page console; owner capture instructions are in the Step-1 summary doc."
+  },
+  "verdicts": {
+    "G0": "PARTIAL from sandbox. Card-side mechanism established for the one rendered surface (candidate pool empty/unparseable under the assumed contract). Search/category/PDP live node shapes still unobserved due to login/verification walls; closing them requires the owner capture (service-worker diagnostics lines + in-page probe) or an authenticated manual collection with the SAD-360 harness.",
+    "G1_discountPrice": "No third distinct price observed in any capture (each price node carried one value, duplicated). Per the owner's locked fallback (only-two-prices => drop), discountPrice is DROPPED for this ticket; reopen only if owner capture shows a distinct third displayed price.",
+    "implementationBasis": "Proceed with (a) code-provable fixes F1-F5/F7-F9 (PDP two-scope list-price search, >price rule, srOnly labelled-segment parsing, unified reference-price vocabulary incl. aria scan, candidate-pool instead of first-match, precise diagnostics) and (b) a presentation-semantic fallback inside the existing price scope: a currency-bearing struck (line-through) leaf strictly above the selling price — justified by Temu's own measured terminology ('strikethrough price' / 'Original price {0}'), hash-free, impostor-filtered. No new site-specific selector is invented."
+  },
+  "limitations": [
+    "No authenticated Temu session in sandbox; search/category/PDP could not be rendered.",
+    "One successful render only (home feed); feed cards may differ from search/category cards.",
+    "GBP/EUR locale rendering not captured; CA was login/verification-walled from sandbox."
+  ]
+}
