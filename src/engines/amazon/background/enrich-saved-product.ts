@@ -3,7 +3,7 @@ import { appendSnapshot, snapshotFromProduct } from '../db/quick-save';
 import { formatExtractionDiagnosticsLog } from '../scraper/extraction-diagnostics';
 import type { Product, ScrapedProduct } from '../types';
 import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
-import { fetchPdpHtml, type FetchPdpOptions } from './enrichment-fetch';
+import { fetchPdpHtml, type FetchPdpOptions, type EnrichmentSkipReason } from './enrichment-fetch';
 import { parsePdpHtmlViaOffscreen } from './offscreen';
 
 /**
@@ -102,6 +102,7 @@ export interface EnrichSavedProductResult {
   /** Set only when `status` is `failed`. */
   errorCode?: EnrichmentErrorCode;
   currencyMismatch: boolean;
+  skipReason?: EnrichmentSkipReason;
 }
 
 export interface EnrichSavedProductDeps {
@@ -376,6 +377,14 @@ export async function enrichSavedProduct(
 
   await acquireSlot(max);
   try {
+    if (input.scope === 'brand-and-rank') {
+      const current = await db.products.where('[sessionKey+asin]')
+        .equals([input.sessionKey, input.asin]).first();
+      if (!current) return finish(stop('failed', 'row-missing', 'DB_WRITE_FAILED'));
+      if (!isDetailValueMissing(current.brand) && !isDetailValueMissing(current.bestSellersRank)) {
+        return finish({ status: 'complete', fieldsChanged: [], snapshotCreated: false, currencyMismatch: false });
+      }
+    }
     const fetched = await fetchPdpHtml(input.productUrl, input.asin, {
       jobId: input.jobId,
       ...deps.fetchOptions,
@@ -384,7 +393,7 @@ export async function enrichSavedProduct(
     if (fetched.status === 'skipped') {
       // A guard fired (no permission, not Amazon, breaker open): nothing was
       // attempted, so this is a skip rather than a failure.
-      return finish(stop('skipped', `skipped:${fetched.reason}`), {
+      return finish({ ...stop('skipped', `skipped:${fetched.reason}`), skipReason: fetched.reason }, {
         message: fetched.message,
       });
     }

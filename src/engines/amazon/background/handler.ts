@@ -43,8 +43,7 @@ import { getEnrichCollectedSettings } from '../utils/enrich-collected-flag';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
 import {
-  enqueueCollectionEnrichment,
-  resetCollectionEnrichment,
+  scheduleCollectionEnrichment,
 } from './enrichment-pump';
 import { handleExportSavedProduct, maybeAutoExportOnSave } from './export-service';
 import { saveJobStore } from './job-store';
@@ -307,7 +306,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     finalizedSessionKeys.delete(sessionKey);
     lastFinalizedSession = null;
     // SAD-379: a (re)started run begins with an empty enrichment budget.
-    resetCollectionEnrichment(sessionKey);
+    // Preserve budget and dedupe if this session is resumed.
 
     activeCollection = {
       tabId,
@@ -587,7 +586,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
         const batchAsins = new Set(validProducts.map(product => product.asin));
         const stored = (await getProductsBySession(active.sessionKey))
           .filter(product => batchAsins.has(product.asin));
-        enqueueCollectionEnrichment(stored, active.sessionKey, {
+        await scheduleCollectionEnrichment(stored, active.sessionKey, {
           enrich: deps.enrich,
           limit: enrichCollected.enabled ? enrichCollected.limit : 0,
           requiredFields: true,

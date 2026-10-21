@@ -158,7 +158,7 @@ describe('SAD-379: enrichment pump — the per-run cap', () => {
 });
 
 describe('SAD-379: enrichment pump — failure is contained', () => {
-  it('drains the queue on a `skipped` outcome (breaker open / no permission)', async () => {
+  it('does not discard unrelated jobs when one request is skipped', async () => {
     const enrich = vi.fn(async (): Promise<EnrichSavedProductResult> => ({
       status: 'skipped',
       fieldsChanged: [],
@@ -173,7 +173,7 @@ describe('SAD-379: enrichment pump — failure is contained', () => {
     );
     await whenCollectionEnrichmentIdle();
 
-    expect(enrich).toHaveBeenCalledTimes(1);
+    expect(enrich).toHaveBeenCalledTimes(3);
   });
 
   it('a throwing enrichment never aborts the run — the next product still goes', async () => {
