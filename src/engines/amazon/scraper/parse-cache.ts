@@ -1,5 +1,6 @@
 import type { ScrapedAmazonProduct } from '../types';
 import { DEAL_LABEL_PATTERN } from './deal-evidence';
+import { readAmazonCoupon, readAmazonPastMonthSales } from './field-parsers';
 
 /**
  * WeakMap-backed DOM Element parse cache (`AmazonParseCache`).
@@ -23,12 +24,14 @@ import { DEAL_LABEL_PATTERN } from './deal-evidence';
  * row is re-read only when its text now carries a `%` or a deal label that it
  * did not carry before.
  *
- * Cost is unchanged on the hot paths:
- * - a card that carries both rating values is settled and never re-parsed
- *   unless price-family evidence appears;
- * - an unchanged rating-less card is re-parsed zero times after the first pass;
- * - the signature is two DOM reads (descendant count + text length), taken only
- *   for cards that are not settled.
+ * SAD-389: early cache returns have an independent missing-target lane. Only
+ * coupon/monthly-sales readers may run there, gated by cheap textual evidence;
+ * they cannot re-price a settled card or rewrite its ratings/deals. This lane
+ * does not use the count/length signature: equal-length text changes and an
+ * explicit hidden/class/style reveal must also be noticed. The existing full-
+ * parser triggers for reviews/pricing below are deliberately unchanged.
+ * Unchanged no-signal cards still perform zero extra full parses, with no TTL,
+ * timers or observers owned by the cache.
  */
 interface AmazonParseCacheEntry {
   product: ScrapedAmazonProduct;
@@ -102,24 +105,46 @@ export class AmazonParseCache {
     }
   }
 
+  /** Fill only missing targets on a path that previously returned a frozen card. */
+  private recoverMissingTargets(element: Element, entry: AmazonParseCacheEntry): ScrapedAmazonProduct {
+    const product = entry.product;
+    if (product.pastMonthSales && product.coupon) return product;
+    const text = element.textContent ?? '';
+    const pastMonthSales = !product.pastMonthSales && /bought/i.test(text)
+      ? readAmazonPastMonthSales(element, product.asin).value
+      : undefined;
+    const coupon = !product.coupon && /coupon|voucher|rabatt|remise|\b(?:save|apply|clip|get|you\s+pay)\b/i.test(text)
+      ? readAmazonCoupon(element, product.asin).value
+      : undefined;
+    if (pastMonthSales === undefined && coupon === undefined) return product;
+    // Do not mutate the object a previous collection batch may still hold:
+    // dedup must observe a real change and emit its existing updated batch.
+    entry.product = {
+      ...product,
+      ...(pastMonthSales !== undefined ? { pastMonthSales } : {}),
+      ...(coupon !== undefined ? { coupon } : {}),
+    };
+    return entry.product;
+  }
+
   public getOrParse(
     element: Element,
     parser: (el: Element) => ScrapedAmazonProduct | null,
   ): ScrapedAmazonProduct | null {
     const entry = this.cache.get(element);
     if (entry) {
-      // SAD-386: the price family is present — nothing left to gain.
+      // SAD-386: do not reopen the settled price family.
       if (hasBadgeFamilyFields(entry.product)) {
-        return entry.product;
+        return this.recoverMissingTargets(element, entry);
       }
       // SAD-383: an unchanged card is never re-parsed.
       if (this.signatureOf(element) === entry.signature) {
-        return entry.product;
+        return this.recoverMissingTargets(element, entry);
       }
       // SAD-383's guarantee: a card that already carries both rating values is
       // only re-read when the text now shows a badge or a percentage.
       if (hasRatingFields(entry.product) && !showsPriceFamilyEvidence(element)) {
-        return entry.product;
+        return this.recoverMissingTargets(element, entry);
       }
     }
 
