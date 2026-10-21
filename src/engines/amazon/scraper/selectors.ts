@@ -22,9 +22,14 @@ export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.0.0';
  * The pattern is anchored on the whole label so a neighbouring row cannot match
  * by containing the word, and a match alone is never enough to store a value:
  * `normalizeWarrantyDescription` must also find a duration in the cell.
+ *
+ * SAD-393: Amazon Devices PDPs (Kindle/Echo/Fire TV — three live captures,
+ * `docs/plans/SAD-393-fixtures/`) label the row `Warranty and Service`. The
+ * only change is `and|& + support` → `and|& + support|service`; the anchor
+ * and every previously accepted label are untouched.
  */
 export const AMAZON_WARRANTY_LABEL_PATTERN =
-  /^(?:product\s+|manufacturer(?:['\u2019]s)?\s+)?warranty(?:\s+(?:description|details?|policy|type|period|coverage|information|service|support|(?:&|and)\s+support))*\s*:?$/i;
+  /^(?:product\s+|manufacturer(?:['\u2019]s)?\s+)?warranty(?:\s+(?:description|details?|policy|type|period|coverage|information|service|support|(?:&|and)\s+(?:support|service)))*\s*:?$/i;
 
 /**
  * SAD-357: Priority-1 spec-row labels stating the item's own physical mass.
@@ -171,6 +176,11 @@ export const AMAZON_SELECTORS = {
       '#detailBulletsWrapper_feature_div',
       '#productOverview_feature_div',
       '#prodDetails',
+      // SAD-393: Amazon Devices PDPs keep their spec tables (incl. the
+      // `Warranty and Service` row) under `#tech` — live-proven on
+      // Kindle/Echo/Fire TV. Appended last: narrowest-first order and
+      // every existing priority are unchanged.
+      '#tech',
     ],
     twister: {
       inlineRows: 'div[id^="inline-twister-row-"]',
