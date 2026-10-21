@@ -16,7 +16,7 @@ import {
   extractCardIsPrime,
   extractCardIsSponsored,
   extractCardListingCategoryAndSection,
-  extractCardPastMonthSales,
+  readAmazonPastMonthSales,
   extractCardPricingAndDiscounts,
   extractCardRatingAndReviewsWithTier,
   extractCardSeller,
@@ -98,7 +98,8 @@ export function parseAmazonSearchCard(
     const { rating: ratingResult, reviewCount: reviewResult } =
       extractCardRatingAndReviewsWithTier(card);
     const imageResult = extractCardImageWithTier(card);
-    const pastMonthSales = extractCardPastMonthSales(card);
+    const salesResult = readAmazonPastMonthSales(card, asin);
+    const pastMonthSales = salesResult.value;
     const badge = extractCardBadge(card);
     const { delivery, availability } = extractCardDeliveryAndAvailability(card);
     const seller = extractCardSeller(card);
@@ -195,6 +196,7 @@ export function parseAmazonSearchCard(
         reviewCount: reviewResult,
         image: imageResult,
         pastMonthSales,
+        pastMonthSalesNodeSeen: salesResult.nodeSeen,
         delivery,
         availability,
         seller,

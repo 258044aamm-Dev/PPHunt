@@ -66,6 +66,8 @@ export interface CardPricingAndDiscounts {
   unparseableDiscountNode?: boolean;
   /** SAD-386 (diagnostics-only): the deal value came from evidence, not a printed badge. */
   dealBadgeDerived?: boolean;
+  /** SAD-389: an eligible coupon node existed but its offer text was rejected. */
+  unparseableCouponNode?: boolean;
 }
 
 const RATING_PATTERNS: readonly RegExp[] = [
@@ -929,7 +931,7 @@ export function scanDiscountNodes(
     if (!rawText || rawText.length > 24 || !rawText.includes('%')) continue;
     const label = `${el.className} ${el.id} ${el.getAttribute('aria-label') ?? ''}`;
     const looksLikeSavings = /saving|discount|percent|\boff\b/i.test(label);
-    const normalized = normalizeDiscountBadge(rawText, {
+    const normalized = isAmazonCouponRegion(el) ? undefined : normalizeDiscountBadge(rawText, {
       allowBare: looksLikeSavings,
     });
     if (normalized) return { value: normalized, nodeSeen };
@@ -1144,7 +1146,7 @@ export function extractCardPricingAndDiscounts(
       // already refuses coupon/currency text.
       const rawText = normalizeWhitespace(el?.textContent);
       if (!rawText || rawText.length > 32) continue;
-      const normalized = normalizeDiscountBadge(rawText);
+      const normalized = isAmazonCouponRegion(el) ? undefined : normalizeDiscountBadge(rawText);
       if (normalized) {
         discountPercentage = normalized;
         break;
@@ -1206,19 +1208,8 @@ export function extractCardPricingAndDiscounts(
     }
   }
 
-  // Coupon (`Save 15% with coupon`, `Save $20.00 with coupon`)
-  let coupon: string | undefined;
-  for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
-    const els = safeQuerySelectorAll(card, selector);
-    for (const el of els) {
-      const text = normalizeWhitespace(el?.textContent);
-      if (text && /coupon|voucher|rabatt|remise/i.test(text)) {
-        coupon = text.replace(/\s*Terms\s*$/i, '').trim();
-        break;
-      }
-    }
-    if (coupon !== undefined) break;
-  }
+  const couponResult = readAmazonCoupon(card);
+  const coupon = couponResult.value;
 
   const result: CardPricingAndDiscounts = {
     price,
@@ -1238,6 +1229,7 @@ export function extractCardPricingAndDiscounts(
     result.unparseableDiscountNode = true;
   }
   if (coupon !== undefined) result.coupon = coupon;
+  else if (couponResult.nodeSeen) result.unparseableCouponNode = true;
   // SAD-369 D9: only meaningful when no tier produced a price — otherwise the
   // observation is noise next to a successfully extracted value.
   if (price === null && unparseablePriceTier !== undefined) {
@@ -1577,17 +1569,158 @@ export function extractCardImageWithTier(
   return { value: null, tier: 'missing' };
 }
 
-export function extractCardPastMonthSales(card: Element): string | undefined {
-  const candidates = safeQuerySelectorAll(card, 'span, div');
-  for (const el of candidates) {
-    if (el.children.length > 1) continue;
-    const text = normalizeWhitespace(el.textContent);
-    const match = PAST_MONTH_SALES_REGEX.exec(text);
-    if (match?.[1]) {
-      return match[1].trim();
+/** Transient parser evidence only; never persisted on the product. */
+interface AmazonSignalResult {
+  value?: string;
+  nodeSeen: boolean;
+  selector?: string;
+}
+
+const SIGNAL_EXCLUDED = [
+  ...AMAZON_SELECTORS.detail.excludedSubtrees,
+  // A title, description or review quoting an offer is not a product signal.
+  'h1', 'h2', '#productTitle', '[data-cy="title-recipe"]',
+  '[id^="title-"]', '[class*="p13n-sc-css-line-clamp"]',
+  '#productDescription', '#feature-bullets', '#customerReviews',
+  '#reviewsMedley', '[data-hook="review"]', '.a-popover-preload',
+].join(',');
+const SIGNAL_HIDDEN = 'script, style, template, noscript, [hidden], .aok-hidden, .a-hidden';
+const COUPON_STRONG = '.s-coupon-unclipped, .couponLabelText, [id^="couponText"], [data-component-type="s-coupon-component"], #couponBadgeRegularVpc, #vpcButton';
+
+/** Semantic coupon text must not become a product discount when it omits "coupon". */
+export function isAmazonCouponRegion(el: Element): boolean {
+  return Boolean(el.closest(COUPON_STRONG) || el.querySelector(COUPON_STRONG));
+}
+
+/**
+ * A card is its own ownership boundary, including when it lives in a carousel.
+ * A Document is a PDP: every ancestor and every different-ASIN subtree matters.
+ * No layout reads: this also works in an offscreen DOMParser document. In
+ * particular aria-hidden alone is NOT proof of invisibility (Amazon uses it
+ * for visible text with a separate accessible equivalent).
+ */
+function signalScope(root: Element | Document, asin?: string) {
+  const owner = asin ?? (root.nodeType === 1 ? normalizeASIN((root as Element).getAttribute('data-asin')) : null);
+  const excluded = (el: Element): boolean => {
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      if (node.matches(SIGNAL_HIDDEN)) return true;
+      const style = (node as HTMLElement).style;
+      if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return true;
+      if (node !== root) {
+        if (node.matches(SIGNAL_EXCLUDED)) return true;
+        const nestedAsin = normalizeASIN(node.getAttribute('data-asin'));
+        if (nestedAsin && nestedAsin !== owner) return true;
+      }
+      if (node === root) break;
+    }
+    return false;
+  };
+  return excluded;
+}
+
+/** Bounded, non-mutating text walk. Exclusions apply to descendants too. */
+function cleanSignalText(el: Element, excluded: (el: Element) => boolean, coupon = false): string {
+  const parts: string[] = [];
+  let length = 0;
+  let visited = 0;
+  const visit = (node: Node): void => {
+    if (++visited > 128 || length > 512) return;
+    if (node.nodeType === 3) {
+      const text = node.nodeValue ?? '';
+      parts.push(text);
+      length += text.length;
+    } else if (node.nodeType === 1) {
+      const child = node as Element;
+      if (excluded(child)) return;
+      if (coupon && child.matches('a') && /^(?:shop items|terms(?: and conditions)?|details)$/i.test(normalizeWhitespace(child.textContent))) return;
+      for (const next of child.childNodes) {
+        visit(next);
+        if (visited > 128 || length > 512) break;
+      }
+    }
+  };
+  visit(el);
+  // Never return a truncated offer as though it were complete.
+  return visited > 128 || length > 512 ? '' : normalizeWhitespace(parts.join(' '));
+}
+
+function signalCandidates(root: Element | Document, selector: string): Element[] {
+  const found = safeQuerySelectorAll(root, selector);
+  return root.nodeType === 1 && (root as Element).matches(selector)
+    ? [root as Element, ...found]
+    : found;
+}
+
+/** Shared listing/PDP coupon reader; no coupon-to-price/discount conversion. */
+export function readAmazonCoupon(root: Element | Document, asin?: string): AmazonSignalResult {
+  const excluded = signalScope(root, asin);
+  const seen = new Set<Element>();
+  let rejectedSelector: string | undefined;
+  for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
+    for (const el of signalCandidates(root, selector)) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (excluded(el)) continue;
+      rejectedSelector ??= selector;
+      const text = cleanSignalText(el, excluded, true)
+        .replace(/\s*(?:shop items\s*(?:[|·]\s*)?)?terms(?: and conditions)?\s*$/i, '')
+        .replace(/\s*(?:shop items|[|·])\s*$/i, '')
+        .trim();
+      if (!text || /\b(?:no coupons?|expired|unavailable)\b/i.test(text)) continue;
+      const hasKeyword = /coupon|voucher|rabatt|remise/i.test(text);
+      const hasOffer = /\d|\bapply\b|\bclip\b/i.test(text);
+      const provenOffer = el.matches(COUPON_STRONG) && /(?:save|apply|get|you pay)\s+(?:[$£€]\s*\d|\d+(?:[.,]\d+)?\s*%)/i.test(text);
+      if ((hasKeyword && hasOffer) || provenOffer) {
+        return { value: text, nodeSeen: true, selector };
+      }
     }
   }
-  return undefined;
+  return { nodeSeen: rejectedSelector !== undefined, selector: rejectedSelector };
+}
+
+/**
+ * Semantic markers first, then short owned elements of a card/main PDP scope.
+ * Never scan the entire PDP body or concatenate an excluded recommendation.
+ */
+export function readAmazonPastMonthSales(root: Element | Document, asin?: string): AmazonSignalResult {
+  const excluded = signalScope(root, asin);
+  const seen = new Set<Element>();
+  let rejectedSelector: string | undefined;
+  const read = (el: Element, selector: string, explicit = false): AmazonSignalResult | undefined => {
+    if (seen.has(el)) return;
+    seen.add(el);
+    // Cheap rejection before the bounded text walk, important on large lists.
+    const raw = el.textContent ?? '';
+    if (!explicit && (!/bought/i.test(raw) || raw.length > 512)) return;
+    if (excluded(el)) return;
+    const text = cleanSignalText(el, excluded);
+    if (!explicit && !/bought\s+in\s+past\s+month/i.test(text)) return;
+    rejectedSelector ??= selector;
+    const value = PAST_MONTH_SALES_REGEX.exec(text)?.[1]?.trim();
+    if (value) return { value, nodeSeen: true, selector };
+  };
+  for (const selector of AMAZON_SELECTORS.cardFields.boughtInPastMonth) {
+    for (const el of signalCandidates(root, selector)) {
+      const result = read(el, selector, el.id === 'social-proofing-faceout-title-tk_bought');
+      if (result) return result;
+    }
+  }
+  const scopes = root.nodeType === 1
+    ? [root as Element]
+    : safeQuerySelectorAll(root, AMAZON_SELECTORS.detail.rootContainers.join(','));
+  for (const scope of scopes) {
+    if (excluded(scope)) continue;
+    for (const el of signalCandidates(scope, 'span, div, p, b, strong')) {
+      const result = read(el, '(owned short monthly-sales text)');
+      if (result) return result;
+    }
+  }
+  return { nodeSeen: rejectedSelector !== undefined, selector: rejectedSelector };
+}
+
+/** Compatibility string API for existing callers. */
+export function extractCardPastMonthSales(card: Element): string | undefined {
+  return readAmazonPastMonthSales(card).value;
 }
 
 export function extractCardBadge(card: Element): string | undefined {

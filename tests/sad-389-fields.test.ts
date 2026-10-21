@@ -9,7 +9,6 @@ import {
 } from '@/engines/amazon/scraper/extraction-diagnostics';
 import { cardHtml, documentOf, fixture, pdpHtml, PDP_URL, SEARCH_URL, ASIN } from './fixtures/amazon-sad-389/helpers';
 
-// it.fails pins a verified baseline defect; each is promoted to it when fixed.
 describe('SAD-389: real captured positive controls', () => {
   it('preserves the real search sales and coupon strings', () => {
     const sales = documentOf(fixture('search-sales.real.html')).body.firstElementChild!;
@@ -24,7 +23,7 @@ describe('SAD-389: real captured positive controls', () => {
     expect(p?.price).toBe(59.99);
   });
 
-  it.fails('reads the real coupon label without CSS/navigation, leaving the price unchanged', () => {
+  it('reads the real coupon label without CSS/navigation, leaving the price unchanged', () => {
     const html = pdpHtml(`<div id="apex_desktop">${fixture('pdp-coupon.real.html')}</div>`);
     const d = documentOf(html);
     const original = d.documentElement.outerHTML;
@@ -50,29 +49,59 @@ describe.each([
       .toMatchObject({ pastMonthSales: '2.5K+ bought in past month', coupon: 'Save $5 with coupon', price: 59.99, rating: 4.5, reviewCount: 17 });
   });
 
-  it.fails('reads a sales signal split across two children', () => {
+  it('reads a sales signal split across two children', () => {
     expect(run('<div data-cy="reviews-block"><span>1K+</span><span> bought in past month</span></div>')?.pastMonthSales).toBe('1K+ bought in past month');
   });
 
-  it.fails('reads a paragraph monthly-sales signal', () => {
+  it('reads a paragraph monthly-sales signal', () => {
     expect(run('<p>1K+ bought in past month</p>')?.pastMonthSales).toBe('1K+ bought in past month');
   });
 
-  it.fails('accepts offer text without a keyword only inside a proven coupon container', () => {
+  it('accepts offer text without a keyword only inside a proven coupon container', () => {
     const p = run('<span class="s-coupon-unclipped">Save 15%</span>');
     expect(p?.coupon).toBe('Save 15%');
+    expect(p?.discountPercentage).toBeUndefined();
+    expect(p?.price).toBe(59.99);
     expect(run('<span class="savingsPercentage">-15%</span>')?.coupon).toBeUndefined();
   });
 
-  it.fails('ignores a hidden-only coupon instead of reading an inactive branch', () => {
+  it('ignores a hidden-only coupon instead of reading an inactive branch', () => {
     expect(run('<span class="s-coupon-unclipped aok-hidden">Save 15% with coupon</span>')?.coupon).toBeUndefined();
   });
 
-  it.fails('labels an existing rejected coupon candidate PARSE_FAILED', () => {
+  it('labels an existing rejected coupon candidate PARSE_FAILED', () => {
     const reports: ExtractionDiagnosticsReport[] = [];
     parse(documentOf(cardHtml('<span class="s-coupon-unclipped">Loading offer</span>')).querySelector('[data-asin]')!, SEARCH_URL,
       { diagnosticsSink: { accept: r => reports.push(r) } });
     expect(reports[0]?.fields.find(f => f.field === 'coupon')?.status).toBe('PARSE_FAILED');
+  });
+
+
+  it('separates malformed numeric sales from an absent signal in diagnostics', () => {
+    const reports: ExtractionDiagnosticsReport[] = [];
+    const html = cardHtml('<div id="social-proofing-faceout-title-tk_bought">many bought in past month</div>');
+    const card = documentOf(html).querySelector('[data-asin]')!;
+    const withDiagnostics = parse(card, SEARCH_URL, { diagnosticsSink: { accept: r => reports.push(r) } });
+    expect(withDiagnostics).toEqual(parse(card, SEARCH_URL));
+    expect(withDiagnostics?.pastMonthSales).toBeUndefined();
+    expect(reports[0]?.fields).toHaveLength(24);
+    expect(reports[0]?.fields.find(f => f.field === 'pastMonthSales')?.status).toBe('PARSE_FAILED');
+  });
+
+  it.each(['hidden', 'class="aok-hidden"', 'style="display:none"', 'style="visibility:hidden"'])('skips inactive descendants (%s), not a visible sibling', attr => {
+    const p = run(`<div ${attr}><span>9K+ bought in past month</span><span class="s-coupon-unclipped">Save 90% with coupon</span></div><p>500+ bought in past month</p><span class="s-coupon-unclipped">Save $5 with coupon</span>`);
+    expect(p).toMatchObject({ pastMonthSales: '500+ bought in past month', coupon: 'Save $5 with coupon' });
+  });
+
+  it('retains visible aria-hidden text and excludes scripts/styles/templates', () => {
+    const p = run('<style>.x { content:"99K+ bought in past month" }</style><template><span>99K+ bought in past month</span></template><span aria-hidden="true">500+ bought in past month</span><span class="s-coupon-unclipped" aria-hidden="true">Save 5% with coupon</span>');
+    expect(p).toMatchObject({ pastMonthSales: '500+ bought in past month', coupon: 'Save 5% with coupon' });
+  });
+
+  it('never attributes a nested different-ASIN offer to this card', () => {
+    const p = run('<div data-asin="B0SAD38902"><span>9K+ bought in past month</span><span class="s-coupon-unclipped">Save 90% with coupon</span></div>');
+    expect(p?.pastMonthSales).toBeUndefined();
+    expect(p?.coupon).toBeUndefined();
   });
 
   it('does not invent sales from new-on-Amazon or weekly proof, or a coupon from a discount', () => {
@@ -84,7 +113,7 @@ describe.each([
 });
 
 describe('SAD-389: primary-product ownership', () => {
-  it.fails('does not borrow monthly sales from a recommendation anywhere on a PDP', () => {
+  it('does not borrow monthly sales from a recommendation anywhere on a PDP', () => {
     const html = pdpHtml('', '', '<div class="a-carousel-container"><div data-asin="B0SAD38902"><span>10K+ bought in past month</span></div></div>');
     expect(parseAmazonProductDetail(documentOf(html), PDP_URL)?.pastMonthSales).toBeUndefined();
     const parsed = parsePdpHtml(html, PDP_URL, ASIN);
@@ -92,19 +121,42 @@ describe('SAD-389: primary-product ownership', () => {
     if (parsed.ok) expect(parsed.product.pastMonthSales).toBeUndefined();
   });
 
-  it.fails('does not aggregate nested recommendation text from an allowed main-product wrapper', () => {
+  it('does not aggregate nested recommendation text from an allowed main-product wrapper', () => {
     const d = documentOf(pdpHtml('<div><div class="a-carousel-container"><span>10K+ bought in past month</span></div></div>'));
     expect(parseAmazonProductDetail(d, PDP_URL)?.pastMonthSales).toBeUndefined();
   });
 
-  it.fails('excludes coupon candidates inside a nested recommendation, not just the buybox root', () => {
+  it('excludes coupon candidates inside a nested recommendation, not just the buybox root', () => {
     const d = documentOf(pdpHtml('<div id="apex_desktop"><div class="a-carousel-container"><span class="s-coupon-unclipped">Save 25% with coupon</span></div></div>'));
     expect(parseAmazonProductDetail(d, PDP_URL)?.coupon).toBeUndefined();
   });
 
-  it.fails('continues past an excluded first coupon to the valid primary-product candidate', () => {
+  it('continues past an excluded first coupon to the valid primary-product candidate', () => {
     const d = documentOf(pdpHtml('<span class="couponLabelText">Apply 10% coupon</span>', '<div class="a-carousel-container"><span class="couponLabelText">Save 20% with coupon</span></div>'));
     expect(parseAmazonProductDetail(d, PDP_URL)?.coupon).toBe('Apply 10% coupon');
+  });
+
+
+  it('continues past hidden/rejected sales markers and reports the valid primary node', () => {
+    const d = documentOf(pdpHtml('<div id="social-proofing-faceout-title-tk_bought"><span>2K+</span><span>bought in past month</span></div>', '<div hidden><span id="social-proofing-faceout-title-tk_bought">9K+ bought in past month</span></div>'));
+    const diag = createFieldDiagnosticsCollector();
+    expect(parseAmazonProductDetail(d, PDP_URL, diag)?.pastMonthSales).toBe('2K+ bought in past month');
+    expect(diag.build().fields.find(f => f.field === 'pastMonthSales')).toMatchObject({ status: 'EXTRACTED', source: 'dom' });
+  });
+
+  it('does not count coupon-only percentages as discounts in the PDP fallback scan', () => {
+    const p = parseAmazonProductDetail(documentOf(pdpHtml('<span class="couponLabelText"><b>Save 15%</b></span>')), PDP_URL);
+    expect(p?.coupon).toBe('Save 15%');
+    expect(p?.discountPercentage).toBeUndefined();
+    expect(p?.price).toBe(59.99);
+  });
+
+  it('reports rejected PDP offer text instead of calling it absent', () => {
+    const diag = createFieldDiagnosticsCollector();
+    const p = parseAmazonProductDetail(documentOf(pdpHtml('<span class="couponLabelText">Loading offer</span><span id="social-proofing-faceout-title-tk_bought">many bought in past month</span>')), PDP_URL, diag);
+    expect(p?.coupon).toBeUndefined();
+    expect(p?.pastMonthSales).toBeUndefined();
+    for (const field of ['coupon', 'pastMonthSales']) expect(diag.build().fields.find(f => f.field === field)?.status).toBe('PARSE_FAILED');
   });
 
   it('keeps truly missing fields missing with honest PDP diagnostics', () => {

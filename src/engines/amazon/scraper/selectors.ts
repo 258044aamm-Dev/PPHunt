@@ -294,6 +294,8 @@ export const AMAZON_SELECTORS = {
     ],
     coupon: [
       '.s-coupon-unclipped',
+      '.couponLabelText',
+      '[id^="couponText"]',
       '[data-component-type="s-coupon-component"] .s-coupon-unclipped',
       '[data-component-type="s-coupon-component"]',
       '#couponBadgeRegularVpc',
@@ -301,10 +303,10 @@ export const AMAZON_SELECTORS = {
       'span[class*="coupon" i]',
     ],
     boughtInPastMonth: [
-      '[data-cy="reviews-block"] .a-row.a-size-base span.a-color-secondary',
-      '#social-proofing-faceout-title-tk_bought span',
+      '#social-proofing-faceout-title-tk_bought',
+      '[data-cy="reviews-block"] .a-row.a-size-base',
+      '[data-cy="reviews-block"]',
       'span.a-size-base.a-color-secondary',
-      'div > span',
     ],
     rating: [
       '[data-cy="reviews-block"] span.a-icon-alt',
