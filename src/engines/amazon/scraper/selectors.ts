@@ -291,6 +291,12 @@ export const AMAZON_SELECTORS = {
     statusBadge: [
       '[data-component-type="s-status-badge-component"] .a-badge-text',
       '.a-badge-label-inner',
+      // SAD-393: Amazon moved Best Seller badges to the `amazonBadges` capsule
+      // (`data-csa-c-slot-id="amazonBadges-search-badge"`, live captures
+      // 2026-10-21: 14/14 Best Seller cards, `docs/plans/SAD-393-fixtures/`).
+      // The label span only — the sibling `.rio-badge-supplementary-text`
+      // ("in <Category>") repeats the BSR category and is never stored.
+      '.rio-badge-label',
     ],
     coupon: [
       '.s-coupon-unclipped',

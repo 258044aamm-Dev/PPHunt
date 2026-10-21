@@ -1590,17 +1590,31 @@ export function extractCardPastMonthSales(card: Element): string | undefined {
   return undefined;
 }
 
+/**
+ * SAD-393: the wording this module accepts as a status/recognition badge.
+ * The stored value is always the page's own (whitespace-normalized) text —
+ * this pattern only decides whether a candidate node *is* that badge.
+ */
+const STATUS_BADGE_PATTERN =
+  /best seller|amazon's choice|overall pick|popular|new release|most wished/i;
+
 export function extractCardBadge(card: Element): string | undefined {
   for (const selector of AMAZON_SELECTORS.cardFields.statusBadge) {
-    const el = safeQuerySelector(card, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (
-      text &&
-      /best seller|amazon's choice|overall pick|popular|new release|most wished/i.test(
-        text,
-      )
-    ) {
-      return text;
+    // SAD-393: every match, not just the first. `.a-badge-label-inner` is
+    // shared with the deal badge, so a first-match read let a deal node end
+    // the search before the status node was ever considered (live cards
+    // carry both — `docs/plans/SAD-393-fixtures/`).
+    for (const el of safeQuerySelectorAll(card, selector)) {
+      // The deal badge's own subtree is never a status badge, whatever its
+      // text says — the same separation `deal-evidence.ts` enforces in the
+      // other direction.
+      if (el.closest('[data-a-badge-type="deal"]')) continue;
+      const text = normalizeWhitespace(el?.textContent);
+      // Amazon prints both apostrophes (U+0027 and U+2019); folding is for
+      // the comparison only, the page's original text is what is stored.
+      if (text && STATUS_BADGE_PATTERN.test(text.replace(/\u2019/g, "'"))) {
+        return text;
+      }
     }
   }
   return undefined;
