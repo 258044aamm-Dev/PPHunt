@@ -5,11 +5,12 @@ import {
   type OffscreenBlobResponse,
   type OffscreenBuildExportRequest,
   type OffscreenBuildExportResponse,
+  type OffscreenParseRatingResponse,
   type OffscreenParseResponse,
   type OffscreenRequest,
   type OffscreenRevokeResponse,
 } from '../offscreen/protocol';
-import { parsePdpHtml } from '../offscreen/parse';
+import { parsePdpHtml, parseRatingPopoverHtml } from '../offscreen/parse';
 
 /**
  * SAD-295 (plan 10.2): the typed client the service worker uses to reach the
@@ -254,6 +255,33 @@ export async function parsePdpHtmlViaOffscreen(
       productUrl,
       ...(asin ? { asin } : {}),
     },
+    { ...options, env },
+    offscreenError('PARSE_FAILED', 'The offscreen document did not answer'),
+  );
+}
+
+/**
+ * SAD-383: parse the review popover in the offscreen document.
+ *
+ * Falls back to an in-context parse when the offscreen document is unavailable
+ * and this context happens to have `DOMParser` (tests, and any future context
+ * that does) — the same shape `parsePdpHtmlViaOffscreen` uses.
+ */
+export async function parseRatingViaOffscreen(
+  html: string,
+  options: EnsureOffscreenOptions = {},
+): Promise<OffscreenParseRatingResponse> {
+  const env = options.env ?? readEnvironment();
+
+  if (!isOffscreenSupported(env)) {
+    if (typeof DOMParser !== 'undefined') {
+      return parseRatingPopoverHtml(html);
+    }
+    return offscreenError('PARSE_UNAVAILABLE', 'No offscreen document available');
+  }
+
+  return callOffscreen<OffscreenParseRatingResponse>(
+    { target: OFFSCREEN_TARGET, type: 'OFFSCREEN_PARSE_RATING', html },
     { ...options, env },
     offscreenError('PARSE_FAILED', 'The offscreen document did not answer'),
   );

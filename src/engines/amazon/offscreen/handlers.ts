@@ -8,7 +8,7 @@ import {
   type OffscreenRevokeResponse,
 } from './protocol';
 import { buildExportFile } from './export-build';
-import { parsePdpHtml } from './parse';
+import { parsePdpHtml, parseRatingPopoverHtml } from './parse';
 
 /**
  * SAD-295: the offscreen document's request dispatcher.
@@ -115,6 +115,10 @@ export async function handleOffscreenRequest(
     case 'OFFSCREEN_PARSE_PRODUCT':
       // Synchronous parse, but the listener contract is a promise either way.
       return parsePdpHtml(request.html, request.productUrl, request.asin);
+
+    // SAD-383: two numbers from a 3 KB popover, not a whole product.
+    case 'OFFSCREEN_PARSE_RATING':
+      return parseRatingPopoverHtml(request.html);
 
     case 'OFFSCREEN_CREATE_BLOB_URL':
       return createBlobUrl(request.mimeType, request.base64);

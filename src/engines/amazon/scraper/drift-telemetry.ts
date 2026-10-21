@@ -9,6 +9,12 @@ export type AmazonTrackedField =
   | 'reviewCount'
   | 'imageUrl';
 
+/** SAD-383: which of the two listing-governed fields had a DOM node on a card. */
+export interface CardFieldPresence {
+  ratingNode?: boolean;
+  reviewNode?: boolean;
+}
+
 const TRACKED_FIELDS: readonly AmazonTrackedField[] = [
   'asin',
   'title',
@@ -42,10 +48,18 @@ export class AmazonDriftTelemetry {
     missing: 0,
   };
   private structuralTitleOrAsinHits = 0;
+  /**
+   * SAD-383: cards where a rating / review-count NODE existed, whether or not its
+   * text parsed. Lets the detector separate "this layout does not print the field"
+   * (an honest zero) from "the field is printed but we could not read it" (drift).
+   */
+  private ratingNodesSeen = 0;
+  private reviewNodesSeen = 0;
 
   recordCard(
     fieldTiers: Partial<Record<AmazonTrackedField, AmazonExtractionTier>>,
     extracted: boolean,
+    presence: CardFieldPresence = {},
   ): void {
     this.cardsInspected += 1;
     if (extracted) {
@@ -67,12 +81,16 @@ export class AmazonDriftTelemetry {
     ) {
       this.structuralTitleOrAsinHits += 1;
     }
+
+    if (presence.ratingNode) this.ratingNodesSeen += 1;
+    if (presence.reviewNode) this.reviewNodesSeen += 1;
   }
 
   recordCardExtraction(
     fieldTiers: Partial<Record<AmazonTrackedField, AmazonExtractionTier>>,
+    presence: CardFieldPresence = {},
   ): void {
-    this.recordCard(fieldTiers, true);
+    this.recordCard(fieldTiers, true, presence);
   }
 
   reset(): void {
@@ -89,6 +107,8 @@ export class AmazonDriftTelemetry {
       missing: 0,
     };
     this.structuralTitleOrAsinHits = 0;
+    this.ratingNodesSeen = 0;
+    this.reviewNodesSeen = 0;
   }
 
   getReport(): AmazonDriftReport {
@@ -122,6 +142,23 @@ export class AmazonDriftTelemetry {
       if (fieldCoverage.imageUrl < 0.5) {
         driftReasons.push(
           `Low image URL coverage (${Math.round(fieldCoverage.imageUrl * 100)}%) across ${this.cardsExtracted} extracted cards.`,
+        );
+      }
+      // SAD-383: only flag rating/review drift when the layout actually printed a
+      // node. A card with no rating node at all is an honest layout fact (the
+      // /deals grid measured 2026-10-21), not drift, so it stays silent.
+      const ratingNodeRatio = this.ratingNodesSeen / this.cardsExtracted;
+      if (this.ratingNodesSeen > 0 && fieldCoverage.rating < 0.5) {
+        driftReasons.push(
+          `Rating nodes were present on ${Math.round(ratingNodeRatio * 100)}% of cards but only ` +
+            `${Math.round(fieldCoverage.rating * 100)}% yielded a rating — the rating selector or parser has drifted.`,
+        );
+      }
+      const reviewNodeRatio = this.reviewNodesSeen / this.cardsExtracted;
+      if (this.reviewNodesSeen > 0 && fieldCoverage.reviewCount < 0.5) {
+        driftReasons.push(
+          `Review-count nodes were present on ${Math.round(reviewNodeRatio * 100)}% of cards but only ` +
+            `${Math.round(fieldCoverage.reviewCount * 100)}% yielded a count — the review-count selector or parser has drifted.`,
         );
       }
       if (this.structuralTitleOrAsinHits / this.cardsExtracted >= 0.75) {

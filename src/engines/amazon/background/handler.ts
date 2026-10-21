@@ -6,6 +6,7 @@ import {
 import {
   addHistoryEntry,
   addProducts,
+  getProductsBySession,
   clearActiveSession,
   getProductCountBySession,
   createSession,
@@ -38,13 +39,12 @@ import type {
 } from '../types';
 import { isAmazonUrl } from '../utils/amazon-url';
 import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
-import { getEnrichCollectedSettings } from '../utils/enrich-collected-flag';
+import { getEnrichCollectedLimit } from '../utils/enrich-collected-flag';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
-import {
-  enqueueCollectionEnrichment,
-  resetCollectionEnrichment,
-} from './enrichment-pump';
+import { enqueueRatingBackfill, resetRatingBackfill } from './rating-backfill';
+import { fetchRatingPopover } from './rating-fetch';
+import { scheduleCollectionEnrichment } from './enrichment-pump';
 import { handleExportSavedProduct, maybeAutoExportOnSave } from './export-service';
 import { saveJobStore } from './job-store';
 import { handleSaveProduct } from './save-job';
@@ -305,8 +305,11 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
 
     finalizedSessionKeys.delete(sessionKey);
     lastFinalizedSession = null;
-    // SAD-379: a (re)started run begins with an empty enrichment budget.
-    resetCollectionEnrichment(sessionKey);
+    // SAD-384: preserve the collection enrichment budget and dedupe if this
+    // session is resumed (it replaces SAD-379's per-run reset for that queue).
+    // SAD-383: the rating backfill is a separate, in-memory queue and keeps its
+    // own per-run bookkeeping.
+    resetRatingBackfill(sessionKey);
 
     activeCollection = {
       tabId,
@@ -430,10 +433,11 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     }
 
     if (active) {
-      // SAD-379: the run is over; its per-run queue bookkeeping must not leak
-      // into the next run. Already-queued work is left alone on purpose — those
-      // rows exist and enriching them is still correct.
-      resetCollectionEnrichment(active.sessionKey);
+      // SAD-384: already queued enrichment work remains eligible after STOP;
+      // retain its dedupe/budget so trailing batches cannot restart the same
+      // requests.
+      // SAD-383: the rating backfill's own queue is still per-run.
+      resetRatingBackfill(active.sessionKey);
     }
 
     activeCollection = null;
@@ -452,7 +456,11 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     // SAD-379: the same enrichment dep the save path receives (handler.ts:863).
     // Absent in tests and in any caller that does not opt in, which keeps the
     // collection pipeline byte-identical when the switch is off.
-    deps: { enrich?: typeof enrichSavedProduct } = {},
+    deps: {
+      enrich?: typeof enrichSavedProduct;
+      /** SAD-383: injectable rating fetch; production uses `fetchRatingPopover`. */
+      fetchRating?: typeof fetchRatingPopover;
+    } = {},
   ): Promise<void> => {
     let active = await hydrateActiveCollection();
     if (!active && lastFinalizedSession) {
@@ -577,15 +585,42 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
 
     if (validProducts.length > 0) {
       await addProducts(validProducts, active.sessionKey);
-      // SAD-379: run the save pipeline's enrichment stage for what this batch
-      // just wrote. Never awaited — progress and STOP_COLLECTION must not wait
-      // on a ~2.4 s product-page fetch.
-      const enrichCollected = getEnrichCollectedSettings();
-      if (enrichCollected.enabled && deps.enrich) {
-        enqueueCollectionEnrichment(validProducts, active.sessionKey, {
+      // SAD-385: a collection always finishes what a save finishes. `weight` and
+      // the full twister `variations` exist only on the product page, so this
+      // stage is the only way a collected row can carry them — a listing card
+      // prints neither.
+      // SAD-384: missing brand/BSR is always eligible; only full details are
+      // capped. The network queue is never awaited here.
+      if (deps.enrich) {
+        // Read persisted rows: sparse repeat cards must not schedule another
+        // fallback for fields a previous observation already supplied.
+        const batchAsins = new Set(validProducts.map(product => product.asin));
+        const stored = (await getProductsBySession(active.sessionKey))
+          .filter(product => batchAsins.has(product.asin));
+        await scheduleCollectionEnrichment(stored, active.sessionKey, {
           enrich: deps.enrich,
-          limit: enrichCollected.limit,
+          // SAD-385: the gate is gone, so the budget is the only control left —
+          // and it bounds full detail only; brand/BSR stays unbudgeted.
+          limit: getEnrichCollectedLimit(),
+          requiredFields: true,
         });
+      }
+
+      // SAD-383: the fields a listing card may not print. Independent of the
+      // SAD-379 switch above — that one merges the whole product page, this one
+      // fills rating/reviewCount from a 3 KB review popover, and each has its own
+      // setting. Never awaited: progress and Stop Collection must not wait.
+      // Off → no queue, no request, no write (identical to before this ticket).
+      try {
+        const settings = await getSettings();
+        if (settings.backfillCollectedRatings) {
+          enqueueRatingBackfill(validProducts, active.sessionKey, {
+            ...(deps.fetchRating ? { fetchRating: deps.fetchRating } : {}),
+          });
+        }
+      } catch {
+        // A settings read failure must never fail a collection: the rows are
+        // already stored, and the backfill is an upgrade.
       }
     }
 
@@ -695,8 +730,9 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
         completedAt: new Date().toISOString(),
         status: 'completed',
       });
-      // SAD-379: same per-run reset as STOP.
-      resetCollectionEnrichment(sessionKey);
+      // SAD-384: retain dedupe/budget through trailing completion batches.
+      // SAD-383: same per-run reset as STOP, for the rating backfill only.
+      resetRatingBackfill(sessionKey);
       activeCollection = null;
       await clearActiveSession();
     } else if (active) {
@@ -877,8 +913,8 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
       case 'PRODUCTS_COLLECTED':
         sendResponse?.({ ok: true });
         // SAD-379: the collection path now receives the same enrichment
-        // function the save path gets. Whether it runs is decided per batch by
-        // the `enrichCollectedProducts` setting, not here.
+        // function the save path gets. The setting controls full details only;
+        // missing brand/BSR fallback is always eligible.
         void handleProductsCollected(validated.payload, sender?.tab?.url, {
           enrich: (input) => enrichSavedProduct(input),
         });

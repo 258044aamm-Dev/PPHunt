@@ -3,7 +3,7 @@ import { appendSnapshot, snapshotFromProduct } from '../db/quick-save';
 import { formatExtractionDiagnosticsLog } from '../scraper/extraction-diagnostics';
 import type { Product, ScrapedProduct } from '../types';
 import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
-import { fetchPdpHtml, type FetchPdpOptions } from './enrichment-fetch';
+import { fetchPdpHtml, type FetchPdpOptions, type EnrichmentSkipReason } from './enrichment-fetch';
 import { parsePdpHtmlViaOffscreen } from './offscreen';
 
 /**
@@ -73,7 +73,11 @@ const FILL_ONLY_FIELDS = new Set<string>([
 
 export const PRICE_FAMILY = FILL_ONLY_FIELDS;
 
+export type EnrichmentScope = 'full' | 'brand-and-rank';
+
 export interface EnrichSavedProductInput {
+  /** Omitted by saves: preserves the existing full detail policy. */
+  scope?: EnrichmentScope;
   jobId: string;
   asin: string;
   productUrl: string;
@@ -98,6 +102,7 @@ export interface EnrichSavedProductResult {
   /** Set only when `status` is `failed`. */
   errorCode?: EnrichmentErrorCode;
   currencyMismatch: boolean;
+  skipReason?: EnrichmentSkipReason;
 }
 
 export interface EnrichSavedProductDeps {
@@ -122,10 +127,23 @@ export interface EnrichSavedProductDeps {
 export function mergeDetailIntoStored(
   stored: Product,
   detail: ScrapedProduct,
-  options: { skipPrice?: boolean } = {},
+  options: { skipPrice?: boolean; scope?: EnrichmentScope } = {},
 ): { patch: Partial<Product>; changedFields: string[] } {
   const patch: Partial<Product> = {};
   const changed: string[] = [];
+
+  // Collection fallback may fill only these missing fields, never overwrite a
+  // listing observation or leak other PDP fields through features/Prime below.
+  if (options.scope === 'brand-and-rank') {
+    for (const field of ['brand', 'bestSellersRank'] as const) {
+      const next = detail[field];
+      if (isDetailValueMissing(stored[field]) && !isDetailValueMissing(next)) {
+        patch[field] = next;
+        changed.push(field);
+      }
+    }
+    return { patch, changedFields: changed };
+  }
 
   const currencyMismatch =
     Boolean(stored.currency) &&
@@ -262,6 +280,7 @@ function logEnrichmentOutcome(
     const payload = {
       jobId: input.jobId,
       asin: input.asin,
+      scope: input.scope ?? 'full',
       status: result.status,
       ...(result.reason ? { reason: result.reason } : {}),
       ...(result.errorCode ? { errorCode: result.errorCode } : {}),
@@ -358,6 +377,14 @@ export async function enrichSavedProduct(
 
   await acquireSlot(max);
   try {
+    if (input.scope === 'brand-and-rank') {
+      const current = await db.products.where('[sessionKey+asin]')
+        .equals([input.sessionKey, input.asin]).first();
+      if (!current) return finish(stop('failed', 'row-missing', 'DB_WRITE_FAILED'));
+      if (!isDetailValueMissing(current.brand) && !isDetailValueMissing(current.bestSellersRank)) {
+        return finish({ status: 'complete', fieldsChanged: [], snapshotCreated: false, currencyMismatch: false });
+      }
+    }
     const fetched = await fetchPdpHtml(input.productUrl, input.asin, {
       jobId: input.jobId,
       ...deps.fetchOptions,
@@ -366,7 +393,7 @@ export async function enrichSavedProduct(
     if (fetched.status === 'skipped') {
       // A guard fired (no permission, not Amazon, breaker open): nothing was
       // attempted, so this is a skip rather than a failure.
-      return finish(stop('skipped', `skipped:${fetched.reason}`), {
+      return finish({ ...stop('skipped', `skipped:${fetched.reason}`), skipReason: fetched.reason }, {
         message: fetched.message,
       });
     }
@@ -424,14 +451,17 @@ export async function enrichSavedProduct(
       });
     }
 
-    const { patch, changedFields } = mergeDetailIntoStored(stored, detail);
+    const { patch, changedFields } = mergeDetailIntoStored(stored, detail, { scope: input.scope });
     const currencyMismatch =
       Boolean(stored.currency) &&
       Boolean(detail.currency) &&
       stored.currency !== detail.currency;
 
     if (changedFields.length > 0) {
-      await db.products.update(stored.id, patch);
+      const updated = await db.products.update(stored.id, patch);
+      if (!updated) {
+        return finish(stop('failed', 'row-missing', 'DB_WRITE_FAILED'));
+      }
     }
 
     const snapshot = await appendSnapshot(

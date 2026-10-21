@@ -13,6 +13,11 @@ import {
 } from '../utils/amazon-url';
 import { isIsoCurrency, resolvePageCurrency } from '../utils/currency';
 import { parsePrice, parsePriceFromElements } from '../utils/price-parser';
+import {
+  DEAL_LABEL_PATTERN,
+  deriveDealFromPrices,
+  detectDealEvidence,
+} from './deal-evidence';
 import type { AmazonTrackedField } from './drift-telemetry';
 import {
   AMAZON_SELECTORS,
@@ -23,6 +28,13 @@ import {
 export interface TieredValue<T> {
   value: T;
   tier: AmazonExtractionTier;
+  /**
+   * SAD-383: whether a candidate node was found at all, independent of whether
+   * its text parsed. A card layout that prints no rating produces no node; a
+   * layout that prints one the parser refuses produces a node and no value.
+   * Only diagnostics read this — extraction output is unchanged.
+   */
+  nodeSeen?: boolean;
 }
 
 export type CardFieldTierMap = Partial<
@@ -45,6 +57,15 @@ export interface CardPricingAndDiscounts {
    * priceTier are byte-identical with and without it.
    */
   unparseablePriceTier?: AmazonExtractionTier;
+  /**
+   * SAD-386 (diagnostics-only): a discount-looking node was present but its
+   * text did not normalise to a percentage (e.g. a coupon-style "Save 15% with
+   * coupon", a bare out-of-range "100%", or a currency amount). Lets the card
+   * report say PARSE_FAILED instead of claiming the discount was absent.
+   */
+  unparseableDiscountNode?: boolean;
+  /** SAD-386 (diagnostics-only): the deal value came from evidence, not a printed badge. */
+  dealBadgeDerived?: boolean;
 }
 
 const RATING_PATTERNS: readonly RegExp[] = [
@@ -833,19 +854,88 @@ function parseAsinAdAttributesProps(
 }
 
 /**
- * Normalizes a discount string ("-68%", "19% off") into `"68% off"`.
+ * SAD-386: text that proves the node is *not* a product discount.
+ *
+ * Measured before this change (probe P02/G): a card whose only percentage sat
+ * inside `Save 15% off with coupon` stored `15% off` as the product's discount.
+ * That is a wrong value, not a missing one, so it is rejected here for every
+ * caller.
+ */
+const NON_DISCOUNT_TEXT =
+  /coupon|voucher|rabatt|remise|with\s+coupon|save\s*[$\u20ac\u00a3\u20b9\u00a5]/i;
+
+/**
+ * SAD-386: the discount forms Amazon prints, in one place.
+ *
+ * ASCII hyphen kept first (the form that already worked and is pinned by
+ * existing fixtures); then the typographic minus/en-dash/em-dash that other
+ * layouts and locales emit, optionally wrapped in parens; then `NN% off`;
+ * then `Save NN%`; then a bare `NN%` which is only accepted when the caller
+ * proved the node is a savings node (`allowBare`).
+ */
+const DISCOUNT_PATTERN =
+  /(?:[-\u2212\u2013\u2014]\s*(\d{1,2})\s*%)|(?:\(?\s*(\d{1,2})\s*%\s*off\s*\)?)|(?:save\s*(\d{1,2})\s*%)|(?:^\s*\(?\s*(\d{1,2})\s*%\s*\)?\s*$)/i;
+
+/**
+ * Normalizes a discount string ("-68%", "19% off", "\u221268%", "Save 68%") into
+ * `"68% off"`.
+ *
+ * SAD-386 added the typographic-minus, paren, `Save NN%` and (opt-in) bare
+ * forms. The output format is unchanged, and every string that normalised
+ * before still normalises to the same value.
  */
 export function normalizeDiscountBadge(
   raw: string | null | undefined,
+  options: { allowBare?: boolean } = {},
 ): string | undefined {
   const text = normalizeWhitespace(raw);
   if (!text) return undefined;
-  const match = /-\s*(\d{1,2})\s*%|(\d{1,2})\s*%\s*off/i.exec(text);
-  const pct = match?.[1] ?? match?.[2];
+  if (NON_DISCOUNT_TEXT.test(text)) return undefined;
+  const match = DISCOUNT_PATTERN.exec(text);
+  if (!match) return undefined;
+  const pct = match[1] ?? match[2] ?? match[3] ?? (options.allowBare ? match[4] : undefined);
   if (!pct) return undefined;
   const num = Number.parseInt(pct, 10);
   if (!Number.isFinite(num) || num <= 0 || num >= 100) return undefined;
   return `${num}% off`;
+}
+
+/**
+ * SAD-386: the ONE bounded scan for a printed savings percentage inside `root`.
+ *
+ * Rules (identical for listing cards and product pages):
+ * - short text only (a badge, not a paragraph),
+ * - the text must contain a `%`,
+ * - a bare `NN%` is only accepted on a node whose class/id/aria-label says it is
+ *   a savings node; `-NN%`, `NN% off`, `Save NN%` and the typographic variants
+ *   are accepted anywhere the other guards allow.
+ *
+ * Returns the normalised value and whether a percentage-looking node was present
+ * but refused (used by the diagnostics lane).
+ */
+export function scanDiscountNodes(
+  root: Element,
+  options: { skip?: (el: Element) => boolean } = {},
+): {
+  value?: string;
+  nodeSeen: boolean;
+} {
+  const skip = options.skip ?? (() => false);
+  let nodeSeen = false;
+  for (const el of safeQuerySelectorAll(root, 'span, div, b, strong')) {
+    if (el.children.length > 2) continue;
+    if (skip(el)) continue;
+    const rawText = normalizeWhitespace(el.textContent);
+    if (!rawText || rawText.length > 24 || !rawText.includes('%')) continue;
+    const label = `${el.className} ${el.id} ${el.getAttribute('aria-label') ?? ''}`;
+    const looksLikeSavings = /saving|discount|percent|\boff\b/i.test(label);
+    const normalized = normalizeDiscountBadge(rawText, {
+      allowBare: looksLikeSavings,
+    });
+    if (normalized) return { value: normalized, nodeSeen };
+    nodeSeen = true;
+  }
+  return { nodeSeen };
 }
 
 /**
@@ -1042,31 +1132,54 @@ export function extractCardPricingAndDiscounts(
 
   // Explicit Discount Percentage (`-68%` -> `68% off`, `19% off` -> `19% off`)
   let discountPercentage: string | undefined;
+  // SAD-386 (diagnostics-only): a percentage-looking node existed but did not
+  // normalise. Reported in step 5 so "absent" and "unreadable" stop looking alike.
+  let discountNodeSeen = false;
   for (const selector of AMAZON_SELECTORS.cardFields.discount) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
-      if (el.children.length > 1) continue;
-      const normalized = normalizeDiscountBadge(el?.textContent);
+      // SAD-386: the old `children.length > 1` guard dropped a percentage wrapped
+      // in markup (`<span><b>-68%</b><i></i></span>` — probe P02/H). The honest
+      // guard is on the TEXT: a discount badge is short, and the normaliser
+      // already refuses coupon/currency text.
+      const rawText = normalizeWhitespace(el?.textContent);
+      if (!rawText || rawText.length > 32) continue;
+      const normalized = normalizeDiscountBadge(rawText);
       if (normalized) {
         discountPercentage = normalized;
         break;
       }
+      if (/%/.test(rawText)) discountNodeSeen = true;
     }
     if (discountPercentage !== undefined) break;
   }
 
+  // SAD-386: one bounded fallback pass inside the price area, never ahead of the
+  // declarative list above. Same rules as the product-page path.
+  if (discountPercentage === undefined) {
+    const priceNode = safeQuerySelector(
+      card,
+      '[data-cy="price-recipe"] .a-price, .a-price, .priceToPay, .apexPriceToPay',
+    );
+    const priceArea =
+      safeQuerySelector(card, '[data-cy="price-recipe"]') ??
+      priceNode?.parentElement ??
+      card;
+    const scanned = scanDiscountNodes(priceArea);
+    if (scanned.value !== undefined) discountPercentage = scanned.value;
+    if (scanned.nodeSeen) discountNodeSeen = true;
+  }
+
   // Deal Badge (`Limited-time deal`, etc.)
   let dealBadge: string | undefined;
+  // SAD-386 (diagnostics-only): the value came from evidence, not a printed badge.
+  let dealBadgeDerived = false;
   for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
       const text = normalizeWhitespace(el?.textContent);
-      if (
-        text &&
-        /deal|limited time|limited-time|lightning|black friday|prime day|cyber monday|angebot|offre|oferta/i.test(
-          text,
-        )
-      ) {
+      // SAD-386: one shared vocabulary (was duplicated with the PDP path).
+      if (text && DEAL_LABEL_PATTERN.test(text)) {
         dealBadge = text;
         break;
       }
@@ -1078,6 +1191,18 @@ export function extractCardPricingAndDiscounts(
     const adProps = parseAsinAdAttributesProps(card);
     if (adProps?.dealString) {
       dealBadge = adProps.dealString;
+    }
+  }
+
+  // SAD-386: badge containers the declarative list does not name, then the
+  // operator-approved strike-price rule (D5). Both are additive: the loops above
+  // keep first refusal, so no selector that wins today can lose to these.
+  if (dealBadge === undefined) {
+    const evidence =
+      detectDealEvidence(card) ?? deriveDealFromPrices(price, listPrice);
+    if (evidence) {
+      dealBadge = evidence.value;
+      dealBadgeDerived = evidence.derived;
     }
   }
 
@@ -1104,7 +1229,14 @@ export function extractCardPricingAndDiscounts(
   if (discountPercentage !== undefined) {
     result.discountPercentage = discountPercentage;
   }
-  if (dealBadge !== undefined) result.dealBadge = dealBadge;
+  if (dealBadge !== undefined) {
+    result.dealBadge = dealBadge;
+    if (dealBadgeDerived) result.dealBadgeDerived = true;
+  }
+  // SAD-386 (diagnostics-only): only meaningful when no node produced a value.
+  if (discountPercentage === undefined && discountNodeSeen) {
+    result.unparseableDiscountNode = true;
+  }
   if (coupon !== undefined) result.coupon = coupon;
   // SAD-369 D9: only meaningful when no tier produced a price — otherwise the
   // observation is noise next to a successfully extracted value.
@@ -1343,10 +1475,15 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
   let ratingTier: AmazonExtractionTier = 'missing';
   let reviewCount: number | null = null;
   let reviewTier: AmazonExtractionTier = 'missing';
+  // SAD-383: a node that exists but does not parse is a different failure from a
+  // layout that never prints the field, and the two need different fixes.
+  let ratingNodeSeen = false;
+  let reviewNodeSeen = false;
 
   for (const selector of AMAZON_SELECTORS.cardFields.rating) {
     const el = safeQuerySelector(card, selector);
     if (!el) continue;
+    ratingNodeSeen = true;
     const raw =
       el.getAttribute('aria-label') ||
       el.getAttribute('title') ||
@@ -1369,6 +1506,7 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
   ]) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
+      reviewNodeSeen = true;
       const raw = el.getAttribute('aria-label') || el.textContent;
       const parsed = parseReviewCount(raw);
       if (parsed !== null) {
@@ -1396,8 +1534,12 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
   }
 
   return {
-    rating: { value: rating, tier: ratingTier },
-    reviewCount: { value: reviewCount, tier: reviewTier },
+    rating: { value: rating, tier: ratingTier, nodeSeen: ratingNodeSeen },
+    reviewCount: {
+      value: reviewCount,
+      tier: reviewTier,
+      nodeSeen: reviewNodeSeen,
+    },
   };
 }
 

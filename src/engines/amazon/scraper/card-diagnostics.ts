@@ -22,7 +22,7 @@ import type {
   ExtractionDiagnosticsSink,
   FieldDiagnosticsCollector,
 } from './extraction-diagnostics';
-import type { CardPricingAndDiscounts } from './field-parsers';
+import type { CardPricingAndDiscounts, TieredValue } from './field-parsers';
 
 /** The 4 modelled fields a listing card can never carry (SAD-369 D4). */
 export const CARD_INAPPLICABLE_FIELDS = [
@@ -41,8 +41,10 @@ export interface CardDiagnosticsInput {
   title: { value: string; tier: AmazonExtractionTier };
   brand: string | null;
   pricing: CardPricingAndDiscounts;
-  rating: { value: number | null; tier: AmazonExtractionTier };
-  reviewCount: { value: number | null; tier: AmazonExtractionTier };
+  // SAD-383: `TieredValue` so `nodeSeen` (did a node exist at all?) reaches the
+  // report. Optional on the type, so every existing caller still compiles.
+  rating: TieredValue<number | null>;
+  reviewCount: TieredValue<number | null>;
   image: { value: string | null; tier: AmazonExtractionTier };
   pastMonthSales?: string;
   delivery?: string;
@@ -111,6 +113,14 @@ export function recordCardDiagnostics(
 
   if (input.pricing.discountPercentage !== undefined) {
     collector.extracted('discountPercentage', dom);
+  } else if (input.pricing.unparseableDiscountNode) {
+    // SAD-386: a percentage-looking node WAS there and the parser refused it
+    // (coupon text, out-of-range, unreadable). Never report that as absence.
+    collector.parseFailed(
+      'discountPercentage',
+      'a percentage node is present but its text is not a product discount (coupon, out of range, or unreadable)',
+      dom,
+    );
   } else {
     collector.missing(
       'discountPercentage',
@@ -120,7 +130,11 @@ export function recordCardDiagnostics(
   }
 
   if (input.pricing.dealBadge !== undefined) {
-    collector.extracted('dealBadge', dom);
+    // SAD-386: `derived` is a real provenance, not a printed badge.
+    collector.extracted(
+      'dealBadge',
+      input.pricing.dealBadgeDerived ? { source: 'derived' } : dom,
+    );
   } else {
     collector.missing('dealBadge', 'no deal badge present on the card', dom);
   }
@@ -141,10 +155,23 @@ export function recordCardDiagnostics(
     );
   }
 
+  // SAD-383: a node that exists but does not parse is a selector/parser defect; a
+  // layout that never prints the field is not. The old single reason made those
+  // two states indistinguishable in the report.
   if (input.rating.value !== null) {
     collector.extracted('rating', { ...dom, tier: input.rating.tier });
+  } else if (input.rating.nodeSeen) {
+    collector.missing(
+      'rating',
+      'rating node present on the card but its text did not parse',
+      dom,
+    );
   } else {
-    collector.missing('rating', 'no rating node found on the card', dom);
+    collector.missing(
+      'rating',
+      'this card layout prints no rating node — only the product page carries it',
+      dom,
+    );
   }
 
   if (input.reviewCount.value !== null) {
@@ -152,10 +179,16 @@ export function recordCardDiagnostics(
       ...dom,
       tier: input.reviewCount.tier,
     });
+  } else if (input.reviewCount.nodeSeen) {
+    collector.missing(
+      'reviewCount',
+      'review-count node present on the card but its text did not parse',
+      dom,
+    );
   } else {
     collector.missing(
       'reviewCount',
-      'no review count node found on the card',
+      'this card layout prints no review-count node — only the product page carries it',
       dom,
     );
   }
