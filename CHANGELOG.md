@@ -5,6 +5,53 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Temu features & description extraction (SAD-381)
+
+Temu products were storing an empty **Features** list and a **Description** that
+was either missing or the page's SEO boilerplate. Code audit showed why:
+`features` scanned `li, tr` inside one of three containers, while Temu renders
+Highlights and property rows as `div`s — so nothing matched, and the one `<tr>`
+that did was stored as `th`+`td` concatenated with no separator. `description`
+fell back to `meta[name="description"]`, which on Temu is a template
+(" deals on … on Temu. Shop on Temu to start saving."), not product text.
+
+### Added
+- **`features` come from the product-details section.** Highlights rows
+  (`data-id="module"`), `Key: value` property rows and `GoodsPropertyTable`
+  rows are read from `#goodsDetail`, de-duplicated against a denylist of keys
+  that already have dedicated fields (seller, shipping, price, …), and capped
+  at 15. The right column's Highlights module is used only when the details
+  section yields nothing.
+- **`description` comes from the page's own "Description" module**, matched by
+  its localised title (from `window.__InitialI18nStore__`, read out of the
+  inline script text) and, failing that, by DescriptionV2's structural
+  signature. Rows are joined with ` · `.
+- **Field-level diagnostics** for both fields: `EXTRACTED` with the source
+  selector and a static reason, `PARTIAL` when a collapse control is still
+  present (evaluated **before** `EXTRACTED`), `MISSING` when nothing rendered,
+  `PARSE_FAILED` when every candidate was filtered.
+- **Opt-in "Expand product details" setting** (BEHAVIOR, default **off**): when
+  enabled, "See all details" is clicked on a PDP before the first parse so
+  collapsed rows are included. Off is byte-identical to the previous page
+  interaction — nothing is ever clicked.
+- `tests/temu-pdp-captures.test.ts` replays operator captures from
+  `tests/fixtures/temu-live/` through the real parser and enforces the
+  no-fabrication rules; `docs/plans/SAD-381-step4-verification.md` records the
+  before/after measurement and the open live-page checklist.
+
+### Changed
+- `meta[name="description"]` is no longer a source for Temu `description`, and
+  the old `li, tr` feature scan is gone. Both were stored values that were not
+  product data.
+- A page whose details section is collapsed now reports `PARTIAL` rather than
+  claiming a complete list.
+
+### Unchanged
+- JSON-LD keeps its existing precedence for `description`; every other Temu
+  field, Amazon extraction, exports, settings shape (one added key) and the
+  database schema are untouched. `src/engines/amazon` and `src/lib` diffs are
+  empty; the full suite is green.
+
 ## [Unreleased] — Temu list-price extraction (SAD-380)
 
 Temu products were storing a blank **List Price** even for discounted items.
