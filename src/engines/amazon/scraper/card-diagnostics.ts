@@ -247,7 +247,7 @@ export function recordCardDiagnostics(
   if (input.isPrime) {
     collector.extracted('isPrime', { source: 'derived' });
   } else {
-    collector.missing('isPrime', 'no Prime marker found', {
+    collector.missing('isPrime', 'no Prime badge or Prime ingress found', {
       source: 'derived',
     });
   }

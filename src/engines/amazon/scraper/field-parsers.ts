@@ -20,6 +20,8 @@ import {
 } from './deal-evidence';
 import type { AmazonTrackedField } from './drift-telemetry';
 import {
+  AMAZON_PRIME_BADGE_LABEL_PATTERN,
+  AMAZON_PRIME_INGRESS_TEXT_PATTERN,
   AMAZON_SELECTORS,
   safeQuerySelector,
   safeQuerySelectorAll,
@@ -1774,22 +1776,69 @@ export function extractCardSeller(card: Element): string | null {
   return null;
 }
 
+/**
+ * SAD-391: which evidence made a listing Prime.
+ * - `badge`: the Prime badge itself (signed-in Prime member view).
+ * - `ingress`: the explicit Prime-eligibility wording Amazon prints for
+ *   everyone else ("Join Prime to get FREE delivery <date>").
+ */
+export type PrimeSignal = 'badge' | 'ingress';
+
+/**
+ * SAD-391: Tier-2 ARIA fallback for a class-less Prime badge — the first
+ * element under `root` whose whole `aria-label` is a Prime badge label
+ * (`AMAZON_PRIME_BADGE_LABEL_PATTERN`). A title's `aria-label` never matches
+ * because the pattern is anchored.
+ */
+export function findPrimeBadgeLabel(root: ParentNode): Element | null {
+  for (const el of safeQuerySelectorAll(root, '[aria-label*="prime" i]')) {
+    const label = normalizeWhitespace(el.getAttribute('aria-label'));
+    if (label && AMAZON_PRIME_BADGE_LABEL_PATTERN.test(label)) {
+      return el;
+    }
+  }
+  return null;
+}
+
+/**
+ * SAD-391 (D1): `isPrime` = Prime badge ∨ Prime-eligibility ingress.
+ *
+ * Before this, "FREE delivery" anywhere in the delivery text counted as
+ * Prime, so 11/16 logged-out live cards were "Prime" although the page showed
+ * no badge at all, and `[aria-label*="Prime" i]` matched product titles.
+ * Free delivery is a shipping fact, not a Prime signal, and is no longer read.
+ *
+ * `deliveryText` is the cleaned string from `extractCardDeliveryAndAvailability`;
+ * the regex is applied to it only (never to the whole card).
+ */
+export function extractCardPrimeSignal(
+  card: Element,
+  deliveryText?: string,
+): PrimeSignal | null {
+  for (const selector of AMAZON_SELECTORS.cardFields.prime) {
+    if (safeQuerySelector(card, selector)) {
+      return 'badge';
+    }
+  }
+  if (findPrimeBadgeLabel(card)) {
+    return 'badge';
+  }
+  for (const selector of AMAZON_SELECTORS.cardFields.primeIngress) {
+    if (safeQuerySelector(card, selector)) {
+      return 'ingress';
+    }
+  }
+  if (deliveryText && AMAZON_PRIME_INGRESS_TEXT_PATTERN.test(deliveryText)) {
+    return 'ingress';
+  }
+  return null;
+}
+
 export function extractCardIsPrime(
   card: Element,
   deliveryText?: string,
 ): boolean {
-  for (const selector of [
-    ...AMAZON_SELECTORS.cardFields.prime,
-    '[aria-label*="Prime" i]',
-  ]) {
-    if (safeQuerySelector(card, selector)) {
-      return true;
-    }
-  }
-  if (deliveryText && /\bFREE delivery\b/i.test(deliveryText)) {
-    return true;
-  }
-  return false;
+  return extractCardPrimeSignal(card, deliveryText) !== null;
 }
 
 export function extractCardIsSponsored(card: Element): boolean {

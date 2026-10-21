@@ -17,6 +17,7 @@ import {
   extractBestImageUrl,
   extractCardPastMonthSales,
   extractCardPricingAndDiscounts,
+  findPrimeBadgeLabel,
   formatVariationDimensionsSummary,
   normalizeDiscountBadge,
   normalizeWarrantyDescription,
@@ -24,12 +25,15 @@ import {
   normalizeWhitespace,
   parseRating,
   parseReviewCount,
+  type PrimeSignal,
   scanDiscountNodes,
   validateAndNormalizeScrapedProduct,
   type VariationDimensionSummaryInput,
+  visibleTextContent,
 } from './field-parsers';
 import {
   AMAZON_DIMENSIONS_LABEL_PATTERN,
+  AMAZON_PRIME_INGRESS_TEXT_PATTERN,
   AMAZON_SELECTORS,
   AMAZON_WARRANTY_LABEL_PATTERN,
   AMAZON_WEIGHT_ITEM_LABEL_PATTERN,
@@ -55,6 +59,71 @@ function isInsideExcludedDetailSubtree(el: Element): boolean {
     }
   }
   return false;
+}
+
+/** Prime badge markers looked for inside `AMAZON_SELECTORS.detail.primeScopes`. */
+const DETAIL_PRIME_BADGE_MARKERS = AMAZON_SELECTORS.cardFields.prime.filter(
+  (selector) => selector !== '#bbop-sbbop-container',
+);
+/** Prime-ingress markers ("Join Prime" link) looked for inside the same scopes. */
+const DETAIL_PRIME_INGRESS_MARKERS = [
+  '.udm-sfx-prime-signup-trigger',
+  '.prime-brand-color',
+];
+
+interface DetailPrimeSignal {
+  signal: PrimeSignal;
+  /** Winning selector, for diagnostics; absent when the delivery text matched. */
+  selector?: string;
+}
+
+/**
+ * SAD-391 (D1): PDP `isPrime` = Prime badge ∨ Prime-eligibility ingress, read
+ * only inside the buy box / delivery block and never inside an excluded
+ * subtree (sponsored carousels, "similar items").
+ *
+ * The former decision also accepted `[data-csa-c-delivery-price="FREE"]` and
+ * any "FREE delivery" wording: both are shipping facts, not Prime, and made
+ * every free-shipping listing "Prime" (SAD-370: 56/70 PDPs MISSING, the rest
+ * by that proxy). Enrichment fetches are cookieless, so a badge is never
+ * visible there — the ingress wording is the signal that remains.
+ */
+function detectDetailPrimeSignal(
+  doc: Document,
+  delivery: string | undefined,
+): DetailPrimeSignal | null {
+  const bbop = safeQuerySelector(doc, '#bbop-sbbop-container');
+  if (bbop && !isInsideExcludedDetailSubtree(bbop)) {
+    return { signal: 'badge', selector: '#bbop-sbbop-container' };
+  }
+  const passes: ReadonlyArray<readonly [PrimeSignal, readonly string[]]> = [
+    ['badge', DETAIL_PRIME_BADGE_MARKERS],
+    ['ingress', DETAIL_PRIME_INGRESS_MARKERS],
+  ];
+  for (const [signal, markers] of passes) {
+    for (const scope of AMAZON_SELECTORS.detail.primeScopes) {
+      for (const marker of markers) {
+        const selector = `${scope} ${marker}`;
+        for (const el of safeQuerySelectorAll(doc, selector)) {
+          if (!isInsideExcludedDetailSubtree(el)) {
+            return { signal, selector };
+          }
+        }
+      }
+      if (signal === 'badge') {
+        for (const scopeEl of safeQuerySelectorAll(doc, scope)) {
+          const labelled = findPrimeBadgeLabel(scopeEl);
+          if (labelled && !isInsideExcludedDetailSubtree(labelled)) {
+            return { signal, selector: `${scope} [aria-label="Prime"]` };
+          }
+        }
+      }
+    }
+  }
+  if (delivery && AMAZON_PRIME_INGRESS_TEXT_PATTERN.test(delivery)) {
+    return { signal: 'ingress' };
+  }
+  return null;
 }
 
 interface JsonLdProductMetadata {
@@ -1361,7 +1430,9 @@ export function parseAmazonProductDetail(
     for (const selector of AMAZON_SELECTORS.detail.delivery) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
-        const text = normalizeWhitespace(el.textContent);
+        // SAD-391: the "Join Prime" ingress embeds <style>/<script>; keep
+        // only the visible text (byte-identical when no inline code exists).
+        const text = normalizeWhitespace(visibleTextContent(el));
         if (text) {
           delivery = text;
           deliverySelector = selector;
@@ -1526,18 +1597,19 @@ export function parseAmazonProductDetail(
     const variations = extractDetailVariations(doc, diag);
     const weight = extractDetailWeight(doc, diag);
 
-    // Prime
-    const isPrime = Boolean(
-      safeQuerySelector(
-        doc,
-        '#bbop-sbbop-container, #buybox i.a-icon-prime, #desktop_buybox i.a-icon-prime, #apex_desktop i.a-icon-prime, i.a-icon-prime, #mir-layout-DELIVERY_BLOCK [data-csa-c-delivery-price="FREE"]',
-      ) ||
-        (delivery && /\bFREE delivery\b/i.test(delivery)),
-    );
-    if (isPrime) {
-      diag?.extracted('isPrime', { source: 'derived' });
+    // Prime (SAD-391): badge ∨ Prime ingress; free delivery alone is not Prime.
+    const primeSignal = detectDetailPrimeSignal(doc, delivery);
+    const isPrime = primeSignal !== null;
+    if (primeSignal) {
+      diag?.extracted('isPrime', {
+        source: primeSignal.selector ? 'dom' : 'derived',
+        selector: primeSignal.selector,
+        reason: `prime ${primeSignal.signal}`,
+      });
     } else {
-      diag?.missing('isPrime', 'no Prime marker found', { source: 'derived' });
+      diag?.missing('isPrime', 'no Prime badge or Prime ingress found', {
+        source: 'derived',
+      });
     }
 
     const url = resolveProductUrl(null, asin, activeUrl);

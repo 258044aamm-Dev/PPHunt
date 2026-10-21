@@ -7,7 +7,7 @@
  *   Tier 4: Declarative selector fallback lists defined below
  */
 
-export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.0.0';
+export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.1.0';
 
 /**
  * SAD-349: the row labels under which Amazon publishes a warranty period.
@@ -45,6 +45,28 @@ export const AMAZON_WEIGHT_PACKAGE_LABEL_PATTERN =
  */
 export const AMAZON_DIMENSIONS_LABEL_PATTERN =
   /^(?:product\s+dimensions|item\s+dimensions(?:\s+lxwxh)?|package\s+dimensions|parcel\s+dimensions|dimensions)\s*:?$/i;
+
+/**
+ * SAD-391: the explicit Prime-eligibility wording Amazon prints for shoppers
+ * who do not see the badge (non-members / signed-out). Verified live on
+ * amazon.com search cards (2026-10-21): "Join Prime to get FREE delivery
+ * Fri, Oct 23" / "Or Non-members get FREE delivery Mon, Oct 26". English only
+ * — a locale variant is added here when a capture shows it, never as a bare
+ * "Prime" word match, and plain "FREE delivery" is deliberately NOT Prime.
+ */
+export const AMAZON_PRIME_INGRESS_TEXT_PATTERN =
+  /\b(?:Join Prime|Prime members? get|Non-members get FREE delivery)\b/i;
+
+/**
+ * SAD-391: ARIA labels that *are* the Prime badge, anchored on the whole label.
+ * "Prime" is what the real UDM and legacy badges carry; "Amazon Prime" was the
+ * registry's earlier exact entry; "Prime Eligible" is the class-less Tier-3
+ * shape pinned by tests/error-recovery-and-resilience.test.tsx. Anchoring is
+ * what stops a product title's `aria-label` ("Primer Spray …") from matching,
+ * which the former `[aria-label*="Prime" i]` wildcard did.
+ */
+export const AMAZON_PRIME_BADGE_LABEL_PATTERN =
+  /^(?:amazon\s+)?prime(?:\s+eligible)?\.?$/i;
 
 export const AMAZON_SELECTORS = {
   search: {
@@ -200,6 +222,19 @@ export const AMAZON_SELECTORS = {
       '#mir-layout-DELIVERY_BLOCK',
       '#deliveryBlockMessage',
     ],
+    /**
+     * SAD-391: the subtrees in which a PDP Prime badge or Prime ingress counts.
+     * The page-wide `i.a-icon-prime` is deliberately not used — a "similar
+     * items" or sponsored carousel tile can carry a badge the buy box does not.
+     * `#bbop-sbbop-container` is kept as a presence signal of its own.
+     */
+    primeScopes: [
+      '#buybox',
+      '#desktop_buybox',
+      '#apex_desktop',
+      '#deliveryBlockMessage',
+      '#mir-layout-DELIVERY_BLOCK',
+    ],
     seller: [
       '#sellerProfileTriggerId',
       '#tabular-buybox .tabular-buybox-text a',
@@ -335,11 +370,33 @@ export const AMAZON_SELECTORS = {
       'span[aria-label$="ratings" i]',
       'span[aria-label$="reviews" i]',
     ],
+    /**
+     * SAD-391: the Prime *badge*. Amazon renders it only for signed-in Prime
+     * members: UDM cards (2025+) as `.udm-badge-block > i.a-icon-prime-with-text
+     * > i.a-icon-prime[aria-label="Prime"]`, legacy/p13n cards as
+     * `i.a-icon-prime.a-icon-small[aria-label="Prime"]`. The ARIA label is the
+     * exact word "Prime", so the match is exact — a `*=` wildcard also hit
+     * product titles ("Primer Spray").
+     */
     prime: [
+      '.udm-badge-block i.a-icon-prime',
       'i.a-icon-prime',
+      '.a-icon-prime-with-text',
+      '[aria-label="Prime" i]',
       '[aria-label="Amazon Prime" i]',
       '[data-testid*="prime-badge"]',
       '#bbop-sbbop-container',
+    ],
+    /**
+     * SAD-391: the Prime-eligibility *ingress* a non-member sees instead of the
+     * badge — the "Join Prime to get FREE delivery <date>" link inside the
+     * unified delivery message. Scoped to delivery containers so the class
+     * cannot be matched elsewhere on the card.
+     */
+    primeIngress: [
+      '.udm-sfx-prime-signup-trigger',
+      '[data-cy="delivery-recipe"] .prime-brand-color',
+      '.udm-delivery-block .prime-brand-color',
     ],
     sponsored: [
       '.puis-sponsored-label-text',

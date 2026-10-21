@@ -34,6 +34,9 @@ function normalizedSearch(html: string, pageUrl: string) {
 describe('Phase 0 golden baseline — parser output snapshots', () => {
   it('US search + deals page: discount, list price, deal badge, coupon, past-month sales', () => {
     // Fixture reused from tests/pricing-deals-bsr.test.tsx (SAD-140).
+    // SAD-391 (D1): B0DEAL0001 carries no Prime badge and no Prime ingress —
+    // its only "evidence" was the words "FREE delivery", which is a shipping
+    // fact, not Prime. `isPrime` is therefore pinned to false since SAD-391.
     const html = `
       <div class="s-main-slot">
         <div data-component-type="s-search-result" data-asin="B0DEAL0001">
@@ -100,7 +103,7 @@ describe('Phase 0 golden baseline — parser output snapshots', () => {
           "discountPercentage": "68% off",
           "features": [],
           "imageUrl": "https://m.media-amazon.com/images/I/71soundcore._AC_UL320_.jpg",
-          "isPrime": true,
+          "isPrime": false,
           "isSponsored": false,
           "listPrice": 99.99,
           "pastMonthSales": "10K+ bought in past month",
