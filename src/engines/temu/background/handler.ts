@@ -176,6 +176,7 @@ export function registerTemuBackgroundHandlers(): {
       waitAfterScroll: number;
     };
     duplicateDetection: boolean;
+    expandDetails: boolean;
   }> {
     try {
       const s = await getTemuSettings();
@@ -186,6 +187,7 @@ export function registerTemuBackgroundHandlers(): {
           waitAfterScroll: s.waitAfterScroll,
         },
         duplicateDetection: s.duplicateDetection,
+        expandDetails: s.expandProductDetails,
       };
     } catch {
       return {
@@ -195,6 +197,7 @@ export function registerTemuBackgroundHandlers(): {
           waitAfterScroll: 2000,
         },
         duplicateDetection: true,
+        expandDetails: false,
       };
     }
   }
@@ -598,7 +601,7 @@ export function registerTemuBackgroundHandlers(): {
                 state.startedAt ?? undefined
               ).catch(() => {});
             }
-            const { scroll, duplicateDetection } =
+            const { scroll, duplicateDetection, expandDetails } =
               await buildTemuScrollConfig();
             const existingGoodsIds = await buildExistingGoodsIds();
             if (existingGoodsIds && existingGoodsIds.length > 0) {
@@ -616,6 +619,7 @@ export function registerTemuBackgroundHandlers(): {
                 sessionId: state.sessionId,
                 scroll,
                 duplicateDetection,
+                expandDetails,
                 existingGoodsIds,
               },
             });
@@ -649,7 +653,7 @@ export function registerTemuBackgroundHandlers(): {
                 state.startedAt ?? undefined
               ).catch(() => {});
             }
-            const { scroll, duplicateDetection } =
+            const { scroll, duplicateDetection, expandDetails } =
               await buildTemuScrollConfig();
             const existingGoodsIds = await buildExistingGoodsIds();
             await sendToTemuContentScriptWithRecovery(tabId, {
@@ -660,6 +664,7 @@ export function registerTemuBackgroundHandlers(): {
                 sessionId: state.sessionId,
                 scroll,
                 duplicateDetection,
+                expandDetails,
                 existingGoodsIds,
               },
             });

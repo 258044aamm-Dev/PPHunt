@@ -15,6 +15,10 @@ import {
   extractTemuSearchQuery,
 } from '@/engines/temu/scraper/page-detector';
 import { TemuParseCache } from '@/engines/temu/scraper/parse-cache';
+import {
+  expandTemuDetailSections,
+  readTemuPdpLabels,
+} from '@/engines/temu/scraper/pdp-details';
 import { parseTemuProductDetail } from '@/engines/temu/scraper/product-detail';
 import { TemuScrollController } from '@/engines/temu/scraper/scroll-controller';
 import { parseTemuSearchResults } from '@/engines/temu/scraper/search-results';
@@ -299,7 +303,8 @@ export default defineContentScript({
         waitAfterScroll: number;
       },
       duplicateDetection?: boolean,
-      existingGoodsIds?: string[]
+      existingGoodsIds?: string[],
+      expandDetails?: boolean
     ): void {
       if (isCollecting) stopCollection('user_stopped');
 
@@ -344,23 +349,59 @@ export default defineContentScript({
       parseCache.clear();
 
       sentDiagnosticKeys.clear();
-      const initialProducts = parseCurrentPage();
-      initialGoodsIds = new Set<string | null>(
-        initialProducts.products.map((product) => product.goodsId)
-      );
-      sendProductsToBackground(
-        initialProducts.products,
-        initialProducts.diagnostics
-      );
-      if (initialProducts.nullIdReport) {
-        sendLaterStageDiagnostics([initialProducts.nullIdReport], new Set());
+
+      /**
+       * SAD-381: the first parse, unchanged, moved into a function only so the
+       * opt-in expand click can run before it. Returns false when the target
+       * was already met, which keeps the existing early exit for the
+       * non-expanding path.
+       */
+      function runInitialParseAndObserve(): boolean {
+        const initialProducts = parseCurrentPage();
+        initialGoodsIds = new Set<string | null>(
+          initialProducts.products.map((product) => product.goodsId)
+        );
+        sendProductsToBackground(
+          initialProducts.products,
+          initialProducts.diagnostics
+        );
+        if (initialProducts.nullIdReport) {
+          sendLaterStageDiagnostics([initialProducts.nullIdReport], new Set());
+        }
+
+        if (
+          targetCount > 0 &&
+          seededCount + collectedSoFar.length >= targetCount
+        ) {
+          return false;
+        }
+
+        setupMutationObserver();
+        return true;
       }
 
-      if (targetCount > 0 && seededCount + collectedSoFar.length >= targetCount) {
-        return;
-      }
+      // SAD-381: off by default, so nothing on the page is clicked unless the
+      // user turned the setting on. Only a PDP has detail rows to expand.
+      const shouldExpand =
+        expandDetails === true &&
+        detectTemuPageType(window.location.href, document) === 'product_detail';
 
-      setupMutationObserver();
+      if (!shouldExpand) {
+        if (!runInitialParseAndObserve()) return;
+      } else {
+        const clicked = expandTemuDetailSections(
+          document,
+          readTemuPdpLabels(document)
+        );
+        // Let the DOM settle after a real click; skip the wait when nothing
+        // was collapsed.
+        window.setTimeout(
+          () => {
+            if (isCollecting) runInitialParseAndObserve();
+          },
+          clicked > 0 ? 400 : 0
+        );
+      }
 
       if (
         mode === 'automatic' &&
@@ -523,6 +564,7 @@ export default defineContentScript({
             targetCount: target,
             scroll,
             duplicateDetection,
+            expandDetails,
             existingGoodsIds,
           } = message.payload;
           startCollection(
@@ -530,7 +572,8 @@ export default defineContentScript({
             target,
             scroll,
             duplicateDetection,
-            existingGoodsIds
+            existingGoodsIds,
+            expandDetails
           );
           return { status: 'started', count: collectedSoFar.length };
         }
