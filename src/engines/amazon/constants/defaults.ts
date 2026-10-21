@@ -29,24 +29,22 @@ export const COLLECTION_DIAGNOSTICS_LIMIT = 50;
 /**
  * SAD-379: the collection pipeline's enrichment stage.
  *
- * A save continues into the product-page fetch + detail merge; a collection
- * used to stop at the card. These two settings decide whether a collection
- * runs that same stage and how many products per run it may enrich.
- *
- * Default OFF: with the switch off a collection run is byte-identical to
- * before this ticket, which is what keeps every existing feature untouched.
+ * A save continues into the product-page fetch + detail merge; a collection used
+ * to stop at the card. SAD-385 removed the on/off switch: `weight` and the full
+ * twister `variations` exist only on the product page, so a collection that skips
+ * this stage can never carry them. Only the per-run budget stays configurable.
  */
-export const DEFAULT_ENRICH_COLLECTED = false;
 
 /**
- * SAD-379: the per-run cap. A string enum rather than a number, matching the
- * house style for a bounded choice (`exportImages`, `quickSaveCollectionBehavior`),
+ * SAD-379/SAD-385: the per-run cap. A string enum rather than a number, matching
+ * the house style for a bounded choice (`exportImages`, `quickSaveCollectionBehavior`),
  * so the settings schema stays a plain `z.enum` and the radio values map 1:1.
- * `'all'` resolves to `Number.POSITIVE_INFINITY` in `utils/enrich-collected-flag.ts`.
+ * `'all'` resolves to `Number.POSITIVE_INFINITY` in `utils/enrich-collected-flag.ts`
+ * and is the default: a collected row is complete unless the user asks for less.
  */
 export const ENRICH_COLLECTED_LIMIT_OPTIONS = ['25', '50', 'all'] as const;
 export type EnrichCollectedLimit = (typeof ENRICH_COLLECTED_LIMIT_OPTIONS)[number];
-export const DEFAULT_ENRICH_COLLECTED_LIMIT: EnrichCollectedLimit = '50';
+export const DEFAULT_ENRICH_COLLECTED_LIMIT: EnrichCollectedLimit = 'all';
 
 export function clampTargetCount(value: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -123,8 +121,7 @@ export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   enabledFields: { ...DEFAULT_ENABLED_FIELDS },
   quickSaveCollectionBehavior: DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR,
   quickSaveAutoDownload: DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
-  // SAD-379: off by default — see DEFAULT_ENRICH_COLLECTED.
-  enrichCollectedProducts: DEFAULT_ENRICH_COLLECTED,
+  // SAD-385: a collection always enriches; only the budget is a setting.
   enrichCollectedLimit: DEFAULT_ENRICH_COLLECTED_LIMIT,
 };
 

@@ -186,12 +186,10 @@ export interface AmazonSettings {
   /** SAD-276: build the configured export right after each save (default off). */
   quickSaveAutoDownload: boolean;
   /**
-   * SAD-379: run the save pipeline's enrichment stage for collected products
-   * (default off). With this false a collection run is byte-identical to the
-   * pre-SAD-379 behaviour.
+   * SAD-385: per-run enrichment budget for a collection ('25' | '50' | 'all',
+   * default 'all'). A collection always runs the save pipeline's enrichment
+   * stage — `weight` and the full `variations` come from nowhere else.
    */
-  enrichCollectedProducts: boolean;
-  /** SAD-379: per-run enrichment cap for a collection ('25' | '50' | 'all'). */
   enrichCollectedLimit: EnrichCollectedLimit;
 }
 export type Settings = AmazonSettings;

@@ -38,7 +38,7 @@ import type {
 } from '../types';
 import { isAmazonUrl } from '../utils/amazon-url';
 import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
-import { getEnrichCollectedSettings } from '../utils/enrich-collected-flag';
+import { getEnrichCollectedLimit } from '../utils/enrich-collected-flag';
 import { handleAssignSavedProduct } from './assignment';
 import { enrichSavedProduct } from './enrich-saved-product';
 import {
@@ -577,14 +577,15 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
 
     if (validProducts.length > 0) {
       await addProducts(validProducts, active.sessionKey);
-      // SAD-379: run the save pipeline's enrichment stage for what this batch
-      // just wrote. Never awaited — progress and STOP_COLLECTION must not wait
+      // SAD-385: a collection now always finishes what a save finishes. `weight`
+      // and the full twister `variations` exist only on the product page, so this
+      // stage is the only way a collected row can carry them — a listing card
+      // prints neither. Never awaited: progress and STOP_COLLECTION must not wait
       // on a ~2.4 s product-page fetch.
-      const enrichCollected = getEnrichCollectedSettings();
-      if (enrichCollected.enabled && deps.enrich) {
+      if (deps.enrich) {
         enqueueCollectionEnrichment(validProducts, active.sessionKey, {
           enrich: deps.enrich,
-          limit: enrichCollected.limit,
+          limit: getEnrichCollectedLimit(),
         });
       }
     }

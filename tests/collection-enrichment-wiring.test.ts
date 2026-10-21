@@ -1,6 +1,6 @@
 /**
- * SAD-379 step 1 — wiring: the collection pipeline calls the save pipeline's
- * enrichment stage, and only when the switch is on.
+ * SAD-379 step 1 / SAD-385 — wiring: the collection pipeline always calls the
+ * save pipeline's enrichment stage, bounded by the per-run budget.
  *
  * This drives the **real** background listener (`@/entrypoints/background`),
  * exactly as `background-router-robustness.test.ts` does, so what is asserted is
@@ -52,12 +52,13 @@ function event() {
 
 /**
  * Boots the real entrypoint. `stored` is what `storage.local.get` reports for
- * the SAD-379 key, so the switch is driven the way production drives it: the
+ * the enrichment key, so the budget is driven the way production drives it: the
  * start-up read in `src/entrypoints/background.ts`.
+ *
+ * SAD-385: the value is `{ limit }` — there is no switch any more, and `'all'`
+ * is the default a fresh install runs with.
  */
-async function startBackground(
-  stored: { enabled: boolean; limit: string } = { enabled: false, limit: '50' },
-) {
+async function startBackground(stored: { limit: string } = { limit: 'all' }) {
   const onMessage = event();
   const mockBrowser = {
     sidePanel: {
@@ -176,33 +177,31 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe('SAD-379: with the switch OFF, collection is unchanged', () => {
-  it('never calls the enrichment stage, and still stores every product', async () => {
+describe('SAD-385: a collection always runs the save pipeline stage', () => {
+  it('enriches every collected product with no setting touched', async () => {
     const { db } = await import('@/lib/db/database');
     const { onMessage } = await startBackground();
     const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     const before = await db.products.count();
     drive(onMessage, collected(ASINS(3)));
+    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(3));
     await pump.whenCollectionEnrichmentIdle();
     await waitFor(async () => expect(await db.products.count()).toBe(before + 3));
-
-    expect(enrichSavedProduct).not.toHaveBeenCalled();
   });
 
-  it('the flag defaults to off/false with no stored value', async () => {
+  it('the budget defaults to "all" with no stored value', async () => {
     await startBackground();
     const flag = await import('@/engines/amazon/utils/enrich-collected-flag');
-    expect(flag.getEnrichCollectedSettings()).toEqual({
-      enabled: false,
-      limit: 50,
-    });
+    // This is the ticket: nothing has to be switched on for a collection to
+    // reach the product page that carries weight and variations.
+    expect(flag.getEnrichCollectedLimit()).toBe(Number.POSITIVE_INFINITY);
   });
 });
 
-describe('SAD-379: with the switch ON, collection runs the save pipeline stage', () => {
+describe('SAD-379: collection runs the save pipeline stage', () => {
   it('enriches each collected product through the same function the save path uses', async () => {
-    const { onMessage } = await startBackground({ enabled: true, limit: '50' });
+    const { onMessage } = await startBackground({ limit: '50' });
     const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     const asins = ASINS(3);
@@ -223,7 +222,7 @@ describe('SAD-379: with the switch ON, collection runs the save pipeline stage',
   });
 
   it('honours the 25 cap from the setting', async () => {
-    const { onMessage } = await startBackground({ enabled: true, limit: '25' });
+    const { onMessage } = await startBackground({ limit: '25' });
     const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     drive(onMessage, collected(ASINS(40)));
@@ -238,7 +237,7 @@ describe('SAD-379: with the switch ON, collection runs the save pipeline stage',
     const { db } = await import('@/lib/db/database');
     // An enrichment that never resolves: the collection must not depend on it.
     enrichSavedProduct.mockImplementation(() => new Promise(() => {}));
-    const { onMessage } = await startBackground({ enabled: true, limit: '50' });
+    const { onMessage } = await startBackground({ limit: '50' });
     const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     const before = await db.products.count();
@@ -253,44 +252,48 @@ describe('SAD-379: with the switch ON, collection runs the save pipeline stage',
   });
 });
 
-describe('SAD-379: the settings cache', () => {
-  it('maps the enum to a numeric limit and fails closed', async () => {
+describe('SAD-385: the budget cache', () => {
+  it('maps the enum to a numeric limit and falls back to the default', async () => {
     const { flag } = await startBackground();
 
     expect(flag.resolveEnrichCollectedLimit('25')).toBe(25);
     expect(flag.resolveEnrichCollectedLimit('50')).toBe(50);
     expect(flag.resolveEnrichCollectedLimit('all')).toBe(Number.POSITIVE_INFINITY);
 
-    // A corrupt stored value falls back to the defaults rather than throwing.
+    // A corrupt stored value falls back to the default rather than throwing.
     expect(flag.readEnrichCollected({ enabled: 'yes', limit: 'lots' })).toEqual({
-      enabled: false,
-      limit: '50',
+      limit: 'all',
     });
+    expect(flag.readEnrichCollected(null)).toEqual({ limit: 'all' });
   });
 
-  it('takes effect live when the switch is toggled, with no worker restart', async () => {
-    const { browser, onMessage } = await startBackground({
-      enabled: false,
-      limit: '50',
-    });
-    const pump = await import('@/engines/amazon/background/enrichment-pump');
+  it('keeps a budget a user actually chose, and ignores the old off switch', async () => {
+    const { flag } = await startBackground();
 
-    drive(onMessage, collected(ASINS(2)));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(enrichSavedProduct).not.toHaveBeenCalled();
+    // SAD-379's shape: the user switched enrichment on and picked 25.
+    expect(flag.readEnrichCollected({ enabled: true, limit: '25' })).toEqual({
+      limit: '25',
+    });
+    // SAD-379's factory value: nobody chose it, so it moves to the new default.
+    expect(flag.readEnrichCollected({ enabled: false, limit: '50' })).toEqual({
+      limit: 'all',
+    });
+    // The new writer's own shape.
+    expect(flag.readEnrichCollected({ limit: '50' })).toEqual({ limit: '50' });
+  });
+
+  it('takes effect live when the budget changes, with no worker restart', async () => {
+    const { browser, flag } = await startBackground({ limit: '25' });
+    expect(flag.getEnrichCollectedLimit()).toBe(25);
 
     // Settings writes `storage.local`; the worker picked up `onChanged` at boot.
     browser.storage.onChanged.emit(
       {
-        pphuntEnrichCollected: {
-          newValue: { enabled: true, limit: 'all' },
-        },
+        pphuntEnrichCollected: { newValue: { limit: 'all' } },
       },
       'local',
     );
 
-    drive(onMessage, collected(ASINS(2)));
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(2));
-    await pump.whenCollectionEnrichmentIdle();
+    expect(flag.getEnrichCollectedLimit()).toBe(Number.POSITIVE_INFINITY);
   });
 });

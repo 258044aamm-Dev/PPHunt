@@ -1,5 +1,6 @@
 /**
- * SAD-379 step 3 — the ticket's acceptance criterion, stated differentially.
+ * SAD-379 step 3 / SAD-385 — the ticket's acceptance criterion, stated
+ * differentially.
  *
  * The same listing card, given to the save pipeline and to the collection
  * pipeline, must end as the same product row. Before this ticket it did not:
@@ -292,14 +293,12 @@ afterEach(async () => {
 describe('SAD-379: a collected row equals a saved row', () => {
   it('the same card yields the same product row through both pipelines', async () => {
     const { onMessage } = await startBackground();
-    const flag = await import('@/engines/amazon/utils/enrich-collected-flag');
 
     // One card, one ASIN, two runs: a save (its own session) and a collection
     // (a different session). Same input, so any difference is the pipeline's.
+    // SAD-385: no setting is touched — this is the default configuration.
     const ASIN = 'B0000000AA';
     const saved = await saveProduct(onMessage, card(ASIN));
-
-    await flag.setEnrichCollectedSettings({ enabled: true, limit: '50' });
     const collected = await collectProduct(onMessage, card(ASIN), saved?.id);
 
     // Different runs...
@@ -314,17 +313,16 @@ describe('SAD-379: a collected row equals a saved row', () => {
     expect(collected?.seller).toBe(DETAIL.seller);
     expect(collected?.description).toBe(DETAIL.description);
     expect(collected?.weight).toBe(DETAIL.weight);
+    expect(collected?.variations).toBe(DETAIL.variations);
     expect(collected?.warrantyDescription).toBe(DETAIL.warrantyDescription);
     expect(collected?.price).toBe(19.99);
   });
 
   it('both pipelines publish exactly one detail snapshot for the product', async () => {
     const { onMessage } = await startBackground();
-    const flag = await import('@/engines/amazon/utils/enrich-collected-flag');
     const { db } = await import('@/lib/db/database');
 
     await saveProduct(onMessage, card('B0000000CC'));
-    await flag.setEnrichCollectedSettings({ enabled: true, limit: '50' });
     await collectProduct(onMessage, card('B0000000DD'));
 
     const snapshots = await db.snapshots.toArray();
@@ -335,23 +333,31 @@ describe('SAD-379: a collected row equals a saved row', () => {
     ]);
   });
 
-  it('with the switch off the collected row keeps the card-only shape it always had', async () => {
+  /**
+   * SAD-385 inverts the old default deliberately: a collected row that stops at
+   * the card can never carry `weight` or the full `variations`, so the
+   * card-only shape is exactly the reported bug.
+   */
+  it('with default settings a collected row carries the detail-only fields', async () => {
     const { onMessage } = await startBackground();
     const { db } = await import('@/lib/db/database');
+    const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     drive(onMessage, {
       type: 'PRODUCTS_COLLECTED',
       payload: { products: [card('B0000000EE')], totalCount: 1, isNewBatch: true },
     });
+    await pump.whenCollectionEnrichmentIdle();
 
     await waitFor(async () =>
       expect(await db.products.where('asin').equals('B0000000EE').count()).toBe(1),
     );
     const row = await rowFor('B0000000EE');
-    // No detail fields: this is the pre-SAD-379 behaviour, still the default.
-    expect(row?.seller ?? null).toBeNull();
-    expect(row?.description ?? null).toBeNull();
-    expect(row?.weight).toBeUndefined();
-    expect(await db.snapshots.count()).toBe(0);
+    // The two fields this ticket is about, plus one more from the same page.
+    expect(row?.weight).toBe(DETAIL.weight);
+    expect(row?.variations).toBe(DETAIL.variations);
+    expect(row?.seller).toBe(DETAIL.seller);
+    // And the observation is recorded exactly as a save records it.
+    expect(await db.snapshots.count()).toBe(1);
   });
 });

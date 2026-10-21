@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_ENABLED_FIELDS,
-  DEFAULT_ENRICH_COLLECTED,
   DEFAULT_ENRICH_COLLECTED_LIMIT,
   ENRICH_COLLECTED_LIMIT_OPTIONS,
   DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
@@ -111,9 +110,11 @@ export const AmazonSettingsSchema = z.object({
     .enum(['current', 'new', 'ask'])
     .default(DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR),
   quickSaveAutoDownload: z.boolean().default(DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD),
-  // SAD-379: the collection enrichment stage. Both keys are optional-with-default,
-  // so an existing stored row parses without a settingsVersion bump.
-  enrichCollectedProducts: z.boolean().default(DEFAULT_ENRICH_COLLECTED),
+  // SAD-385: collection enrichment is no longer a switch — the product page is
+  // the only source of `weight` and the full `variations`, so a collection always
+  // runs that stage. A stored row that still carries `enrichCollectedProducts`
+  // keeps the key untouched in IndexedDB (a non-strict `z.object` strips it) and
+  // nothing reads it, so no settingsVersion bump is needed.
   enrichCollectedLimit: z
     .enum(ENRICH_COLLECTED_LIMIT_OPTIONS)
     .default(DEFAULT_ENRICH_COLLECTED_LIMIT),
@@ -162,8 +163,7 @@ export const PartialAmazonSettingsSchema = z.object({
   enabledFields: EnabledFieldsSchema.partial().optional(),
   quickSaveCollectionBehavior: z.enum(['current', 'new', 'ask']).optional(),
   quickSaveAutoDownload: z.boolean().optional(),
-  // SAD-379
-  enrichCollectedProducts: z.boolean().optional(),
+  // SAD-385: only the per-run budget is user-settable.
   enrichCollectedLimit: z.enum(ENRICH_COLLECTED_LIMIT_OPTIONS).optional(),
 });
 

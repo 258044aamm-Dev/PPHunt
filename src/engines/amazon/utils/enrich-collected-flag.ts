@@ -1,41 +1,29 @@
 /**
- * SAD-379: the cached reader for the collection enrichment switch.
+ * SAD-379: the cached reader for the collection enrichment budget.
  *
- * Mirrors the `utils/diagnostics-flag.ts` pattern (SAD-369): the two settings
- * are mirrored into `storage.local` so the service worker gets a *synchronous*
+ * Mirrors the `utils/diagnostics-flag.ts` pattern (SAD-369): the value is
+ * mirrored into `storage.local` so the service worker gets a *synchronous*
  * answer on the hot path (every `PRODUCTS_COLLECTED` batch), and
- * `storage.onChanged` keeps the cache live so flipping the switch in Settings
- * takes effect without a worker restart.
+ * `storage.onChanged` keeps the cache live so changing it in Settings takes
+ * effect without a worker restart.
  *
- * Both values are read with a single `get`, so the hot path costs one storage
- * read rather than two.
+ * SAD-385 removed the on/off switch this module used to carry: a collection
+ * always enriches, because `weight` and the full `variations` only exist on the
+ * product page. What remains is the per-run budget.
  *
  * Everything is defensive and injectable: with no extension APIs (tests, a
- * restricted context) the cache keeps its defaults — OFF — so nothing is ever
- * enriched by accident.
+ * restricted context) the cache keeps its defaults.
  */
 import {
-  DEFAULT_ENRICH_COLLECTED,
   DEFAULT_ENRICH_COLLECTED_LIMIT,
   ENRICH_COLLECTED_LIMIT_OPTIONS,
   type EnrichCollectedLimit,
 } from '../constants/defaults';
 
-/** One `storage.local` key holding `{ enabled, limit }`. */
+/** One `storage.local` key holding `{ limit }` (SAD-379 wrote `{ enabled, limit }`). */
 export const ENRICH_COLLECTED_KEY = 'pphuntEnrichCollected';
 
-export interface EnrichCollectedSettings {
-  /** Whether a collection run should enrich what it collected. */
-  enabled: boolean;
-  /**
-   * How many products this run may enrich. `'all'` arrives here as
-   * `Number.POSITIVE_INFINITY`, so callers never branch on a string.
-   */
-  limit: number;
-}
-
 export interface StoredEnrichCollected {
-  enabled: boolean;
   limit: EnrichCollectedLimit;
 }
 
@@ -68,9 +56,8 @@ function storageOf(browserLike: unknown): FlagStorageLike['storage'] {
   return (browserLike as FlagStorageLike | undefined)?.storage;
 }
 
-/** Module-scoped cache. Starts OFF (fail closed) until a read resolves. */
+/** Module-scoped cache. Starts at the default budget until a read resolves. */
 let cached: StoredEnrichCollected = {
-  enabled: DEFAULT_ENRICH_COLLECTED,
   limit: DEFAULT_ENRICH_COLLECTED_LIMIT,
 };
 let subscribed = false;
@@ -90,23 +77,24 @@ function isLimit(value: unknown): value is EnrichCollectedLimit {
 
 /**
  * Normalises whatever was stored. A missing row, a corrupt value or a value
- * from a future version all fall back to the defaults instead of throwing.
+ * from a future version all fall back to the default instead of throwing.
+ *
+ * SAD-385: the stored value may still be SAD-379's `{ enabled, limit }`. The
+ * only case that carries a *user's* intent is `enabled: true` — they switched
+ * enrichment on and picked a budget — so that budget is kept. The factory
+ * record (`enabled: false`, the old default) was never chosen by anybody and
+ * falls through to the new default, `all`. A record with no `enabled` key at all
+ * is the new writer's own shape and simply keeps its limit.
  */
 export function readEnrichCollected(value: unknown): StoredEnrichCollected {
   if (!value || typeof value !== 'object') {
-    return {
-      enabled: DEFAULT_ENRICH_COLLECTED,
-      limit: DEFAULT_ENRICH_COLLECTED_LIMIT,
-    };
+    return { limit: DEFAULT_ENRICH_COLLECTED_LIMIT };
   }
   const record = value as Record<string, unknown>;
-  return {
-    enabled:
-      typeof record.enabled === 'boolean'
-        ? record.enabled
-        : DEFAULT_ENRICH_COLLECTED,
-    limit: isLimit(record.limit) ? record.limit : DEFAULT_ENRICH_COLLECTED_LIMIT,
-  };
+  if (isLimit(record.limit) && record.enabled !== false) {
+    return { limit: record.limit };
+  }
+  return { limit: DEFAULT_ENRICH_COLLECTED_LIMIT };
 }
 
 /** `'all'` → Infinity, `'25'` → 25, `'50'` → 50. */
@@ -114,12 +102,14 @@ export function resolveEnrichCollectedLimit(limit: EnrichCollectedLimit): number
   return limit === 'all' ? Number.POSITIVE_INFINITY : Number(limit);
 }
 
-/** Synchronous, cached read — cheap enough for every collection batch. */
-export function getEnrichCollectedSettings(): EnrichCollectedSettings {
-  return {
-    enabled: cached.enabled,
-    limit: resolveEnrichCollectedLimit(cached.limit),
-  };
+/**
+ * Synchronous, cached read — cheap enough for every collection batch.
+ *
+ * `'all'` arrives here as `Number.POSITIVE_INFINITY`, so callers never branch on
+ * a string.
+ */
+export function getEnrichCollectedLimit(): number {
+  return resolveEnrichCollectedLimit(cached.limit);
 }
 
 /** The raw enum, for the Settings UI's radio group. */
@@ -143,10 +133,7 @@ export async function refreshEnrichCollected(
     cached = readEnrichCollected(stored?.[ENRICH_COLLECTED_KEY]);
   } catch {
     if (epoch !== startedAt) return;
-    cached = {
-      enabled: DEFAULT_ENRICH_COLLECTED,
-      limit: DEFAULT_ENRICH_COLLECTED_LIMIT,
-    };
+    cached = { limit: DEFAULT_ENRICH_COLLECTED_LIMIT };
   }
 }
 
@@ -154,11 +141,11 @@ export async function refreshEnrichCollected(
  * The single writer (the Settings UI). The cache is updated even when storage
  * is unavailable, so tests and restricted pages behave consistently.
  */
-export async function setEnrichCollectedSettings(
-  settings: Partial<StoredEnrichCollected>,
+export async function setEnrichCollectedLimit(
+  limit: EnrichCollectedLimit,
   browserLike: unknown = defaultBrowserLike(),
 ): Promise<void> {
-  const next = readEnrichCollected({ ...cached, ...settings });
+  const next: StoredEnrichCollected = { limit };
   epoch += 1;
   cached = next;
   try {
@@ -195,10 +182,7 @@ export function subscribeEnrichCollected(
 
 /** Test-only: restore the module to its startup state. */
 export function resetEnrichCollectedForTests(): void {
-  cached = {
-    enabled: DEFAULT_ENRICH_COLLECTED,
-    limit: DEFAULT_ENRICH_COLLECTED_LIMIT,
-  };
+  cached = { limit: DEFAULT_ENRICH_COLLECTED_LIMIT };
   subscribed = false;
   epoch = 0;
 }
