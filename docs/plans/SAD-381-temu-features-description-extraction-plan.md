@@ -638,6 +638,7 @@ currency, rating, reviewCount, sales, image, seller, brand, availability, badges
 | | only the right-column Highlights module yielded rows | `EXTRACTED` | `dom` | `right-column highlights fallback` |
 | | rows found **and** a collapse control remains | `PARTIAL` | `dom` | `collapsed rows not expanded` |
 | | `#goodsDetail` absent | `MISSING` | `dom` | `no details section rendered` |
+| | section present, zero candidates | `MISSING` | `dom` | `no feature rows in the details section` |
 | | section present, candidates all filtered | `PARSE_FAILED` | `dom` | `feature candidates rejected by length, denylist or dedup` |
 | `description` | JSON-LD `description` used | `EXTRACTED` | `json-ld` | — |
 | | Description module rows used | `EXTRACTED` | `dom` | `description module rows` |

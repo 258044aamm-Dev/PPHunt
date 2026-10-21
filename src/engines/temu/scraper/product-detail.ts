@@ -23,6 +23,11 @@ import {
   parseTemuReviewCount,
   validateAndNormalizeTemuScrapedProduct,
 } from './field-parsers';
+import {
+  extractTemuPdpDescription,
+  extractTemuPdpFeatures,
+  readTemuPdpLabels,
+} from './pdp-details';
 import { TEMU_SELECTORS } from './selectors';
 
 interface TemuJsonLdMetadata {
@@ -506,33 +511,79 @@ export function parseTemuProductDetail(
       );
     }
 
-    // 7. Features / Specifications & Description
-    const features = extractTemuPdpFeatures(document, diag);
-    const domDescription =
-      ldMeta.description === null
-        ? cleanTemuText(
-            document
-              .querySelector('meta[name="description"]')
-              ?.getAttribute('content')
-          )
-        : null;
+    // 7. Features / Specifications & Description (SAD-381)
+    const pdpLabels = readTemuPdpLabels(document);
+    const detailsSelector = TEMU_SELECTORS.productDetail.detailsSection;
+    const featureEvidence = extractTemuPdpFeatures(document, pdpLabels);
+    const features = featureEvidence.features;
+    const featureSelector =
+      featureEvidence.source === 'right-column-highlights'
+        ? TEMU_SELECTORS.productDetail.descriptionRegion
+        : detailsSelector;
+
+    if (diag) {
+      // A collapsed section always reports PARTIAL, even when rows were
+      // captured: the page holds more than we could read without clicking.
+      if (features.length > 0 && featureEvidence.collapsed) {
+        diag.partial('features', 'collapsed rows not expanded', {
+          source: 'dom',
+          selector: featureSelector,
+        });
+      } else if (features.length > 0) {
+        diag.extracted('features', {
+          source: 'dom',
+          selector: featureSelector,
+          reason:
+            featureEvidence.source === 'right-column-highlights'
+              ? 'right-column highlights fallback'
+              : 'highlights, spec rows and table rows',
+        });
+      } else if (featureEvidence.candidates > 0) {
+        diag.parseFailed(
+          'features',
+          'feature candidates rejected by length, denylist or dedup',
+          { source: 'dom', selector: detailsSelector }
+        );
+      } else {
+        diag.missing(
+          'features',
+          document.querySelector(detailsSelector) === null
+            ? 'no details section rendered'
+            : 'no feature rows in the details section',
+          { source: 'dom', selector: detailsSelector }
+        );
+      }
+    }
+
+    // `meta[name="description"]` is deliberately not a source any more: on
+    // Temu it is SEO boilerplate, not the product's description. JSON-LD and
+    // the page's own "Description" module are the only sources.
+    const descriptionSelector = `${TEMU_SELECTORS.productDetail.descriptionRegion} ${TEMU_SELECTORS.productDetail.moduleBlock}`;
+    const descriptionEvidence = extractTemuPdpDescription(document, pdpLabels);
+    const domDescription = cleanTemuText(descriptionEvidence.description);
     const description = ldMeta.description ?? domDescription;
 
     if (ldMeta.description !== null) {
       diag?.extracted('description', { source: 'json-ld' });
     } else if (domDescription !== null) {
-      recordFallback(
-        diag,
-        'description',
-        { source: 'dom', selector: 'meta[name="description"]' },
-        'JSON-LD description rejected; meta description used'
-      );
+      if (descriptionEvidence.collapsed) {
+        diag?.partial('description', 'collapsed rows not expanded', {
+          source: 'dom',
+          selector: descriptionSelector,
+        });
+      } else {
+        diag?.extracted('description', {
+          source: 'dom',
+          selector: descriptionSelector,
+          reason: 'description module rows',
+        });
+      }
     } else {
       recordAbsence(
         diag,
         'description',
-        'no JSON-LD description or meta description',
-        { source: 'dom', selector: 'meta[name="description"]' },
+        'no description module and no JSON-LD description',
+        { source: 'dom', selector: descriptionSelector },
         jsonLdEvidence(ldMeta)
       );
     }
@@ -611,49 +662,6 @@ function extractGoodsIdFromPdpDom(document: Document): string | null {
     }
   }
   return null;
-}
-
-function extractTemuPdpFeatures(
-  document: Document,
-  diagnostics?: FieldDiagnosticsCollector
-): string[] {
-  const features: string[] = [];
-  const seen = new Set<string>();
-  const scope =
-    document.querySelector('#goodsDetail, #leftContent, #rightContent') ??
-    document;
-
-  const items = Array.from(scope.querySelectorAll('li, tr'));
-  for (const item of items) {
-    // Skip breadcrumb items
-    if (item.closest('nav, ol')) continue;
-    const text = extractTemuElementText(item);
-    if (!text || text.length < 4 || text.length > 200) continue;
-    if (!seen.has(text)) {
-      seen.add(text);
-      features.push(text);
-      if (features.length >= 15) break;
-    }
-  }
-
-  // SAD-360: absence vs. "candidates were rejected by the existing filters".
-  if (diagnostics) {
-    if (features.length > 0) {
-      diagnostics.extracted('features', { source: 'dom' });
-    } else if (items.length > 0) {
-      diagnostics.parseFailed(
-        'features',
-        'feature candidates rejected by length or dedup filters',
-        { source: 'dom' }
-      );
-    } else {
-      diagnostics.missing('features', 'no feature/spec list nodes', {
-        source: 'dom',
-      });
-    }
-  }
-
-  return features;
 }
 
 /**

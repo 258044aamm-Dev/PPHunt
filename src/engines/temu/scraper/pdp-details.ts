@@ -1,4 +1,5 @@
 import { cleanTemuText, extractTemuElementText } from './field-parsers';
+import { TEMU_SELECTORS } from './selectors';
 
 /**
  * SAD-381: Temu PDP `features` and `description` extraction.
@@ -280,7 +281,11 @@ function propertyRows(root: Element): string[] {
   let best: string[] = [];
 
   for (const el of Array.from(root.querySelectorAll('div'))) {
-    if (el.closest('[data-id="module"], table, nav, ul, ol, [role="button"]')) {
+    if (
+      el.closest(
+        `${TEMU_SELECTORS.productDetail.moduleBlock}, table, nav, ul, ol, [role="button"]`
+      )
+    ) {
       continue;
     }
     const children = Array.from(el.children).filter(
@@ -307,7 +312,9 @@ function propertyRows(root: Element): string[] {
 /** `GoodsPropertyTable` rows, joined as `Key: Value`. */
 function propertyTableRows(root: Element): string[] {
   const rows: string[] = [];
-  for (const tr of Array.from(root.querySelectorAll('table tr'))) {
+  for (const tr of Array.from(
+    root.querySelectorAll(TEMU_SELECTORS.productDetail.propertyTable)
+  )) {
     const key = cleanTemuText(tr.querySelector('th')?.textContent);
     const value = cleanTemuText(tr.querySelector('td')?.textContent);
     if (key && value) rows.push(`${key}: ${value}`);
@@ -326,7 +333,7 @@ export function extractTemuPdpFeatures(
   doc: Document,
   labels: TemuPdpLabels = TEMU_PDP_FALLBACK_LABELS
 ): FeatureEvidence {
-  const details = doc.querySelector('#goodsDetail');
+  const details = doc.querySelector(TEMU_SELECTORS.productDetail.detailsSection);
   const controls = controlLabels(labels);
   const seen = new Set<string>();
   const out: string[] = [];
@@ -347,7 +354,7 @@ export function extractTemuPdpFeatures(
 
   if (details) {
     for (const block of Array.from(
-      details.querySelectorAll('[data-id="module"]')
+      details.querySelectorAll(TEMU_SELECTORS.productDetail.moduleBlock)
     )) {
       moduleRowTexts(block, controls).forEach(push);
     }
@@ -360,9 +367,13 @@ export function extractTemuPdpFeatures(
     return { features: out, collapsed, candidates, source: 'details-section' };
   }
 
-  const right = doc.querySelector('#rightContent');
+  const right = doc.querySelector(
+    TEMU_SELECTORS.productDetail.descriptionRegion
+  );
   const highlight = right
-    ? Array.from(right.querySelectorAll('[data-id="module"]')).find(
+    ? Array.from(
+        right.querySelectorAll(TEMU_SELECTORS.productDetail.moduleBlock)
+      ).find(
         (block) =>
           cleanTemuText(extractTemuElementText(block.firstElementChild)) ===
           labels.highlight
@@ -390,13 +401,17 @@ export function extractTemuPdpDescription(
   doc: Document,
   labels: TemuPdpLabels = TEMU_PDP_FALLBACK_LABELS
 ): DescriptionEvidence {
-  const right = doc.querySelector('#rightContent');
+  const right = doc.querySelector(
+    TEMU_SELECTORS.productDetail.descriptionRegion
+  );
   if (!right) {
     return { description: null, source: 'none', collapsed: false, candidates: 0 };
   }
 
   const controls = controlLabels(labels);
-  const blocks = Array.from(right.querySelectorAll('[data-id="module"]'));
+  const blocks = Array.from(
+    right.querySelectorAll(TEMU_SELECTORS.productDetail.moduleBlock)
+  );
   const byTitle = blocks.find(
     (block) =>
       cleanTemuText(extractTemuElementText(block.firstElementChild)) ===
@@ -441,7 +456,10 @@ export function expandTemuDetailSections(
   const controls = controlLabels(labels);
   let clicked = 0;
 
-  for (const scope of ['#goodsDetail', '#rightContent']) {
+  for (const scope of [
+    TEMU_SELECTORS.productDetail.detailsSection,
+    TEMU_SELECTORS.productDetail.descriptionRegion,
+  ]) {
     const root = doc.querySelector(scope);
     if (!root) continue;
     for (const el of Array.from(

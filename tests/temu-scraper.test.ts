@@ -318,10 +318,11 @@ describe('Temu Search, Category, PDP & Structural Fallback Extraction (SAD-212 /
               <span data-type="saleTips">5.2K+ sold</span>
               <div>Sold by KeyCraft Direct Store</div>
               <div>Free shipping on all orders</div>
-              <ul>
-                <li>Material: ABS & PBT Double-Shot Keycaps</li>
-                <li>Connectivity: Tri-Mode Wireless 2.4G / Bluetooth 5.1 / USB-C</li>
-              </ul>
+              <div>
+                <div>Material: ABS &amp; PBT Double-Shot Keycaps</div>
+                <div>Connectivity: Tri-Mode Wireless 2.4G / Bluetooth 5.1 / USB-C</div>
+                <div>Layout: 75% ANSI</div>
+              </div>
             </div>
           </div>
         </body>
