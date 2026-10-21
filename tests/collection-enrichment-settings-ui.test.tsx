@@ -1,11 +1,17 @@
 /**
- * SAD-379 step 2 — the COLLECTION ENRICHMENT section in the Amazon settings.
+ * SAD-379 step 2 / SAD-385 — the COLLECTION ENRICHMENT section in the Amazon
+ * settings.
  *
  * Drives the real `AmazonSettingsOverlay` (no re-implementation). What matters
- * here is the contract the service worker depends on: the switch is persisted in
- * the settings row, mirrored into `storage.local` where the worker reads it
- * synchronously, off on a fresh install, and restored to off/50 by Restore
- * Defaults — which cannot reach the mirror on its own.
+ * here is the contract the service worker depends on: the per-run budget is
+ * persisted in the settings row, mirrored into `storage.local` where the worker
+ * reads it synchronously, defaults to `all` on a fresh install, and is restored
+ * to `all` by Restore Defaults — which cannot reach the mirror on its own.
+ *
+ * SAD-385 removed the on/off switch: a collection always enriches, because
+ * `weight` and the full `variations` exist only on the product page. The first
+ * test below pins that removal, so a stray checkbox cannot come back and make
+ * the reported bug reachable again.
  */
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,17 +29,11 @@ import { db } from '@/engines/amazon/db/database';
 import { getSettings } from '@/engines/amazon/db/settings';
 import {
   ENRICH_COLLECTED_KEY,
-  getEnrichCollectedSettings,
+  getEnrichCollectedLimit,
   resetEnrichCollectedForTests,
 } from '@/engines/amazon/utils/enrich-collected-flag';
 
 let storageState: Record<string, unknown>;
-
-function getSwitch() {
-  return screen.getByRole('checkbox', {
-    name: /Enrich collected products/,
-  }) as HTMLInputElement;
-}
 
 function getRadio(name: RegExp) {
   return screen.getByRole('radio', { name }) as HTMLInputElement;
@@ -43,14 +43,11 @@ function getRadio(name: RegExp) {
  * The settings row is written through a 500 ms debounce (SAD-276 behaviour), so
  * every assertion on the *persisted* value has to wait rather than read once.
  */
-async function expectStored(
-  expected: { enabled: boolean; limit: string },
-) {
+async function expectStoredLimit(limit: string) {
   await waitFor(
     async () => {
       const row = await getSettings();
-      expect(row.enrichCollectedProducts).toBe(expected.enabled);
-      expect(row.enrichCollectedLimit).toBe(expected.limit);
+      expect(row.enrichCollectedLimit).toBe(limit);
     },
     { timeout: 3000 },
   );
@@ -94,96 +91,94 @@ async function renderOverlay() {
   await screen.findByText('COLLECTION ENRICHMENT', {}, { timeout: 3000 });
 }
 
-describe('SAD-379 collection enrichment settings', () => {
-  it('is off by default, with the limit radios unavailable', async () => {
+describe('SAD-385 collection enrichment settings', () => {
+  it('offers no on/off switch at all', async () => {
     await renderOverlay();
 
-    expect(getSwitch().checked).toBe(false);
-    expect(getRadio(/25 products per run/).disabled).toBe(true);
-    expect(getRadio(/50 products per run/).disabled).toBe(true);
-    expect(getRadio(/Every collected product/).disabled).toBe(true);
+    expect(
+      screen.queryByRole('checkbox', { name: /Enrich collected products/ }),
+    ).toBeNull();
+  });
+
+  it('defaults to every collected product, with every limit selectable', async () => {
+    await renderOverlay();
+
+    expect(getRadio(/Every collected product/).checked).toBe(true);
+    expect(getRadio(/25 products per run/).disabled).toBe(false);
+    expect(getRadio(/50 products per run/).disabled).toBe(false);
+    expect(getRadio(/Every collected product/).disabled).toBe(false);
     // Nothing mirrored until the user chooses something.
     expect(storageState[ENRICH_COLLECTED_KEY]).toBeUndefined();
   });
 
-  it('turning it on persists both copies and unblocks the limit radios', async () => {
-    await renderOverlay();
-
-    fireEvent.click(getSwitch());
-
-    await waitFor(() => expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({
-      enabled: true,
-      limit: '50',
-    }));
-    await waitFor(() => expect(getSwitch().checked).toBe(true));
-    expect(getEnrichCollectedSettings()).toEqual({ enabled: true, limit: 50 });
-    await expectStored({ enabled: true, limit: '50' });
-  });
-
   it('choosing a cap writes it to both copies', async () => {
     await renderOverlay();
-    fireEvent.click(getSwitch());
-    await waitFor(() => expect(getRadio(/25 products per run/).disabled).toBe(false));
 
     fireEvent.click(getRadio(/25 products per run/));
 
     await waitFor(() =>
-      expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({
-        enabled: true,
-        limit: '25',
-      }),
+      expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({ limit: '25' }),
     );
-    expect(getEnrichCollectedSettings()).toEqual({ enabled: true, limit: 25 });
-    await expectStored({ enabled: true, limit: '25' });
+    expect(getEnrichCollectedLimit()).toBe(25);
+    await expectStoredLimit('25');
   });
 
   it('"Every collected product" reaches the worker as an unbounded limit', async () => {
     await renderOverlay();
-    fireEvent.click(getSwitch());
-    await waitFor(() => expect(getRadio(/Every collected product/).disabled).toBe(false));
+    fireEvent.click(getRadio(/25 products per run/));
+    // The radio's `checked` follows the settings row, so wait for the render to
+    // catch up before clicking a *different* radio — a click on a radio the DOM
+    // already shows as selected fires no change event (real browser behaviour,
+    // and why this wait is not cosmetic).
+    await waitFor(() => expect(getRadio(/25 products per run/).checked).toBe(true));
 
     fireEvent.click(getRadio(/Every collected product/));
 
     await waitFor(() =>
-      expect(getEnrichCollectedSettings().limit).toBe(
-        Number.POSITIVE_INFINITY,
-      ),
+      expect(getEnrichCollectedLimit()).toBe(Number.POSITIVE_INFINITY),
     );
+    expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({ limit: 'all' });
   });
 
   it('a saved choice survives a remount', async () => {
     await renderOverlay();
-    fireEvent.click(getSwitch());
-    await waitFor(() => expect(getSwitch().checked).toBe(true));
-    fireEvent.click(getRadio(/25 products per run/));
-    await waitFor(() => expect((getRadio(/25 products per run/) as HTMLInputElement).checked).toBe(true));
+    fireEvent.click(getRadio(/50 products per run/));
+    await waitFor(() => expect(getRadio(/50 products per run/).checked).toBe(true));
 
     cleanup();
     await renderOverlay();
 
-    await waitFor(() => expect(getSwitch().checked).toBe(true));
-    expect(getRadio(/25 products per run/).checked).toBe(true);
+    await waitFor(() => expect(getRadio(/50 products per run/).checked).toBe(true));
+    expect(getRadio(/Every collected product/).checked).toBe(false);
   });
 
   it('Restore Defaults resets the settings row *and* the storage.local mirror', async () => {
     await renderOverlay();
-    fireEvent.click(getSwitch());
-    await waitFor(() => expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({
-      enabled: true,
-      limit: '50',
-    }));
+    fireEvent.click(getRadio(/25 products per run/));
+    await waitFor(() =>
+      expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({ limit: '25' }),
+    );
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Restore Default Settings' }),
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Restore' }));
 
-    await waitFor(() => expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({
-      enabled: false,
-      limit: '50',
-    }));
-    await waitFor(() => expect(getSwitch().checked).toBe(false));
-    expect(getEnrichCollectedSettings()).toEqual({ enabled: false, limit: 50 });
-    await expectStored({ enabled: false, limit: '50' });
+    await waitFor(() =>
+      expect(storageState[ENRICH_COLLECTED_KEY]).toEqual({ limit: 'all' }),
+    );
+    expect(getEnrichCollectedLimit()).toBe(Number.POSITIVE_INFINITY);
+    await expectStoredLimit('all');
   });
+});
+
+
+it('explains that the limit bounds full detail only, not the brand/rank fallback', async () => {
+  await renderOverlay();
+  expect(
+    await screen.findByText(/The limit bounds full detail only/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(/still get a missing brand or Best Sellers Rank filled in/),
+  ).toBeTruthy();
 });

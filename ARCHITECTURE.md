@@ -62,8 +62,26 @@ PPHunt is a Chrome Extension (Manifest V3) with five entrypoints:
 5. Background:
    a. Inserts/enriches products in IndexedDB (bulkAdd / bulkPut, with per-row fallback)
    b. Sends UPDATE_PROGRESS → Side Panel
+   c. Queues the batch for the two post-write stages below; neither is awaited
+      by the message path, so progress and Stop Collection never wait on a fetch
        │
-6. Side Panel:
+6. Post-write stage — optional detail enrichment (SAD-379, off by default)
+    a. enrichCollectedProducts, bounded by enrichCollectedLimit (25/50/all)
+    b. same enrichSavedProduct a save uses: product page → offscreen parse →
+       fill descriptive fields, fill-only price family, snapshot
+       │
+7. Post-write stage — rating backfill (SAD-383, on by default)
+    a. For each product whose row has a null rating or reviewCount and whose card
+       printed neither: fetch the ACR popover for that ASIN (~3 KB),
+       credentials 'omit', one attempt, shared circuit breaker
+    b. offscreen parses stars + count; a payload of 0.0/0 is treated as "no
+       reviews" and discarded rather than written
+    c. backfillProductRating writes those two columns only — fill-only, never
+       overwrites a value the card printed, one fetch per ASIN per run
+    d. a failed fetch/parse/write is contained to that product; a `skipped`
+       outcome (breaker open) drains the rest of the run
+       │
+8. Side Panel:
    a. useLiveQuery detects new rows in IndexedDB
    b. Table re-renders with new products
    c. Counter and progress bar update
@@ -100,11 +118,75 @@ One pipeline serves both entry points — the context menu and the per-card butt
    most once; a second death reports enrichmentStatus: 'interrupted'
 ```
 
+### Why a collection needs a second source for ratings (SAD-383)
+
+The save and collection pipelines parse the same card, so a rating that is
+missing from a collected row and present on a saved row cannot be a parser
+difference. It is a markup difference: on some collection surfaces the card has
+no rating node at all. Measured 2026-10-21 — `/gp/bestsellers/kitchen`: 30 cards,
+30 ratings; `/deals`: 8 faceouts, **0** rating markers. There is nothing for the
+card parser to read, so the pair is fetched after the write from Amazon's own
+average-customer-review popover, which serves the same numbers as the product
+page in ~3 KB instead of ~2.6 MB. Full evidence and the fixtures both stages are
+verified against: `docs/plans/SAD-383-evidence-2026-10-21.md`.
+
 Export is a separate, on-demand step: `EXPORT_SAVED_PRODUCT` (toast action or
 `quickSaveAutoDownload`) → `buildCollectionExport()` → offscreen builds
 CSV/XLSX bytes → `downloadBlob()` → `downloads.download({ conflictAction:
 'uniquify' })` → the blob URL is revoked on `complete`/`interrupted` (60 s
 backstop).
+
+### Collection Enrichment (SAD-385)
+
+A collection run stores what a listing card prints, then continues into the
+**same** enrichment stage the save pipeline runs — `enrichSavedProduct()`
+(fetch → offscreen parse → field-scoped merge → detail snapshot). It is not
+optional, because two of the fields a card never prints exist only on the
+product page: `weight` (`extractDetailWeight`) and the full twister
+`variations` (`extractDetailVariations`). A collection that skipped this stage
+could never carry them, whatever the mode — `mode` only selects the scroll
+driver below, it never reaches a parser.
+
+```
+PRODUCTS_COLLECTED (per batch)
+   │
+   ├─ validateAndNormalize → addProducts()          (row is durable here)
+   └─ enqueueCollectionEnrichment()                 (never awaited)
+            │
+            ▼
+      enrichment-pump.ts — one queue, one serial runner, deduped per
+      (sessionKey, asin), drained when a fetch returns `skipped`
+            │
+            ▼
+      enrichSavedProduct({ jobId: 'collect:<session>:<asin>' })
+            │
+   run boundary (Stop / completion)
+      └─ reconcile: rows of the session still missing `weight` or
+         `variations` are queued once more, BEFORE the per-run bookkeeping
+         (dedupe set + budget) is cleared
+```
+
+Four properties are load-bearing:
+
+1. **Nothing on the collection path awaits enrichment**, so progress messages and
+   Stop Collection never wait on a ~2.4 s fetch; a row can be visible at card
+   quality and fill in afterwards.
+2. **A failure is never a collection error.** The row keeps its card data and the
+   run continues, exactly as a failed save does.
+3. **The budget is per run** (`enrichCollectedLimit`: `25` / `50` / `all`,
+   default `all`), resolved by the cached reader in
+   `utils/enrich-collected-flag.ts` — mirrored into `storage.local` because the
+   worker answers synchronously on every batch.
+4. **The queue is in memory, the rows are not.** A worker suspension drops the
+   remaining tail, which is why the run boundary reconciles from the rows. The
+   reconciliation is idempotent per session and runs before the bookkeeping is
+   cleared: the other order would re-fetch products the run already attempted,
+   with no cap.
+
+Deliberate trade-offs: one extra request per collected product (bounded by the
+limit and by the host circuit breaker in `enrichment-fetch.ts`), ordering between
+the row and its detail fields is not guaranteed, and a product page that prints
+no weight is attempted once per run rather than retried.
 
 ### Automatic Mode (Additional Steps)
 
@@ -252,9 +334,13 @@ also renders "Amazon's Choice", so a value from it must pass the deal lexicon.
 The product-page bounded scans honour `detail.excludedSubtrees`, so a
 similar-items carousel can never answer for the product.
 
-The parse cache keeps a memoised card for `DEFAULT_PARSE_CACHE_TTL_MS` (2 s)
-rather than forever, because badges and percentages hydrate *after* the fields
-the cache keys on.
+The parse cache never freezes a card before its price family exists. SAD-383
+already treated a card as settled only once `rating`/`reviewCount` were present;
+SAD-386 extends the same rule to `discountPercentage`/`dealBadge`/`listPrice`.
+A card that is not settled is re-read **once per actual DOM change** (its
+subtree signature), and a settled card is re-read only when its text now carries
+a `%` or a deal label — so a badge injected after the first pass is picked up,
+and a settled card is never re-parsed otherwise.
 
 ### 3. Parsing
 

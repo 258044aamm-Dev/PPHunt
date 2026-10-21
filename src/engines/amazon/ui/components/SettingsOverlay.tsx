@@ -21,9 +21,8 @@ import {
   setDiagnosticsEnabled,
   subscribeDiagnosticsEnabled,
 } from '../../utils/diagnostics-flag';
-import { setEnrichCollectedSettings } from '../../utils/enrich-collected-flag';
+import { setEnrichCollectedLimit } from '../../utils/enrich-collected-flag';
 import {
-  DEFAULT_ENRICH_COLLECTED,
   DEFAULT_ENRICH_COLLECTED_LIMIT,
   SCROLL_INTERVAL_MAX,
   SCROLL_INTERVAL_MIN,
@@ -159,12 +158,9 @@ export function AmazonSettingsOverlay() {
     // settings row, so the IndexedDB reset above does not touch it.
     await setDiagnosticsEnabled(false);
     setDiagnosticsEnabledState(false);
-    // SAD-379: the enrichment switch is mirrored into storage.local, and the
+    // SAD-385: the per-run budget is mirrored into storage.local, and the
     // IndexedDB reset above cannot reach that copy.
-    await setEnrichCollectedSettings({
-      enabled: DEFAULT_ENRICH_COLLECTED,
-      limit: DEFAULT_ENRICH_COLLECTED_LIMIT,
-    });
+    await setEnrichCollectedLimit(DEFAULT_ENRICH_COLLECTED_LIMIT);
   }, [restoreDefaults, askConfirm]);
 
   if (!settingsOpen) return null;
@@ -528,8 +524,9 @@ export function AmazonSettingsOverlay() {
             <AmazonQuickSaveBehavior />
           </SettingsSection>
 
-          {/* SAD-379: the collection enrichment stage. Off by default, so a
-              collection behaves exactly as it did before this ticket. */}
+          {/* SAD-379/SAD-385: the collection enrichment stage. Always on — the
+              product page is the only source of weight and variations — and the
+              only choice left is the per-run budget. */}
           <SettingsSection title="COLLECTION ENRICHMENT">
             <AmazonCollectionEnrichment />
           </SettingsSection>

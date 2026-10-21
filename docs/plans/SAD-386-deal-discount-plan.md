@@ -30,7 +30,7 @@
 | # | Question | Plan's recommendation | Why it matters |
 |---|---|---|---|
 | **D5** | Does a struck-through list price *alone* count as "a deal is running" (D1 wording lists "struck list price / deal label")? | **No — only deal-specific evidence: a deal label text (`Deal Price:`, `Limited time deal`, …) or a deal-specific container/attribute.** Ship it as one boolean in one function so flipping it later is a one-line change | A struck list price is how *every ordinary sale* renders. Using it would put "Deal" on most discounted rows, which is a data-quality regression, and it also contradicts **D2** (we would say "deal" while refusing to say "23% off" for the same two prices). Decide before step 2 |
-| **D6** | Fix the parse-cache freeze (§5 F6) by giving cache entries a short TTL, or leave memoisation permanent? | **TTL, default 2000 ms, clock injectable** | Permanent memoisation is *measurably* why the same card yields a badge on one scroll pass and not on the next. TTL keeps the performance contract (`tests/scraper-performance.test.ts` measures an *immediate* second pass, which stays at zero re-parses) while allowing late hydration to be picked up seconds later |
+| **D6** | Fix the parse-cache freeze (§5 F6) by giving cache entries a short TTL, or leave memoisation permanent? | **Amended at merge: no TTL — SAD-383's DOM-signature rule, extended to the price family** | Permanent memoisation is *measurably* why the same card yields a badge on one scroll pass and not on the next. **The original answer was a 2 s TTL. It was retracted when merging with `main`:** SAD-383 had since fixed the same class of bug in the same file with a DOM-signature rule, and the TTL was measured to fail `H-9a` (on a slow 480-card page it expires during the cold pass, so the warm pass re-parses every card). Two mechanisms for one problem were rejected in favour of one: keep SAD-383's rule, and re-read a settled card only when its text now carries a `%` or a deal label. See `SAD-386-merge-to-main-plan.md` §2 for the three measured variants |
 
 ---
 
@@ -533,7 +533,7 @@ touches Temu, `db/`, `export/`, `ui/`, `schemas/`, settings, or the manifest.
 ## 12. What is still open
 
 1. **D5** — does a struck-through list price alone mark a row as a deal? Plan recommendation: **no** (label/container evidence only). Answer before step 3.
-2. **D6** — 2 s cache TTL acceptable, or keep permanent memoisation and accept that a late-hydrating badge can still be missed on the pass that caches the card? Plan recommendation: **TTL**.
+2. ~~**D6** — 2 s cache TTL acceptable…?~~ **Resolved at merge:** the TTL was replaced by an extension of SAD-383's signature rule (see the D6 row above).
 3. **Derived token wording** — `'Deal'` (recommended, neutral) vs `'Deal (derived)'` vs `'Limited time deal'`. Whatever is chosen becomes the only text the Deal column shows when no badge text exists.
 4. **Phase 0 execution** — do you run `scripts/sad-386-capture.mjs` yourself (needs your browser profile), or should the plan commit the script and treat the capture as a separate operator task before step 3?
 

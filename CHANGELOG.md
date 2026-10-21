@@ -44,12 +44,13 @@ list price extracted, discount and deal empty.
   excluded-subtree rule, so a similar-items carousel can never answer for the
   product (that leak was caught by a test during this change).
 
-- **A badge that arrives a moment late is no longer lost.** The parse cache kept
-  a card forever once price and image existed, so a card parsed before its badge
-  or percentage hydrated answered "no deal" for the rest of the run — the
-  measured cause of the "inconsistent" discount. Entries now stay valid for
-  **2 s** (`DEFAULT_PARSE_CACHE_TTL_MS`, clock injectable); an immediate second
-  pass is still served from the cache, so the performance contract is unchanged.
+- **A badge that arrives a moment late is no longer lost.** The parse cache
+  treated a card as settled once price and image existed, so a card parsed
+  before its badge or percentage hydrated answered "no deal" for the rest of the
+  run — the measured cause of the "inconsistent" discount. The cache now applies
+  SAD-383's rule to the price family: a card is settled only once it carries a
+  discount, a deal badge or a list price, and an unsettled card is re-read once
+  per actual DOM change rather than once per pass.
 
 ### Added (diagnostics only — stored rows are unchanged)
 - **`PARSE_FAILED` for these two fields.** A percentage node that exists but
@@ -70,6 +71,151 @@ list price extracted, discount and deal empty.
   DB schema, exports, settings and the 24-field diagnostics report.
 
 ---
+
+## [Unreleased] — Weights and variations in Collection Mode (SAD-385)
+
+A product collected by a run carried no **weight** and no full **variation**
+list, in Manual and Automatic mode alike, while a right-click save of the same
+product carried both. The extraction was never the difference: those two fields
+exist only on the product page, and a collection only fetched it when the
+opt-in *Enrich collected products* switch was on — which shipped **off**.
+
+Collection mode now always finishes the same step a save finishes.
+
+### Fixed
+- **A collected row now carries `weight` and the full `variations`**, including
+  the twister data a listing card never prints. The collection pipeline calls
+  the same `enrichSavedProduct()` the save pipeline calls, so the merged values,
+  the price-family rules (the listing price still wins), the currency-mismatch
+  freeze and the diagnostics log are identical for both paths.
+- **The on/off switch is gone** (Settings → Collection Enrichment). It could
+  only ever produce the reported bug, and because settings rows are written
+  whole, a changed default would never have reached anyone who had already
+  touched a setting. The section now states what happens and keeps the per-run
+  limit — **25 / 50 / every collected product**, defaulting to *every*.
+- **A run that loses its enrichment tail finishes it.** The queue survives a
+  service-worker suspension and is resumed on the next boot, so a run no longer
+  ends with details half-filled. This is SAD-384's durable queue (below), not a
+  second one: the same scheduler serves both, so nothing is queued twice.
+
+### Changed
+- A collection run makes **one extra request per collected product** (bounded by
+  the per-run limit). This is the cost of the two fields: Amazon prints them
+  only on the product page. The existing circuit breaker still stops a run that
+  Amazon starts refusing, and the limit is the user-facing brake. The limit
+  bounds **full detail only**: a product past it still gets a missing brand or
+  Best Sellers Rank filled in.
+
+### Unchanged
+- Right-click save and the individual extraction icon: same pipeline, same
+  behaviour, no code change.
+- No parser, selector, merge policy, product schema or message-schema change.
+  `addProducts()`' fill-only policy is untouched.
+- The diagnostics switch (SAD-369) and the Temu engine are untouched.
+
+## [Unreleased] — Collection brand and Best Sellers Rank (SAD-384)
+
+### Fixed
+- Manual and Automatic collections attempt missing brand/Best Sellers Rank even
+  for a product that gets no full detail, or sits beyond the 25/50 cap. Those
+  requests fill only the two missing fields, preserving all other listing
+  observations.
+- Eligible full-detail products share one request with the fallback; the per-run
+  budget, defaults and save merge behavior remain intact. SAD-385 removes the
+  full-enrichment switch — the brand/BSR fallback never depended on it.
+- A skipped row no longer discards unrelated queue items. Host cooldowns defer
+  only that host, with bounded reattempts via the `alarms` permission.
+
+### Changed
+- Collection queue metadata is mirrored into a dedicated `storage.session` key
+  before dispatch and recovered after worker suspension, preserving scopes and
+  budgets. At most two dispatches per item; terminal dedupe retained for 24h.
+- Settings now explain that the cap controls full details, not all PDP requests.
+  STOP and collection completion still do not wait for network enrichment.
+
+### Limitations
+- Amazon can omit fields or block requests; nothing is inferred or fabricated.
+- Session metadata does not survive browser exit. Recovery-storage failures log
+  a warning and preserve listing rows, but cannot guarantee pending-tail recovery.
+- Existing historical collections are not automatically backfilled.
+
+The SAD-379 entry below records the previous behavior; its off/no-fetch and
+in-memory-only statements are superseded by SAD-384.
+
+## [Unreleased] — Ratings in Collection Mode (SAD-383)
+
+A product's **rating** and **review count** were extracted correctly by the
+right-click menu and by the per-card save button, but were missing from rows
+added by Collection Mode — Manual and Automatic alike. Both gestures parse the
+same card, so the difference was not the parser: a save continues into the
+product page (`enrichSavedProduct`) and a collection did not.
+
+The cause is in the markup, not in the scraper. On the layouts where the bug was
+reported there is **no rating node on the card at all** — a `/deals` faceout
+carries an image, a price and a title, and nothing to scrape. Measured on
+2026-10-21: `/gp/bestsellers/kitchen` prints a rating on 30/30 cards, `/deals`
+prints **0** on 8/8 faceouts. Nothing the card parser does can produce a number
+that the page never rendered, so the field has to come from somewhere else.
+
+### Added
+- **Ratings backfill for collected products.** When a collected product is
+  missing `rating` or `reviewCount`, the background now fills it after the row is
+  written, from Amazon's own average-customer-review popover for that ASIN — the
+  same numbers the product page shows, in ~3 KB instead of the ~2.6 MB page.
+  Only the missing field is fetched and only that field is written: a value the
+  card printed is never replaced, an existing value is never overwritten, and a
+  product with no reviews is left empty rather than stamped `0.0`.
+- **Settings → Collection Enrichment → *Backfill ratings*.** **On by default.**
+  This is the one place where SAD-383 deliberately differs from SAD-379: turning
+  the enrichment stage off is a bandwidth decision, but leaving the backfill off
+  would leave the reported bug in place, because the cards in question print
+  nothing to fall back on. Switching it off restores the previous behaviour
+  exactly — no request, no queue, no write.
+- The backfill is a stage of its own. `Enrich collected products` (SAD-379)
+  remains **off by default** and the two switches are independent: either, both
+  or neither can be on.
+- Card diagnostics now report whether a rating node was **seen** (`nodeSeen`) as
+  distinct from whether a value was parsed, so "Amazon did not render it" and
+  "we failed to read it" are no longer the same line in the log.
+
+### Fixed
+- Collecting from a page whose cards carry no rating now produces rows with the
+  same `rating` and `reviewCount` a save of the same card produces. This is the
+  ticket's acceptance criterion and it is pinned as a test: the same real deals
+  card taken through both pipelines ends with identical values (4.6 / 142,457).
+- A saved row that already had a rating could lose it when the product page was
+  slow or blocked. The parse cache now re-parses when the DOM it is handed
+  differs from the DOM it cached, instead of returning the earlier (possibly
+  rating-less) object for the same page signature.
+
+### Unchanged
+- **Other surfaces are untouched.** Search results, bestseller and category
+  grids, product-page collections, the save pipeline, the export, the filter and
+  sort logic and the Temu engine behave as before; the backfill only reads and
+  fills two nullable columns on rows that already exist.
+- **No settings migration.** `backfillCollectedRatings` is a
+  required-with-default key like its predecessors: a settings row written before
+  this change still parses, and `settingsVersion` is not bumped.
+- **A collection never fails on the backfill.** A failed fetch, an unparseable
+  response and a rejected write are each contained to the one product; the run
+  continues. Nothing on the message path is awaited, so progress and Stop
+  Collection never wait on a request. When the shared circuit breaker opens, the
+  remainder of that run's backfill stops after one attempt instead of hammering
+  Amazon.
+- Ratings are still only ever *read* — no rating, review or price is invented,
+  rounded or reformatted, and the fields remain nullable.
+
+### Known limitations
+- The backfill queue lives in memory, like SAD-379's: an MV3 worker suspension
+  mid-run drops the remaining tail. Rows already written are unaffected.
+- The popover is fetched per ASIN, one at a time. On a very large collection this
+  is one small request per product that needed a rating; that is the intended
+  cost of unbounded backfill, bounded only by the breaker.
+- Deal and browse-node carousels are still not discovered as cards by
+  `parseAmazonCategoryPage` — a separate, cross-surface defect recorded in
+  `docs/plans/SAD-383-rating-and-rating-count-plan.md` §12. It is why a `/deals`
+  collection can return very few rows; the rating fix cannot apply to rows that
+  are never created.
 
 ## [Unreleased] — Collection enrichment (SAD-379)
 
@@ -92,6 +238,11 @@ A collection now runs the save pipeline's enrichment stage.
 ### Unchanged
 - With the switch off (the default) a collection run is byte-identical to before:
   no fetch, no queue, no storage write.
+  *Amended by SAD-383:* this holds for the **enrichment stage**. A collection
+  that needs no rating backfill is still byte-identical with the switch off,
+  but SAD-383 adds an independent, **on-by-default** stage that fetches a
+  rating for products whose card printed none. See the SAD-383 entry above;
+  switching that stage off restores exact byte-identical behaviour.
 - `enrichSavedProduct` itself is untouched — collection calls the same function,
   so merged fields, the price-family rules (the listing price still wins), the
   currency-mismatch freeze and the diagnostics log apply identically.

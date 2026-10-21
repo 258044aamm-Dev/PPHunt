@@ -158,7 +158,7 @@ describe('SAD-379: enrichment pump — the per-run cap', () => {
 });
 
 describe('SAD-379: enrichment pump — failure is contained', () => {
-  it('drains the queue on a `skipped` outcome (breaker open / no permission)', async () => {
+  it('does not discard unrelated jobs when one request is skipped', async () => {
     const enrich = vi.fn(async (): Promise<EnrichSavedProductResult> => ({
       status: 'skipped',
       fieldsChanged: [],
@@ -173,7 +173,7 @@ describe('SAD-379: enrichment pump — failure is contained', () => {
     );
     await whenCollectionEnrichmentIdle();
 
-    expect(enrich).toHaveBeenCalledTimes(1);
+    expect(enrich).toHaveBeenCalledTimes(3);
   });
 
   it('a throwing enrichment never aborts the run — the next product still goes', async () => {
@@ -250,5 +250,26 @@ describe('SAD-379: enrichment pump — run isolation', () => {
     });
     await whenCollectionEnrichmentIdle();
     expect(enrich).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe('SAD-384 required-field policy', () => {
+  const many = Array.from({ length: 60 }, (_, i) => product(`B${String(i).padStart(9, '0')}`));
+  it.each([0, 25, 50, Infinity])('limit %s caps full details only', async limit => {
+    const enrich = enrichSpy();
+    enqueueCollectionEnrichment(many, SESSION, { enrich, limit, requiredFields: true });
+    await whenCollectionEnrichmentIdle();
+    expect(enrich).toHaveBeenCalledTimes(60);
+    const calls = enrich.mock.calls.map(([input]) => input as EnrichInput & { scope?: string });
+    expect(calls.filter(input => !input.scope)).toHaveLength(Math.min(limit, 60));
+    expect(calls.filter(input => input.scope === 'brand-and-rank')).toHaveLength(60 - Math.min(limit, 60));
+  });
+  it('skips complete persisted rows, not just present card fields', async () => {
+    const enrich = enrichSpy();
+    enqueueCollectionEnrichment([{ ...product('B000000001'), brand: 'Anker', bestSellersRank: '#1 in Chargers' }], SESSION,
+      { enrich, limit: 0, requiredFields: true });
+    await whenCollectionEnrichmentIdle();
+    expect(enrich).not.toHaveBeenCalled();
   });
 });

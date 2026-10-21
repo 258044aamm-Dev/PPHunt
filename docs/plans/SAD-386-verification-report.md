@@ -11,7 +11,7 @@
 | 1 | normalise every discount form Amazon prints (and stop reading coupons as discounts) | yes — `discountPercentage` | `sad-386-discount-normalizer.test.ts` (6) |
 | 2 | find the discount and deal badges the page actually renders | yes — both fields | `sad-386-card-deal.test.ts` (12) |
 | 3 | read the product page's whole price area, not just the price | yes — both fields | `sad-386-pdp-scope.test.ts` (5) |
-| 4 | let a hydrated badge reach the parser (cache TTL) | yes — both fields | `sad-386-cache-freshness.test.ts` (5) |
+| 4 | let a hydrated badge reach the parser (cache settlement) | yes — both fields | `sad-386-cache-freshness.test.ts` (4, rewritten at merge) |
 | 5 | say why a discount or deal was not extracted | **no** (diagnostics only) | `sad-386-diagnostics.test.ts` (8) |
 | 6 | verification, capture tool, docs | no | `sad-386-workflow-parity.test.ts` (4) |
 
@@ -25,7 +25,7 @@
 | 4 | deal badge only read from 7 card selectors; status-badge slot, bare `data-a-badge-type`, `dealBadge` class/id missed | `selectors.ts` + `field-parsers.ts` | step 2 |
 | 5 | two divergent deal vocabularies (card vs PDP) | `field-parsers.ts`, `product-detail.ts` | step 2 |
 | 6 | buybox loop stopped at the first scope with a price | `product-detail.ts` | step 3 |
-| 7 | parse cache memoised a card permanently before hydration | `parse-cache.ts` | step 4 |
+| 7 | parse cache memoised a card permanently before hydration | `parse-cache.ts` | step 4, re-resolved at the merge (SAD-383 signature rule) |
 | 8 | diagnostics could not distinguish absent from unreadable for these two fields | `card-diagnostics.ts`, `product-detail.ts` | step 5 |
 
 ## 3. Bugs the new guard tests caught during implementation (all fixed, all pinned)
@@ -46,7 +46,7 @@
 | Amazon only | no Temu file touched; `tests/temu-isolation.test.ts` green |
 | Blocking live capture | Amazon answers this sandbox 503 (direct **and** via a reader proxy), so only markup-agnostic work plus fixtures already committed in the repo shipped; `scripts/sad-386-capture.mjs` is committed for a real browser |
 | Struck list price counts as a deal (D5) | `TREAT_STRUCK_LIST_PRICE_AS_DEAL = true`, one line to flip |
-| 2 s cache TTL (D6) | `DEFAULT_PARSE_CACHE_TTL_MS = 2000`, clock injectable, `Infinity` restores the old behaviour |
+| Cache freshness (D6, amended at merge) | no TTL: SAD-383's DOM-signature rule extended to the price family — a settled card is re-read only when its text now shows a `%` or a deal label |
 | Derived token text | `'Deal'` |
 
 ## 5. Verification
@@ -55,7 +55,7 @@
 |---|---|
 | `npx tsc --noEmit` | clean |
 | `npx wxt build` | OK, `dist/chrome-mv3` |
-| `npx vitest run` | **1267 passed / 112 files** (baseline 1216 / 106) |
+| `npx vitest run` | **1360 passed / 124 files** after the merge with `main` (branch alone: 1267 / 112; baseline 1216 / 106) |
 | `npm run verify` (tsc + vitest + wxt build + audit) | **passed**, `dist` 2.01 MB, `found 0 vulnerabilities` |
 | Baseline at `a10e174` | **1216 tests / 106 files** |
 

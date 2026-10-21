@@ -1,60 +1,76 @@
 import type { ScrapedAmazonProduct } from '../types';
-
-/**
- * SAD-386: how long a memoised card stays trustworthy, in milliseconds.
- *
- * Why a TTL at all? The cache used to be permanent for the life of the Element
- * (`isComplete` = asin + title + price + imageUrl). A deal badge and a savings
- * percentage hydrate LATER than those four fields, so a card parsed a moment too
- * early kept answering "no deal, no discount" for the rest of the run — the
- * measured cause of "the discount field is extracted inconsistently"
- * (plan §5 F6, probe P04-P06: same DOM, `null` with the cache, `68% off`
- * without it).
- *
- * 2000 ms is deliberately short: it is longer than the hydration gap that
- * produced the bug (a frame or two) and short enough that a second scroll pass
- * over a long page re-reads cards rather than serving stale answers. The clock
- * is injectable so tests are deterministic.
- */
-export const DEFAULT_PARSE_CACHE_TTL_MS = 2000;
-
-export interface AmazonParseCacheOptions {
-  /** Override the freshness window. `Infinity` restores the old permanent behaviour. */
-  ttlMs?: number;
-  /** Injectable clock (tests). Defaults to `Date.now`. */
-  now?: () => number;
-}
-
-interface CacheEntry {
-  product: ScrapedAmazonProduct;
-  at: number;
-}
+import { DEAL_LABEL_PATTERN } from './deal-evidence';
 
 /**
  * WeakMap-backed DOM Element parse cache (`AmazonParseCache`).
- * Memoizes complete product cards in O(1) time without re-querying the DOM on
- * subsequent passes, while leaving incomplete cards (e.g. missing `imageUrl` or
- * `price` during lazy hydration) uncached so they automatically re-parse once
- * hydrated — and re-reading a complete card after `ttlMs` so a late-arriving
- * badge or percentage is picked up (SAD-386).
+ * Memoizes complete product cards in O(1) time without re-querying the DOM on subsequent passes,
+ * while leaving incomplete cards (e.g. missing `imageUrl` or `price` during lazy hydration)
+ * uncached so they automatically re-parse once hydrated.
+ *
+ * SAD-383: completeness alone was not enough. A card becomes "complete" once
+ * `asin`, `title`, `price` and `imageUrl` exist — which routinely happens
+ * *before* Amazon injects the reviews row. Such a card was then answered from
+ * this cache for the rest of the run, so its `rating`/`reviewCount` stayed null
+ * even though the values appeared a moment later (measured: second pass `null`,
+ * a fresh cache `4.5`). The entry now carries a cheap DOM signature, and a card
+ * whose rating is still missing is re-parsed **only when its subtree changed**.
+ *
+ * SAD-386: the same argument applies to the price family — a deal badge, a
+ * savings percentage and a struck list price are also injected after
+ * `asin`/`title`/`price`/`imageUrl`. Rather than a second mechanism (a TTL was
+ * measured to break the 480-card budget: a warm pass re-parsed every card), the
+ * rule below adds one condition: a card that is already settled for the reviews
+ * row is re-read only when its text now carries a `%` or a deal label that it
+ * did not carry before.
+ *
+ * Cost is unchanged on the hot paths:
+ * - a card that carries both rating values is settled and never re-parsed
+ *   unless price-family evidence appears;
+ * - an unchanged rating-less card is re-parsed zero times after the first pass;
+ * - the signature is two DOM reads (descendant count + text length), taken only
+ *   for cards that are not settled.
  */
+interface AmazonParseCacheEntry {
+  product: ScrapedAmazonProduct;
+  /** Descendant count + text length — changes when Amazon injects/removes a subtree. */
+  signature: number;
+}
+
+function hasRatingFields(product: ScrapedAmazonProduct): boolean {
+  return (
+    product.rating !== null &&
+    product.rating !== undefined &&
+    product.reviewCount !== null &&
+    product.reviewCount !== undefined
+  );
+}
+
+/** SAD-386: does the stored product already carry any price-family value? */
+function hasBadgeFamilyFields(product: ScrapedAmazonProduct): boolean {
+  return Boolean(
+    product.discountPercentage ||
+      product.dealBadge ||
+      (product.listPrice !== null && product.listPrice !== undefined),
+  );
+}
+
+/**
+ * SAD-386: does the card's text show price-family evidence at all? A card whose
+ * text carries neither a `%` nor a deal label cannot have gained a badge, so
+ * SAD-383's guarantee ("a DOM change must not rewrite values the user was
+ * already shown") stands.
+ */
+function showsPriceFamilyEvidence(element: Element): boolean {
+  const text = element.textContent ?? '';
+  return text.includes('%') || DEAL_LABEL_PATTERN.test(text);
+}
+
 export class AmazonParseCache {
-  private cache = new WeakMap<Element, CacheEntry>();
-
-  constructor(private readonly options: AmazonParseCacheOptions = {}) {}
-
-  /** The effective freshness window in milliseconds. */
-  public get ttlMs(): number {
-    return this.options.ttlMs ?? DEFAULT_PARSE_CACHE_TTL_MS;
-  }
-
-  private now(): number {
-    return (this.options.now ?? Date.now)();
-  }
+  private cache = new WeakMap<Element, AmazonParseCacheEntry>();
 
   /**
-   * A card is considered complete (worth memoising) once its core hydrating
-   * fields (`asin`, `title`, `price`, and `imageUrl`) are populated.
+   * A card is considered complete (safe to memoize permanently for the life of the Element)
+   * once its core hydrating fields (`asin`, `title`, `price`, and `imageUrl`) are populated.
    */
   public isComplete(product: ScrapedAmazonProduct | null | undefined): product is ScrapedAmazonProduct {
     if (!product) return false;
@@ -67,20 +83,22 @@ export class AmazonParseCache {
     );
   }
 
+  private signatureOf(element: Element): number {
+    const nodeCount = element.getElementsByTagName('*').length;
+    const textLength = element.textContent?.length ?? 0;
+    return nodeCount * 31 + textLength;
+  }
+
   public get(element: Element): ScrapedAmazonProduct | undefined {
-    const entry = this.cache.get(element);
-    if (entry === undefined) return undefined;
-    if (this.now() - entry.at > this.ttlMs) {
-      // Stale: forget it so the caller re-parses and refreshes the entry.
-      this.cache.delete(element);
-      return undefined;
-    }
-    return entry.product;
+    return this.cache.get(element)?.product;
   }
 
   public set(element: Element, product: ScrapedAmazonProduct | null): void {
     if (this.isComplete(product)) {
-      this.cache.set(element, { product, at: this.now() });
+      this.cache.set(element, {
+        product,
+        signature: this.signatureOf(element),
+      });
     }
   }
 
@@ -88,17 +106,35 @@ export class AmazonParseCache {
     element: Element,
     parser: (el: Element) => ScrapedAmazonProduct | null,
   ): ScrapedAmazonProduct | null {
-    const cached = this.get(element);
-    if (cached !== undefined) {
-      return cached;
+    const entry = this.cache.get(element);
+    if (entry) {
+      // SAD-386: the price family is present — nothing left to gain.
+      if (hasBadgeFamilyFields(entry.product)) {
+        return entry.product;
+      }
+      // SAD-383: an unchanged card is never re-parsed.
+      if (this.signatureOf(element) === entry.signature) {
+        return entry.product;
+      }
+      // SAD-383's guarantee: a card that already carries both rating values is
+      // only re-read when the text now shows a badge or a percentage.
+      if (hasRatingFields(entry.product) && !showsPriceFamilyEvidence(element)) {
+        return entry.product;
+      }
     }
+
     const parsed = parser(element);
-    this.set(element, parsed);
+    if (this.isComplete(parsed)) {
+      this.cache.set(element, {
+        product: parsed,
+        signature: this.signatureOf(element),
+      });
+    }
     return parsed;
   }
 
   public clear(): void {
-    this.cache = new WeakMap<Element, CacheEntry>();
+    this.cache = new WeakMap<Element, AmazonParseCacheEntry>();
   }
 }
 

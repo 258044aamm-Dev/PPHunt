@@ -1,3 +1,4 @@
+import { recoverCollectionEnrichment, COLLECTION_ENRICHMENT_ALARM } from '@/engines/amazon/background/enrichment-pump';
 import { initSaveProductContextMenu } from '@/engines/amazon/background/context-menu';
 import { createAmazonBackgroundController } from '@/engines/amazon/background/handler';
 import { saveJobStore } from '@/engines/amazon/background/job-store';
@@ -22,6 +23,13 @@ import {
 export default defineBackground(() => {
   const amazonController = createAmazonBackgroundController();
   const temuHandlers = registerTemuBackgroundHandlers();
+  // Collection metadata has its own namespace, independent of save-job feedback.
+  void recoverCollectionEnrichment().catch(() => {});
+  browser.alarms?.onAlarm?.addListener((alarm) => {
+    if (alarm.name === COLLECTION_ENRICHMENT_ALARM) {
+      void recoverCollectionEnrichment().catch(() => {});
+    }
+  });
 
   // SAD-369: the diagnostics switch cache — read once per worker start, then
   // kept live by storage.onChanged. Fails closed until the read resolves, so

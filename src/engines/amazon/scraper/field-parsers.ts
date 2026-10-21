@@ -28,6 +28,13 @@ import {
 export interface TieredValue<T> {
   value: T;
   tier: AmazonExtractionTier;
+  /**
+   * SAD-383: whether a candidate node was found at all, independent of whether
+   * its text parsed. A card layout that prints no rating produces no node; a
+   * layout that prints one the parser refuses produces a node and no value.
+   * Only diagnostics read this — extraction output is unchanged.
+   */
+  nodeSeen?: boolean;
 }
 
 export type CardFieldTierMap = Partial<
@@ -1468,10 +1475,15 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
   let ratingTier: AmazonExtractionTier = 'missing';
   let reviewCount: number | null = null;
   let reviewTier: AmazonExtractionTier = 'missing';
+  // SAD-383: a node that exists but does not parse is a different failure from a
+  // layout that never prints the field, and the two need different fixes.
+  let ratingNodeSeen = false;
+  let reviewNodeSeen = false;
 
   for (const selector of AMAZON_SELECTORS.cardFields.rating) {
     const el = safeQuerySelector(card, selector);
     if (!el) continue;
+    ratingNodeSeen = true;
     const raw =
       el.getAttribute('aria-label') ||
       el.getAttribute('title') ||
@@ -1494,6 +1506,7 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
   ]) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
+      reviewNodeSeen = true;
       const raw = el.getAttribute('aria-label') || el.textContent;
       const parsed = parseReviewCount(raw);
       if (parsed !== null) {
@@ -1521,8 +1534,12 @@ export function extractCardRatingAndReviewsWithTier(card: Element): {
   }
 
   return {
-    rating: { value: rating, tier: ratingTier },
-    reviewCount: { value: reviewCount, tier: reviewTier },
+    rating: { value: rating, tier: ratingTier, nodeSeen: ratingNodeSeen },
+    reviewCount: {
+      value: reviewCount,
+      tier: reviewTier,
+      nodeSeen: reviewNodeSeen,
+    },
   };
 }
 

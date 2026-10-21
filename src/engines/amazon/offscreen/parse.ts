@@ -1,11 +1,16 @@
 import { createFieldDiagnosticsCollector } from '../scraper/extraction-diagnostics';
-import { validateAndNormalizeScrapedProduct } from '../scraper/field-parsers';
+import {
+  parseRating,
+  parseReviewCount,
+  validateAndNormalizeScrapedProduct,
+} from '../scraper/field-parsers';
 import { parseAmazonProductDetail } from '../scraper/product-detail';
 import { normalizeASIN } from '../utils/amazon-url';
 import type { ScrapedProduct } from '../types';
 import {
   MAX_OFFSCREEN_HTML_LENGTH,
   offscreenError,
+  type OffscreenParseRatingResponse,
   type OffscreenParseResponse,
 } from './protocol';
 
@@ -114,4 +119,60 @@ export function parsePdpHtml(
   }
 
   return { ok: true, product: normalized as ScrapedProduct, fieldDiagnostics };
+}
+
+
+/**
+ * SAD-383: the average-customer-review popover.
+ *
+ * `data-hook` is locale-invariant, so the localized *text* is handed to the
+ * existing `parseRating` / `parseReviewCount` — the same functions every listing
+ * card has always used. `4,7 von 5 Sternen` and `142.457 Sternebewertungen` keep
+ * working without a second number parser existing in the codebase.
+ *
+ * A challenge page is not a parse failure to retry: it returns two nulls and the
+ * caller's circuit breaker has already been told (see `rating-fetch.ts`).
+ */
+export const ACR_SELECTORS = {
+  ratingText: '[data-hook="acr-average-stars-rating-text"]',
+  ratingAlt: '[data-hook="average-stars-rating-anywhere"]',
+  reviewCount: '[data-hook="total-review-count"]',
+} as const;
+
+export function parseRatingPopoverHtml(html: string): OffscreenParseRatingResponse {
+  if (typeof DOMParser === 'undefined') {
+    return offscreenError(
+      'PARSE_UNAVAILABLE',
+      'DOMParser is not available in this context',
+    );
+  }
+
+  if (!html || html.length > MAX_OFFSCREEN_HTML_LENGTH) {
+    return offscreenError('HTML_TOO_LARGE', 'Response body is too large to parse');
+  }
+
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(html, 'text/html');
+  } catch (error) {
+    return offscreenError(
+      'PARSE_FAILED',
+      error instanceof Error ? error.message : 'Could not parse HTML',
+    );
+  }
+
+  const ratingNode = doc.querySelector(ACR_SELECTORS.ratingText);
+  const ratingAltNode = doc.querySelector(ACR_SELECTORS.ratingAlt);
+  const countNode = doc.querySelector(ACR_SELECTORS.reviewCount);
+
+  const ratingText =
+    ratingNode?.textContent ??
+    (ratingAltNode?.getAttribute('aria-label') || ratingAltNode?.getAttribute('title')) ??
+    null;
+
+  return {
+    ok: true,
+    rating: parseRating(ratingText),
+    reviewCount: parseReviewCount(countNode?.textContent ?? null),
+  };
 }

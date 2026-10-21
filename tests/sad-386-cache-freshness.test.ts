@@ -1,14 +1,21 @@
 /**
- * SAD-386 step 4 — a card that hydrated its badge late must still be re-read.
+ * SAD-386 (merged) — a card that hydrated its badge late must still be re-read.
  *
  * Probe P04-P06 measured the bug: the same DOM answered `null` when the cache
- * had memoised the card before hydration and `"68% off"` when it had not. These
- * tests pin the fix (a 2 s freshness window, injectable clock) and the two
- * performance invariants the cache exists for.
+ * had memoised the card before hydration and `"68% off"` when it had not.
+ *
+ * The first implementation gave the cache a 2 s TTL. Measured against `main`
+ * (which by then carried SAD-383's DOM-signature rule for the reviews row) the
+ * TTL broke the repo's own performance contract — `tests/scraper-performance.test.ts`
+ * expects a warm pass to do no work, and on a slow 480-card page the TTL had
+ * expired, so every card was re-parsed. The merged implementation therefore
+ * extends SAD-383's rule to the price family: a card is settled only once it
+ * carries a discount, a deal badge or a list price, and an unsettled card is
+ * re-read exactly once per actual DOM change.
  */
 import { describe, expect, it } from 'vitest';
 import { AmazonParseCache, parseAmazonSearchResults } from '@/engines/amazon/scraper';
-import { DEFAULT_PARSE_CACHE_TTL_MS } from '@/engines/amazon/scraper/parse-cache';
+import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 
 const URL_SEARCH = 'https://www.amazon.com/s?k=deal';
 
@@ -16,6 +23,27 @@ function doc(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
 }
 
+/** The product shape the counting-parser cases return. */
+const SAMPLE: ScrapedAmazonProduct = {
+  asin: 'B0CACHE001',
+  url: 'https://www.amazon.com/dp/B0CACHE001',
+  title: 'Cached Deal Laptop',
+  price: 259.99,
+  currency: 'USD',
+  rating: null,
+  reviewCount: null,
+  imageUrl: 'https://m.media-amazon.com/images/I/71cache._AC_UY218_.jpg',
+  isSponsored: false,
+  isPrime: false,
+  brand: null,
+  availability: null,
+  seller: null,
+  description: null,
+  features: [],
+  source: 'search',
+};
+
+/** Hydrated card: price + image only, no badge family, reviews absent. */
 const CARD = `
   <div class="s-main-slot">
     <div data-component-type="s-search-result" data-asin="B0CACHE001">
@@ -29,9 +57,10 @@ const CARD = `
     </div>
   </div>`;
 
-/** Appends the badge and the percentage the page hydrates a moment later. */
+/** Amazon injects the badge, the percentage and the reviews row a moment later. */
 function hydrate(d: Document): void {
-  const price = d.querySelector('[data-cy="price-recipe"]')!;
+  const card = d.querySelector('[data-asin="B0CACHE001"]')!;
+  const price = card.querySelector('[data-cy="price-recipe"]')!;
   const badge = d.createElement('span');
   badge.className = 'a-badge-text';
   badge.setAttribute('data-a-badge-type', 'deal');
@@ -41,17 +70,21 @@ function hydrate(d: Document): void {
   pct.className = 'savingsPercentage';
   pct.textContent = '-68%';
   price.appendChild(pct);
+  const reviews = d.createElement('div');
+  reviews.setAttribute('data-cy', 'reviews-block');
+  reviews.innerHTML =
+    '<span class="a-icon-alt">4.5 out of 5 stars</span>' +
+    '<a href="#customerReviews"><span class="s-underline-text">(1,234)</span></a>';
+  card.appendChild(reviews);
 }
 
-describe('SAD-386: parse-cache freshness', () => {
-  it('defaults to a short, documented window', () => {
-    expect(new AmazonParseCache().ttlMs).toBe(DEFAULT_PARSE_CACHE_TTL_MS);
-    expect(DEFAULT_PARSE_CACHE_TTL_MS).toBe(2000);
-  });
+function span(html: string): Element {
+  return doc(html).body.firstElementChild!;
+}
 
-  it('re-reads a card once its memoised entry is older than the window', () => {
-    let clock = 1_000;
-    const cache = new AmazonParseCache({ ttlMs: 2000, now: () => clock });
+describe('SAD-386: a late badge is not frozen out by the parse cache', () => {
+  it('re-parses a card whose badge family was missing when the DOM changes', () => {
+    const cache = new AmazonParseCache();
     const d = doc(CARD);
 
     const first = parseAmazonSearchResults(d, URL_SEARCH, { cache });
@@ -60,27 +93,41 @@ describe('SAD-386: parse-cache freshness', () => {
 
     hydrate(d);
 
-    // Within the window the memoised answer is served (the performance contract).
-    clock += 100;
-    const inside = parseAmazonSearchResults(d, URL_SEARCH, { cache });
-    expect(inside[0]?.discountPercentage).toBeUndefined();
-    expect(inside[0]?.dealBadge).toBeUndefined();
-
-    // After the window the card is re-parsed and the late data appears.
-    clock += 2_500;
-    const after = parseAmazonSearchResults(d, URL_SEARCH, { cache });
-    expect(after[0]?.discountPercentage).toBe('68% off');
-    expect(after[0]?.dealBadge).toBe('Limited time deal');
+    const second = parseAmazonSearchResults(d, URL_SEARCH, { cache });
+    expect(second[0]?.discountPercentage).toBe('68% off');
+    expect(second[0]?.dealBadge).toBe('Limited time deal');
   });
 
-  it('keeps the zero-work promise for an immediate second pass', () => {
+  it('does zero extra work when an unsettled card did not change', () => {
+    const card = doc(CARD).querySelector('[data-asin="B0CACHE001"]')!;
     const cache = new AmazonParseCache();
-    const d = doc(CARD);
-    const first = parseAmazonSearchResults(d, URL_SEARCH, { cache });
-    expect(first).toHaveLength(1);
-    const second = parseAmazonSearchResults(d, URL_SEARCH, { cache });
-    expect(second).toHaveLength(1);
-    expect(second[0]).toEqual(first[0]); // served from the cache, identical object
+    let calls = 0;
+    for (let pass = 0; pass < 5; pass += 1) {
+      cache.getOrParse(card, () => {
+        calls += 1;
+        return SAMPLE;
+      });
+    }
+    expect(calls).toBe(1); // one parse, then signature matches
+  });
+
+  it('never re-parses a settled card, even when the DOM changes', () => {
+    // SAD-383's guarantee, kept: once the price family is present, a later DOM
+    // change must not rewrite the numbers the user was already shown.
+    const card = doc(CARD).querySelector('[data-asin="B0CACHE001"]')!;
+    card.appendChild(span('<span class="savingsPercentage">-68%</span>'));
+    const cache = new AmazonParseCache();
+    let calls = 0;
+    cache.getOrParse(card, () => {
+      calls += 1;
+      return { ...SAMPLE, discountPercentage: '68% off' };
+    });
+    card.appendChild(span('<span>late noise without price-family evidence</span>'));
+    cache.getOrParse(card, () => {
+      calls += 1;
+      return { ...SAMPLE, discountPercentage: '90% off' };
+    });
+    expect(calls).toBe(1);
   });
 
   it('still refuses to memoise an incomplete card, so hydration is picked up at once', () => {
@@ -96,16 +143,5 @@ describe('SAD-386: parse-cache freshness', () => {
 
     const second = parseAmazonSearchResults(withoutImage, URL_SEARCH, { cache });
     expect(second[0]?.imageUrl).toContain('71late');
-  });
-
-  it('ttlMs = Infinity restores the previous permanent behaviour', () => {
-    let clock = 1_000;
-    const cache = new AmazonParseCache({ ttlMs: Number.POSITIVE_INFINITY, now: () => clock });
-    const d = doc(CARD);
-    parseAmazonSearchResults(d, URL_SEARCH, { cache });
-    hydrate(d);
-    clock += 60_000;
-    const after = parseAmazonSearchResults(d, URL_SEARCH, { cache });
-    expect(after[0]?.dealBadge).toBeUndefined();
   });
 });
