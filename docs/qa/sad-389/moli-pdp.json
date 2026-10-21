@@ -1,0 +1,307 @@
+{
+  "candidateCommit": "abc969d54648a7ad2611166bb6b13f3336521711",
+  "baselineCommit": "2ec7eaf024687c499a1bc2fcc077bd411509040e",
+  "capturedAt": "2026-10-21T17:35:43.729Z",
+  "url": "https://www.amazon.com/dp/B0HCZ5ZF7J?language=en_US&th=1",
+  "comparison": "Same page visit, sequential read-only baseline/candidate passes; other DOM may hydrate",
+  "targetDOMStable": true,
+  "liveLabels": [
+    {
+      "text": "Apply 50% coupon Shop items | Terms",
+      "html": "<span id=\"couponTextpctch6697048710350727\" class=\"a-color-success couponLabelText\"> Apply 50% coupon  <span class=\"instrumentationElement\" data-csa-c-action=\"navigate:psp\" data-csa-c-type=\"action\" data-csa-c-id=\"5u64qf-ikbax5-3x706r-mqa8lx\">  <a id=\"emphasisLink\" class=\"a-link-emphasis cxcwEmphasisLink\" href=\"/promotion/psp/A18JUC6AWVZENJ?ref=clp_external&amp;redirectAsin=B0HCZ5ZF7J&amp;redirectMerchantId=A3B60I1K0FPUAG&amp;ref=cxcw_clp_A18JUC6AWVZENJ&amp;source=dp_cxcw\">Shop items</a> </span> <style> .cxcwEmphasisLink { padding-left: 6px; padding-right: 12px !important; display: inline-block; } .cxcwEmphasisLink::after { bottom: 6.5px !important; margin-left: 2px !important; } </style>  |  <span class=\"a-declarative\" data-action=\"a-modal\" data-a-modal=\"{&quot;url&quot;:&quot;/promotion/details/popup/A18JUC6AWVZENJ?ref=cxcw_bxgx_tc_A18JUC6AWVZENJ&amp;source=dp_cxcw&quot;,&quot;width&quot;:&quot;450&quot;,&quot;height&quot;:&quot;600&quot;,&quot;header&quot;:&quot;Terms&quot;,&quot;backButtonText&quot;:&quot;Back&quot;,&quot;closeButtonLabel&quot;:&quot;Close&quot;}\"> <span class=\"instrumentationElement\" data-csa-c-action=\"navigate:details\" data-csa-c-type=\"action\" data-csa-c-id=\"7herg5-i2eip2-tgshq9-kbb1h0\"> <a data-selector=\"cxcwPopoverLink\" href=\"#\" data-a-atomic-interop=\"\" data-a-component=\"text-link\">Terms</a> </span> </span> <style> [data-selector=\"cxcwPopoverLink\"] { padding-left: 6px; padding-right: 6px; } </style> </span>"
+    }
+  ],
+  "beforeProducts": [
+    {
+      "asin": "B0HCZ5ZF7J",
+      "price": 59.99,
+      "listPrice": null,
+      "discountPercentage": null,
+      "dealBadge": "Deal",
+      "rating": 4.5,
+      "reviewCount": 17,
+      "pastMonthSales": null,
+      "coupon": "Apply 50% coupon Shop items .cxcwEmphasisLink { padding-left: 6px; padding-right: 12px !important; display: inline-block; } .cxcwEmphasisLink::after { bottom: 6.5px !important; margin-left: 2px !important; } | Terms [data-selector=\"cxcwPopoverLink\"] { padding-left: 6px; padding-right: 6px; }"
+    }
+  ],
+  "afterProducts": [
+    {
+      "asin": "B0HCZ5ZF7J",
+      "price": 59.99,
+      "listPrice": null,
+      "discountPercentage": null,
+      "dealBadge": "Deal",
+      "rating": 4.5,
+      "reviewCount": 17,
+      "pastMonthSales": null,
+      "coupon": "Apply 50% coupon"
+    }
+  ],
+  "checks": [
+    {
+      "name": "late_sales",
+      "evidence": "controlled native DOM",
+      "actual": {
+        "before": null,
+        "after": "5K+ bought in past month"
+      },
+      "expected": {
+        "before": null,
+        "after": "5K+ bought in past month"
+      },
+      "pass": true
+    },
+    {
+      "name": "late_sales_preserves_price_rating",
+      "evidence": "controlled native DOM",
+      "actual": [
+        59.99,
+        4.5,
+        17
+      ],
+      "expected": [
+        59.99,
+        4.5,
+        17
+      ],
+      "pass": true
+    },
+    {
+      "name": "late_sales_with_deal",
+      "evidence": "controlled native DOM",
+      "actual": {
+        "before": null,
+        "after": "5K+ bought in past month"
+      },
+      "expected": {
+        "before": null,
+        "after": "5K+ bought in past month"
+      },
+      "pass": true
+    },
+    {
+      "name": "late_sales_with_deal_preserves_price_rating",
+      "evidence": "controlled native DOM",
+      "actual": [
+        59.99,
+        4.5,
+        17
+      ],
+      "expected": [
+        59.99,
+        4.5,
+        17
+      ],
+      "pass": true
+    },
+    {
+      "name": "late_dollar_coupon",
+      "evidence": "controlled native DOM",
+      "actual": {
+        "before": null,
+        "after": "Save $5 with coupon"
+      },
+      "expected": {
+        "before": null,
+        "after": "Save $5 with coupon"
+      },
+      "pass": true
+    },
+    {
+      "name": "late_dollar_coupon_preserves_price_rating",
+      "evidence": "controlled native DOM",
+      "actual": [
+        59.99,
+        4.5,
+        17
+      ],
+      "expected": [
+        59.99,
+        4.5,
+        17
+      ],
+      "pass": true
+    },
+    {
+      "name": "late_percent_coupon_with_deal",
+      "evidence": "controlled native DOM",
+      "actual": {
+        "before": null,
+        "after": "Save 25% with coupon"
+      },
+      "expected": {
+        "before": null,
+        "after": "Save 25% with coupon"
+      },
+      "pass": true
+    },
+    {
+      "name": "late_percent_coupon_with_deal_preserves_price_rating",
+      "evidence": "controlled native DOM",
+      "actual": [
+        59.99,
+        4.5,
+        17
+      ],
+      "expected": [
+        59.99,
+        4.5,
+        17
+      ],
+      "pass": true
+    },
+    {
+      "name": "existing_percent_coupon_control",
+      "evidence": "controlled native DOM",
+      "actual": {
+        "before": null,
+        "after": "Save 25% with coupon"
+      },
+      "expected": {
+        "before": null,
+        "after": "Save 25% with coupon"
+      },
+      "pass": true
+    },
+    {
+      "name": "existing_percent_coupon_control_preserves_price_rating",
+      "evidence": "controlled native DOM",
+      "actual": [
+        59.99,
+        4.5,
+        17
+      ],
+      "expected": [
+        59.99,
+        4.5,
+        17
+      ],
+      "pass": true
+    },
+    {
+      "name": "recommendation_sales",
+      "evidence": "controlled native DOM",
+      "actual": null,
+      "expected": null,
+      "pass": true
+    },
+    {
+      "name": "recommendation_sales_offscreen",
+      "evidence": "controlled native DOM",
+      "actual": null,
+      "expected": null,
+      "pass": true
+    },
+    {
+      "name": "nested_recommendation_coupon",
+      "evidence": "controlled native DOM",
+      "actual": null,
+      "expected": null,
+      "pass": true
+    },
+    {
+      "name": "nested_recommendation_coupon_offscreen",
+      "evidence": "controlled native DOM",
+      "actual": null,
+      "expected": null,
+      "pass": true
+    },
+    {
+      "name": "excluded_first_candidate",
+      "evidence": "controlled native DOM",
+      "actual": "Apply 10% coupon",
+      "expected": "Apply 10% coupon",
+      "pass": true
+    },
+    {
+      "name": "excluded_first_candidate_offscreen",
+      "evidence": "controlled native DOM",
+      "actual": "Apply 10% coupon",
+      "expected": "Apply 10% coupon",
+      "pass": true
+    },
+    {
+      "name": "real_coupon_fragment_without_css",
+      "evidence": "controlled native DOM",
+      "actual": "Apply 50% coupon",
+      "expected": "Apply 50% coupon",
+      "pass": true
+    },
+    {
+      "name": "real_coupon_fragment_without_css_offscreen",
+      "evidence": "controlled native DOM",
+      "actual": "Apply 50% coupon",
+      "expected": "Apply 50% coupon",
+      "pass": true
+    },
+    {
+      "name": "split_sales",
+      "evidence": "controlled native DOM",
+      "actual": "1K+ bought in past month",
+      "expected": "1K+ bought in past month",
+      "pass": true
+    },
+    {
+      "name": "paragraph_sales",
+      "evidence": "controlled native DOM",
+      "actual": "1K+ bought in past month",
+      "expected": "1K+ bought in past month",
+      "pass": true
+    },
+    {
+      "name": "hidden_initially_missing",
+      "evidence": "controlled native DOM",
+      "actual": null,
+      "expected": null,
+      "pass": true
+    },
+    {
+      "name": "attribute_only_cache_reveal",
+      "evidence": "controlled native DOM",
+      "actual": "Save $5 with coupon",
+      "expected": "Save $5 with coupon",
+      "pass": true
+    },
+    {
+      "name": "observer_text_data",
+      "evidence": "native MutationObserver with actual production options/predicate",
+      "actual": true,
+      "expected": true,
+      "pass": true
+    },
+    {
+      "name": "observer_coupon_class",
+      "evidence": "native MutationObserver with actual production options/predicate",
+      "actual": true,
+      "expected": true,
+      "pass": true
+    },
+    {
+      "name": "observer_noise",
+      "evidence": "native MutationObserver with actual production options/predicate",
+      "actual": false,
+      "expected": false,
+      "pass": true
+    },
+    {
+      "name": "observer_color_noise",
+      "evidence": "native MutationObserver with actual production options/predicate",
+      "actual": false,
+      "expected": false,
+      "pass": true
+    },
+    {
+      "name": "observer_legacy_insertion",
+      "evidence": "native MutationObserver with actual production options/predicate",
+      "actual": true,
+      "expected": true,
+      "pass": true
+    }
+  ],
+  "passed": true,
+  "limitations": [
+    "Controlled timing is not evidence of naturally occurring Amazon hydration order.",
+    "Source offers and result sets may change between visits.",
+    "Chrome service-worker/UI/storage/export are exercised separately."
+  ]
+}

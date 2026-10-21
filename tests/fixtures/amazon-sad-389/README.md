@@ -15,4 +15,6 @@ The search/PDP sales values differ because those are different page observations
 
 Direct Moli follow-up at 16:40–16:41 UTC independently confirmed the coupon CSS leak, native observer gaps, and a controlled remove/restore cache failure on a clone of a real sales card. The controlled cases in the tests are not claims that Amazon naturally delivered that exact hydration order. Chrome extension UI/service-worker E2E is a separate verification boundary.
 
-`helpers.ts` builds deliberately small **controlled** card/PDP shells. Initial `it.fails` regressions document verified baseline defects while keeping the checkpoint executable; implementation commits convert them to ordinary passing regressions. None should remain at review handoff.
+`helpers.ts` builds deliberately small **controlled** card/PDP shells. Initial `it.fails` regressions documented verified baseline defects while keeping the test-first checkpoint executable. Implementation commits converted all of them to ordinary passing regressions; none remain.
+
+See [the final implementation/verification record](../../../docs/qa/SAD-389-verification.md) for fresh Moli results, built-extension Chromium checks, full regression results and reproduction commands.
