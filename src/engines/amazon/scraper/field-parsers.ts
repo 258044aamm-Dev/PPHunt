@@ -13,6 +13,11 @@ import {
 } from '../utils/amazon-url';
 import { isIsoCurrency, resolvePageCurrency } from '../utils/currency';
 import { parsePrice, parsePriceFromElements } from '../utils/price-parser';
+import {
+  DEAL_LABEL_PATTERN,
+  deriveDealFromPrices,
+  detectDealEvidence,
+} from './deal-evidence';
 import type { AmazonTrackedField } from './drift-telemetry';
 import {
   AMAZON_SELECTORS,
@@ -1082,31 +1087,67 @@ export function extractCardPricingAndDiscounts(
 
   // Explicit Discount Percentage (`-68%` -> `68% off`, `19% off` -> `19% off`)
   let discountPercentage: string | undefined;
+  // SAD-386 (diagnostics-only): a percentage-looking node existed but did not
+  // normalise. Reported in step 5 so "absent" and "unreadable" stop looking alike.
+  let discountNodeSeen = false;
   for (const selector of AMAZON_SELECTORS.cardFields.discount) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
-      if (el.children.length > 1) continue;
-      const normalized = normalizeDiscountBadge(el?.textContent);
+      // SAD-386: the old `children.length > 1` guard dropped a percentage wrapped
+      // in markup (`<span><b>-68%</b><i></i></span>` — probe P02/H). The honest
+      // guard is on the TEXT: a discount badge is short, and the normaliser
+      // already refuses coupon/currency text.
+      const rawText = normalizeWhitespace(el?.textContent);
+      if (!rawText || rawText.length > 32) continue;
+      const normalized = normalizeDiscountBadge(rawText);
       if (normalized) {
         discountPercentage = normalized;
         break;
       }
+      if (/%/.test(rawText)) discountNodeSeen = true;
     }
     if (discountPercentage !== undefined) break;
   }
 
+  // SAD-386: one bounded fallback pass inside the price area, never ahead of the
+  // declarative list above. Only a node whose class/id/aria-label says it is a
+  // savings node may rely on a bare `NN%` (see `normalizeDiscountBadge`).
+  if (discountPercentage === undefined) {
+    const priceNode = safeQuerySelector(
+      card,
+      '[data-cy="price-recipe"] .a-price, .a-price, .priceToPay, .apexPriceToPay',
+    );
+    const priceArea =
+      safeQuerySelector(card, '[data-cy="price-recipe"]') ??
+      priceNode?.parentElement ??
+      card;
+    for (const el of safeQuerySelectorAll(priceArea, 'span, div, b, strong')) {
+      if (el.children.length > 2) continue;
+      const rawText = normalizeWhitespace(el.textContent);
+      if (!rawText || rawText.length > 24 || !rawText.includes('%')) continue;
+      const label = `${el.className} ${el.id} ${el.getAttribute('aria-label') ?? ''}`;
+      const looksLikeSavings = /saving|discount|percent|\boff\b/i.test(label);
+      const normalized = normalizeDiscountBadge(rawText, {
+        allowBare: looksLikeSavings,
+      });
+      if (normalized) {
+        discountPercentage = normalized;
+        break;
+      }
+      discountNodeSeen = true;
+    }
+  }
+
   // Deal Badge (`Limited-time deal`, etc.)
   let dealBadge: string | undefined;
+  // SAD-386 (diagnostics-only): the value came from evidence, not a printed badge.
+  let dealBadgeDerived = false;
   for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
       const text = normalizeWhitespace(el?.textContent);
-      if (
-        text &&
-        /deal|limited time|limited-time|lightning|black friday|prime day|cyber monday|angebot|offre|oferta/i.test(
-          text,
-        )
-      ) {
+      // SAD-386: one shared vocabulary (was duplicated with the PDP path).
+      if (text && DEAL_LABEL_PATTERN.test(text)) {
         dealBadge = text;
         break;
       }
@@ -1118,6 +1159,18 @@ export function extractCardPricingAndDiscounts(
     const adProps = parseAsinAdAttributesProps(card);
     if (adProps?.dealString) {
       dealBadge = adProps.dealString;
+    }
+  }
+
+  // SAD-386: badge containers the declarative list does not name, then the
+  // operator-approved strike-price rule (D5). Both are additive: the loops above
+  // keep first refusal, so no selector that wins today can lose to these.
+  if (dealBadge === undefined) {
+    const evidence =
+      detectDealEvidence(card) ?? deriveDealFromPrices(price, listPrice);
+    if (evidence) {
+      dealBadge = evidence.value;
+      dealBadgeDerived = evidence.derived;
     }
   }
 
@@ -1144,7 +1197,14 @@ export function extractCardPricingAndDiscounts(
   if (discountPercentage !== undefined) {
     result.discountPercentage = discountPercentage;
   }
-  if (dealBadge !== undefined) result.dealBadge = dealBadge;
+  if (dealBadge !== undefined) {
+    result.dealBadge = dealBadge;
+    if (dealBadgeDerived) result.dealBadgeDerived = true;
+  }
+  // SAD-386 (diagnostics-only): only meaningful when no node produced a value.
+  if (discountPercentage === undefined && discountNodeSeen) {
+    result.unparseableDiscountNode = true;
+  }
   if (coupon !== undefined) result.coupon = coupon;
   // SAD-369 D9: only meaningful when no tier produced a price — otherwise the
   // observation is noise next to a successfully extracted value.

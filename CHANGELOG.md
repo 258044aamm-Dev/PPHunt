@@ -22,8 +22,25 @@ list price extracted, discount and deal empty.
   sat inside `Save 15% off with coupon` used to store `15% off` as the product
   discount; coupon/voucher/`Save $` text is now rejected by the normaliser.
 
+- **Deal badges in containers the card list did not name.** The status-badge
+  slot (`s-status-badge-component`), a bare `[data-a-badge-type="deal"]` node
+  and `dealBadge` class/id containers are now read — but only when the text is
+  deal vocabulary, so *"Amazon's Choice"* in the same slot is still a badge,
+  never a deal.
+- **A deal the page proves without printing a badge.** When the struck-through
+  list price is above the selling price, the row stores the canonical `Deal`
+  (one switch: `TREAT_STRUCK_LIST_PRICE_AS_DEAL` in `scraper/deal-evidence.ts`).
+  Text the page actually printed always wins over this derived value.
+- **One deal vocabulary** shared by the card and product-page paths; the two
+  copies had already drifted (no `cyber monday`, no locale words on the PDP).
+
+### Changed
+- A discount node is judged by its **text**, not by whether it has more than one
+  child, so a percentage wrapped in markup (`<span><b>-68%</b></span>`) is read.
+
 ### Unchanged
-- Output format (`"NN% off"`), the range rule (`0 < N < 100`, integers only),
+- The stored value for a product page that prints a badge, every other field,
+- the range rule (`0 < N < 100`, integers only),
   every field other than `discountPercentage`/`dealBadge`, the Temu engine, the
   DB schema, exports, settings and the 24-field diagnostics report.
 

@@ -36,6 +36,11 @@ import {
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
+import {
+  DEAL_LABEL_PATTERN,
+  DEAL_CONTAINER_SELECTORS,
+  deriveDealFromPrices,
+} from './deal-evidence';
 
 function isInsideExcludedDetailSubtree(el: Element): boolean {
   for (const selector of AMAZON_SELECTORS.detail.excludedSubtrees) {
@@ -909,6 +914,9 @@ export function parseAmazonProductDetail(
     let listPrice: number | undefined;
     let discountPercentage: string | undefined;
     let dealBadge: string | undefined;
+    // SAD-386 (diagnostics-only): true when `dealBadge` came from evidence
+    // (struck list price) rather than from text the page printed.
+    let dealBadgeDerived = false;
     let coupon: string | undefined;
 
     // SAD-359: pricing provenance. The shared card pricing cascade is not
@@ -949,6 +957,7 @@ export function parseAmazonProductDetail(
       if (dealBadge === undefined && scopedPricing.dealBadge !== undefined) {
         dealBadge = scopedPricing.dealBadge;
         dealBadgeSelector = scopeSelector;
+        dealBadgeDerived = scopedPricing.dealBadgeDerived === true;
       }
       if (coupon === undefined && scopedPricing.coupon !== undefined) {
         coupon = scopedPricing.coupon;
@@ -1070,17 +1079,48 @@ export function parseAmazonProductDetail(
     }
 
     let dealBadgeRejectedSelector: string | undefined;
-    if (dealBadge === undefined) {
-      for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
-        const el = safeQuerySelector(doc, selector);
-        if (!el || isInsideExcludedDetailSubtree(el)) continue;
-        const text = normalizeWhitespace(el.textContent);
-        if (text && /deal|limited|lightning|prime day|black friday/i.test(text)) {
-          dealBadge = text;
-          dealBadgeSelector = selector;
-          break;
+    // SAD-386: a derived value never outranks a badge the page actually printed,
+    // so the badge search still runs when the current value is derived.
+    if (dealBadge === undefined || dealBadgeDerived) {
+      // SAD-386: the card list first (unchanged order), then the extra badge
+      // containers the card list does not name — both against the SAME shared
+      // vocabulary, which previously differed between this path and the card path.
+      // The result is collected in a local so an *already derived* value cannot
+      // terminate the search (it did on the first run: every PDP with a struck
+      // list price reported "Deal" instead of its printed badge).
+      let printedBadge: string | undefined;
+      let printedBadgeSelector: string | undefined;
+      for (const selector of [
+        ...AMAZON_SELECTORS.cardFields.dealBadge,
+        ...DEAL_CONTAINER_SELECTORS,
+      ]) {
+        const els = safeQuerySelectorAll(doc, selector);
+        for (const el of els) {
+          if (isInsideExcludedDetailSubtree(el)) continue;
+          const text = normalizeWhitespace(el.textContent);
+          if (text && DEAL_LABEL_PATTERN.test(text)) {
+            printedBadge = text;
+            printedBadgeSelector = selector;
+            break;
+          }
+          dealBadgeRejectedSelector ??= selector;
         }
-        dealBadgeRejectedSelector ??= selector;
+        if (printedBadge !== undefined) break;
+      }
+      if (printedBadge !== undefined) {
+        dealBadge = printedBadge;
+        dealBadgeSelector = printedBadgeSelector;
+        dealBadgeDerived = false;
+      }
+    }
+    // SAD-386 (D5): a struck-through list price above the selling price proves a
+    // deal even when the page prints no badge at all.
+    if (dealBadge === undefined) {
+      const derived = deriveDealFromPrices(price, listPrice);
+      if (derived) {
+        dealBadge = derived.value;
+        dealBadgeDerived = derived.derived;
+        dealBadgeSelector = 'derived:list-price';
       }
     }
     if (dealBadge !== undefined) {
