@@ -8,6 +8,7 @@ import {
   addProducts,
   clearActiveSession,
   getProductCountBySession,
+  getProductsBySession,
   createSession,
   ensureSession,
   getActiveSession,
@@ -208,6 +209,13 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
   let activeCollection: ActiveCollectionRuntimeState | null = null;
   let pendingProductsChain: Promise<void> = Promise.resolve();
   const finalizedSessionKeys = new Set<string>();
+  /**
+   * SAD-385: sessions whose enrichment tail has already been reconciled. A
+   * duplicate `completed` progress (or a STOP after a completion) must not queue
+   * the same tail twice, so this is checked before the pump's dedupe set is
+   * cleared by `resetCollectionEnrichment`.
+   */
+  const reconciledSessionKeys = new Set<string>();
   let lastFinalizedSession: ActiveCollectionRuntimeState | null = null;
 
   const hydrateActiveCollection =
@@ -304,6 +312,7 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     const scrollSettings = await resolveScrollRuntimeSettings();
 
     finalizedSessionKeys.delete(sessionKey);
+    reconciledSessionKeys.delete(sessionKey);
     lastFinalizedSession = null;
     // SAD-379: a (re)started run begins with an empty enrichment budget.
     resetCollectionEnrichment(sessionKey);
@@ -394,6 +403,42 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     });
   };
 
+  /**
+   * SAD-385: the run-ending safety net.
+   *
+   * The pump's queue lives in memory (`enrichment-pump.ts`), so a suspended MV3
+   * worker drops whatever was still queued. Those rows would stay at card
+   * quality, and for `weight` and `variations` — which no listing card prints —
+   * that is indistinguishable from the bug this ticket fixes.
+   *
+   * The rows are the durable record, so the tail is derivable: anything in this
+   * session still missing a detail-only field is queued once more, under the
+   * run's remaining budget. The pump's `seen` set keeps a product this worker
+   * already attempted from being fetched twice, so a product whose page simply
+   * has no weight is not retried over and over.
+   */
+  const reconcileCollectionDetails = async (
+    sessionKey: string,
+  ): Promise<void> => {
+    if (reconciledSessionKeys.has(sessionKey)) return;
+    reconciledSessionKeys.add(sessionKey);
+
+    let rows;
+    try {
+      rows = await getProductsBySession(sessionKey);
+    } catch {
+      return; // A read failure costs the tail, never the run.
+    }
+
+    const missing = rows.filter((row) => !row.weight || !row.variations);
+    if (missing.length === 0) return;
+
+    enqueueCollectionEnrichment(missing, sessionKey, {
+      enrich: (input) => enrichSavedProduct(input),
+      limit: getEnrichCollectedLimit(),
+    });
+  };
+
   const handleStopCollection = async (tabId: number): Promise<void> => {
     await pendingProductsChain;
     const active = await hydrateActiveCollection();
@@ -430,6 +475,11 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
     }
 
     if (active) {
+      // SAD-385: before the per-run bookkeeping is cleared, queue whatever this
+      // run still has at card quality. Order matters: `resetCollectionEnrichment`
+      // clears both the dedupe set and the budget, so reconciling afterwards
+      // would re-fetch products this run already attempted, with no cap.
+      await reconcileCollectionDetails(active.sessionKey);
       // SAD-379: the run is over; its per-run queue bookkeeping must not leak
       // into the next run. Already-queued work is left alone on purpose — those
       // rows exist and enriching them is still correct.
@@ -696,6 +746,9 @@ export function createAmazonBackgroundController(): AmazonBackgroundController {
         completedAt: new Date().toISOString(),
         status: 'completed',
       });
+      // SAD-385: same reconciliation, same ordering rule as STOP — the tail is
+      // queued while the run's dedupe set and budget are still in place.
+      await reconcileCollectionDetails(sessionKey);
       // SAD-379: same per-run reset as STOP.
       resetCollectionEnrichment(sessionKey);
       activeCollection = null;
