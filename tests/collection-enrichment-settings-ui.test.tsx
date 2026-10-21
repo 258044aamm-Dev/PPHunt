@@ -171,3 +171,14 @@ describe('SAD-385 collection enrichment settings', () => {
     await expectStoredLimit('all');
   });
 });
+
+
+it('explains that the limit bounds full detail only, not the brand/rank fallback', async () => {
+  await renderOverlay();
+  expect(
+    await screen.findByText(/The limit bounds full detail only/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText(/still get a missing brand or Best Sellers Rank filled in/),
+  ).toBeTruthy();
+});

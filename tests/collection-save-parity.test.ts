@@ -336,7 +336,8 @@ describe('SAD-379: a collected row equals a saved row', () => {
   /**
    * SAD-385 inverts the old default deliberately: a collected row that stops at
    * the card can never carry `weight` or the full `variations`, so the
-   * card-only shape is exactly the reported bug.
+   * card-only shape is exactly the reported bug. SAD-384's brand/BSR fallback
+   * still rides on the same request; this asserts the full-detail path wins.
    */
   it('with default settings a collected row carries the detail-only fields', async () => {
     const { onMessage } = await startBackground();
@@ -352,6 +353,7 @@ describe('SAD-379: a collected row equals a saved row', () => {
     await waitFor(async () =>
       expect(await db.products.where('asin').equals('B0000000EE').count()).toBe(1),
     );
+    await waitFor(async () => expect((await rowFor('B0000000EE'))?.bestSellersRank).toBe(DETAIL.bestSellersRank));
     const row = await rowFor('B0000000EE');
     // The two fields this ticket is about, plus one more from the same page.
     expect(row?.weight).toBe(DETAIL.weight);

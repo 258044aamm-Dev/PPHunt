@@ -3,6 +3,7 @@ import {
   CURRENT_SETTINGS_VERSION,
   DEFAULT_ENABLED_FIELDS,
   DEFAULT_ENRICH_COLLECTED_LIMIT,
+  DEFAULT_RATING_BACKFILL,
   ENRICH_COLLECTED_LIMIT_OPTIONS,
   DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
   DEFAULT_QUICK_SAVE_COLLECTION_BEHAVIOR,
@@ -118,6 +119,9 @@ export const AmazonSettingsSchema = z.object({
   enrichCollectedLimit: z
     .enum(ENRICH_COLLECTED_LIMIT_OPTIONS)
     .default(DEFAULT_ENRICH_COLLECTED_LIMIT),
+  // SAD-383: optional-with-default like the pair above, so an existing stored row
+  // parses without a settingsVersion bump.
+  backfillCollectedRatings: z.boolean().default(DEFAULT_RATING_BACKFILL),
 });
 
 export const PartialAmazonSettingsSchema = z.object({
@@ -164,6 +168,7 @@ export const PartialAmazonSettingsSchema = z.object({
   quickSaveCollectionBehavior: z.enum(['current', 'new', 'ask']).optional(),
   quickSaveAutoDownload: z.boolean().optional(),
   // SAD-385: only the per-run budget is user-settable.
+  backfillCollectedRatings: z.boolean().optional(),
   enrichCollectedLimit: z.enum(ENRICH_COLLECTED_LIMIT_OPTIONS).optional(),
 });
 

@@ -1,5 +1,6 @@
 import {
   DEFAULT_ENRICH_COLLECTED_LIMIT,
+  DEFAULT_RATING_BACKFILL,
   ENRICH_COLLECTED_LIMIT_OPTIONS,
   type EnrichCollectedLimit,
 } from '../../constants/defaults';
@@ -14,7 +15,8 @@ import { setEnrichCollectedLimit } from '../../utils/enrich-collected-flag';
  * performs — that page is the only place Amazon prints `weight` and the full
  * `variations` list, so with the stage skipped those fields can never be
  * collected. What is left to choose is the per-run budget: how many products of
- * a run may pay for that request.
+ * a run may pay for that request, and that budget bounds full detail only —
+ * SAD-384 fetches a missing brand/Best Sellers Rank independently of it.
  *
  * The write is immediate rather than debounced (the hook's `updateSettings`
  * waits 500 ms). A queued debounce that lands after "Restore Defaults" would
@@ -40,12 +42,12 @@ export const LIMIT_OPTIONS: LimitOption[] = [
   {
     value: '25',
     title: '25 products per run',
-    description: 'The cheapest option: at most 25 extra product-page requests.',
+    description: 'Fetch full details for at most 25 products; missing brand/rank fallback is not capped.',
   },
   {
     value: '50',
     title: '50 products per run',
-    description: 'The default — matches the per-batch limit the save path uses.',
+    description: 'The default: full details for 50 products per run, plus missing brand/rank fallback.',
   },
   {
     value: 'all',
@@ -69,6 +71,9 @@ export function AmazonCollectionEnrichment() {
   const { settings } = useAmazonSettings();
   const limit =
     settings?.enrichCollectedLimit ?? DEFAULT_ENRICH_COLLECTED_LIMIT;
+  // SAD-383: separate switch, separate stage, on by default.
+  const backfillRatings =
+    settings?.backfillCollectedRatings ?? DEFAULT_RATING_BACKFILL;
 
   const apply = (nextLimit: EnrichCollectedLimit) => {
     void persistSettings({ enrichCollectedLimit: nextLimit });
@@ -78,13 +83,38 @@ export function AmazonCollectionEnrichment() {
 
   return (
     <div className="space-y-3">
+      {/* SAD-383: the rating/review-count backfill. Written immediately for the
+          same reason as the radios below — a queued debounce landing after
+          "Restore Defaults" would silently re-enable outbound requests. */}
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={backfillRatings}
+          onChange={(e) =>
+            void persistSettings({ backfillCollectedRatings: e.target.checked })
+          }
+          className="w-3.5 h-3.5 accent-clay cursor-pointer mt-0.5 shrink-0"
+        />
+        <span>
+          <span className="font-sans text-xs font-medium text-ink block">
+            Fill missing ratings from the product page
+          </span>
+          <span className="font-serif text-xs text-ink-muted leading-relaxed">
+            A listing card does not always print a rating and review count — the
+            Deals grid never does. When one is missing, this makes one small
+            request per product to fill just those two fields. A rating the card
+            printed is never replaced. On by default.
+          </span>
+        </span>
+      </label>
+
       <p className="font-serif text-xs text-ink-muted leading-relaxed">
-        After a collection stores a product, its product page is fetched and the
-        detail fields a save already collects are filled in — rating, features,
-        seller, availability, and the two fields a listing card never shows:{' '}
+        The product page is always fetched after a collection, because that page
+        is the only place Amazon prints{' '}
         <span className="font-sans font-medium text-ink">weight</span> and the
         full <span className="font-sans font-medium text-ink">variation</span>{' '}
-        list. Each product costs one extra request, so a run takes longer.
+        list. The same request also fills the detail fields a save already
+        collects — rating, features, seller, availability.
       </p>
 
       <div>
@@ -118,8 +148,9 @@ export function AmazonCollectionEnrichment() {
           ))}
         </div>
         <p className="mt-2 font-serif text-xs text-ink-subtle">
-          Lower the limit on very long runs: products past it keep the data their
-          listing card showed.
+          The limit bounds full detail only. Products past it still get a missing
+          brand or Best Sellers Rank filled in; every other field stays as their
+          listing card showed it.
         </p>
       </div>
     </div>

@@ -24,6 +24,7 @@ export const MAX_OFFSCREEN_BLOB_BYTES = 32 * 1024 * 1024;
 
 export type OffscreenRequestType =
   | 'OFFSCREEN_PARSE_PRODUCT'
+  | 'OFFSCREEN_PARSE_RATING'
   | 'OFFSCREEN_CREATE_BLOB_URL'
   | 'OFFSCREEN_REVOKE_URL'
   | 'OFFSCREEN_BUILD_EXPORT';
@@ -43,6 +44,17 @@ export interface OffscreenParseProductRequest {
   productUrl: string;
   /** When present, the parsed product must resolve to this ASIN. */
   asin?: string;
+}
+
+/**
+ * SAD-383: the average-customer-review popover, parsed where `DOMParser` lives.
+ * A separate request type on purpose — `OFFSCREEN_PARSE_PRODUCT` runs the full
+ * PDP parser and returns a whole product, which is far more than two numbers.
+ */
+export interface OffscreenParseRatingRequest {
+  target: typeof OFFSCREEN_TARGET;
+  type: 'OFFSCREEN_PARSE_RATING';
+  html: string;
 }
 
 export interface OffscreenCreateBlobUrlRequest {
@@ -73,6 +85,7 @@ export interface OffscreenBuildExportRequest {
 
 export type OffscreenRequest =
   | OffscreenParseProductRequest
+  | OffscreenParseRatingRequest
   | OffscreenCreateBlobUrlRequest
   | OffscreenRevokeUrlRequest
   | OffscreenBuildExportRequest;
@@ -108,6 +121,12 @@ export interface OffscreenParseSuccess {
   fieldDiagnostics?: import('../scraper/extraction-diagnostics').ExtractionDiagnosticsReport;
 }
 
+export interface OffscreenParseRatingSuccess {
+  ok: true;
+  rating: number | null;
+  reviewCount: number | null;
+}
+
 export interface OffscreenBlobSuccess {
   ok: true;
   url: string;
@@ -130,6 +149,9 @@ export interface OffscreenBuildExportSuccess {
 }
 
 export type OffscreenParseResponse = OffscreenParseSuccess | OffscreenError;
+export type OffscreenParseRatingResponse =
+  | OffscreenParseRatingSuccess
+  | OffscreenError;
 export type OffscreenBlobResponse = OffscreenBlobSuccess | OffscreenError;
 export type OffscreenRevokeResponse = OffscreenRevokeSuccess | OffscreenError;
 export type OffscreenBuildExportResponse =
@@ -138,6 +160,7 @@ export type OffscreenBuildExportResponse =
 
 export type OffscreenResponse =
   | OffscreenParseResponse
+  | OffscreenParseRatingResponse
   | OffscreenBlobResponse
   | OffscreenRevokeResponse
   | OffscreenBuildExportResponse;
@@ -165,6 +188,13 @@ export function isOffscreenRequest(value: unknown): value is OffscreenRequest {
         typeof value.productUrl === 'string' &&
         value.productUrl.length > 0 &&
         (value.asin === undefined || typeof value.asin === 'string')
+      );
+
+    case 'OFFSCREEN_PARSE_RATING':
+      return (
+        typeof value.html === 'string' &&
+        value.html.length > 0 &&
+        value.html.length <= MAX_OFFSCREEN_HTML_LENGTH
       );
 
     case 'OFFSCREEN_CREATE_BLOB_URL':

@@ -190,6 +190,8 @@ export interface AmazonSettings {
    * default 'all'). A collection always runs the save pipeline's enrichment
    * stage — `weight` and the full `variations` come from nowhere else.
    */
+  /** SAD-383: backfill rating/reviewCount from the review popover. */
+  backfillCollectedRatings: boolean;
   enrichCollectedLimit: EnrichCollectedLimit;
 }
 export type Settings = AmazonSettings;

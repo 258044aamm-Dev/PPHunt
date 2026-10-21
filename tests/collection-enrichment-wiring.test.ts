@@ -221,16 +221,17 @@ describe('SAD-379: collection runs the save pipeline stage', () => {
     expect(call.sessionKey).toBeTruthy();
   });
 
-  it('honours the 25 cap from the setting', async () => {
+  it('honours the 25 full-detail cap and falls back beyond it', async () => {
     const { onMessage } = await startBackground({ limit: '25' });
     const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     drive(onMessage, collected(ASINS(40)));
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(25));
+    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(40));
     await pump.whenCollectionEnrichmentIdle();
     // The cap is a ceiling, not a batch size: no 26th call ever arrives.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(enrichSavedProduct).toHaveBeenCalledTimes(25);
+    expect(enrichSavedProduct.mock.calls.filter(([input]) => !input.scope)).toHaveLength(25);
+    expect(enrichSavedProduct.mock.calls.filter(([input]) => input.scope === 'brand-and-rank')).toHaveLength(15);
   });
 
   it('is never awaited by the collection message path (a slow fetch cannot block progress)', async () => {

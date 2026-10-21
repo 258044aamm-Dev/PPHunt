@@ -36,6 +36,22 @@ export const COLLECTION_DIAGNOSTICS_LIMIT = 50;
  */
 
 /**
+ * SAD-383: fill `rating`/`reviewCount` from Amazon's review popover when the
+ * listing card did not print them.
+ *
+ * Default ON, and that is a deliberate, documented departure from SAD-379's
+ * off-by-default switch. A `/deals` card carries no rating node at all (measured
+ * 2026-10-21), so with this off a collection of that grid can never carry the two
+ * fields a save of the same card carries — which is the reported bug, not an
+ * opt-in improvement. The request is ~3 KB, bounded by the shared enrichment
+ * circuit breaker, and made only for products the card could not describe.
+ *
+ * Setting it to `false` restores the previous behaviour exactly (no request, no
+ * queue, no write) and is covered by a test.
+ */
+export const DEFAULT_RATING_BACKFILL = true;
+
+/**
  * SAD-379/SAD-385: the per-run cap. A string enum rather than a number, matching
  * the house style for a bounded choice (`exportImages`, `quickSaveCollectionBehavior`),
  * so the settings schema stays a plain `z.enum` and the radio values map 1:1.
@@ -123,6 +139,8 @@ export const DEFAULT_AMAZON_SETTINGS: AmazonSettings = {
   quickSaveAutoDownload: DEFAULT_QUICK_SAVE_AUTO_DOWNLOAD,
   // SAD-385: a collection always enriches; only the budget is a setting.
   enrichCollectedLimit: DEFAULT_ENRICH_COLLECTED_LIMIT,
+  // SAD-383: on by default — see DEFAULT_RATING_BACKFILL.
+  backfillCollectedRatings: DEFAULT_RATING_BACKFILL,
 };
 
 export const DEFAULT_SETTINGS: AmazonSettings = DEFAULT_AMAZON_SETTINGS;

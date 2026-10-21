@@ -25,6 +25,8 @@ export default defineConfig({
       'activeTab',
       'tabs',
       'storage',
+      // SAD-384: resume collection-only detail work after host cooldown.
+      'alarms',
       'scripting',
       // SAD-278: the "Save Product Details" item needs the menu API.
       'contextMenus',
