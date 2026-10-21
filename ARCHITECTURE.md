@@ -310,6 +310,38 @@ arrays. Parsers also use metadata extraction and structural fallbacks; a markup
 change may require parser changes, not just edits to the shared tables.
 Live selector validity was not verified in this remediation.
 
+#### Deal and discount evidence (SAD-386)
+
+The two price-adjacent badge fields are read from **one** place:
+[`deal-evidence.ts`](src/engines/amazon/scraper/deal-evidence.ts) owns the deal
+vocabulary and the evidence rule; `scanDiscountNodes()` in `field-parsers.ts`
+owns the printed-percentage rule. Both the listing path and the product-page
+path call them, so the two cannot drift apart (they had: the product page's copy
+was missing `cyber monday` and the locale words).
+
+Three rules are load-bearing:
+
+1. **Text the page printed outranks anything derived.** A derived value is only
+   used when no badge text is readable.
+2. **A derived value says so.** `dealBadge` from a struck list price is stored
+   as the canonical `Deal` and reported with `source: 'derived'`; the switch is
+   `TREAT_STRUCK_LIST_PRICE_AS_DEAL`.
+3. **A percentage is only stored if the page printed one.** No percentage is
+   computed from price and list price.
+
+Shared slots are gated by vocabulary, never by position: the status-badge slot
+also renders "Amazon's Choice", so a value from it must pass the deal lexicon.
+The product-page bounded scans honour `detail.excludedSubtrees`, so a
+similar-items carousel can never answer for the product.
+
+The parse cache never freezes a card before its price family exists. SAD-383
+already treated a card as settled only once `rating`/`reviewCount` were present;
+SAD-386 extends the same rule to `discountPercentage`/`dealBadge`/`listPrice`.
+A card that is not settled is re-read **once per actual DOM change** (its
+subtree signature), and a settled card is re-read only when its text now carries
+a `%` or a deal label — so a badge injected after the first pass is picked up,
+and a settled card is never re-parsed otherwise.
+
 ### 3. Parsing
 
 Each page type has a dedicated parser:

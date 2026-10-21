@@ -113,6 +113,14 @@ export function recordCardDiagnostics(
 
   if (input.pricing.discountPercentage !== undefined) {
     collector.extracted('discountPercentage', dom);
+  } else if (input.pricing.unparseableDiscountNode) {
+    // SAD-386: a percentage-looking node WAS there and the parser refused it
+    // (coupon text, out-of-range, unreadable). Never report that as absence.
+    collector.parseFailed(
+      'discountPercentage',
+      'a percentage node is present but its text is not a product discount (coupon, out of range, or unreadable)',
+      dom,
+    );
   } else {
     collector.missing(
       'discountPercentage',
@@ -122,7 +130,11 @@ export function recordCardDiagnostics(
   }
 
   if (input.pricing.dealBadge !== undefined) {
-    collector.extracted('dealBadge', dom);
+    // SAD-386: `derived` is a real provenance, not a printed badge.
+    collector.extracted(
+      'dealBadge',
+      input.pricing.dealBadgeDerived ? { source: 'derived' } : dom,
+    );
   } else {
     collector.missing('dealBadge', 'no deal badge present on the card', dom);
   }

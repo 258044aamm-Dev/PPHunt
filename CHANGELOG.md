@@ -5,6 +5,73 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Deal and discount extraction (SAD-386)
+
+The *Discount* and *Deal* columns were the two least reliable fields in the
+preview table: the discount normaliser only understood ASCII `-68%` / `68% off`,
+and the deal badge was only read from containers a listing card does not
+necessarily use. Measured on the repo's own real `/deals` fixture: price and
+list price extracted, discount and deal empty.
+
+### Fixed
+- **Discounts printed with a typographic minus.** `−68%` (U+2212 MINUS SIGN),
+  `–68%` (en dash), `—68%` (em dash) and parenthesised forms now normalise to
+  `68% off`. ASCII `-68%` and `68% off` are unchanged, byte for byte.
+- **`Save 68%`** is now read.
+- **A coupon is no longer stored as a discount.** A card whose only percentage
+  sat inside `Save 15% off with coupon` used to store `15% off` as the product
+  discount; coupon/voucher/`Save $` text is now rejected by the normaliser.
+
+- **Deal badges in containers the card list did not name.** The status-badge
+  slot (`s-status-badge-component`), a bare `[data-a-badge-type="deal"]` node
+  and `dealBadge` class/id containers are now read — but only when the text is
+  deal vocabulary, so *"Amazon's Choice"* in the same slot is still a badge,
+  never a deal.
+- **A deal the page proves without printing a badge.** When the struck-through
+  list price is above the selling price, the row stores the canonical `Deal`
+  (one switch: `TREAT_STRUCK_LIST_PRICE_AS_DEAL` in `scraper/deal-evidence.ts`).
+  Text the page actually printed always wins over this derived value.
+- **One deal vocabulary** shared by the card and product-page paths; the two
+  copies had already drifted (no `cyber monday`, no locale words on the PDP).
+
+- **A product page reads its whole price area.** The buybox loop used to stop at
+  the first scope that produced a price, so a percentage, deal badge or coupon
+  rendered further down the column was never read. Every field is still
+  first-wins — the price that wins today still wins — and the loop now stops only
+  when price, list price, discount, deal and coupon are all settled.
+- **A bounded scan of the central column** for a printed percentage and a deal
+  label, using the same rules as the listing path. It honours the existing
+  excluded-subtree rule, so a similar-items carousel can never answer for the
+  product (that leak was caught by a test during this change).
+
+- **A badge that arrives a moment late is no longer lost.** The parse cache
+  treated a card as settled once price and image existed, so a card parsed
+  before its badge or percentage hydrated answered "no deal" for the rest of the
+  run — the measured cause of the "inconsistent" discount. The cache now applies
+  SAD-383's rule to the price family: a card is settled only once it carries a
+  discount, a deal badge or a list price, and an unsettled card is re-read once
+  per actual DOM change rather than once per pass.
+
+### Added (diagnostics only — stored rows are unchanged)
+- **`PARSE_FAILED` for these two fields.** A percentage node that exists but
+  reads as a coupon, an out-of-range value or unreadable text is reported as
+  `PARSE_FAILED` with a reason instead of `MISSING`. Before this, "the page had
+  nothing" and "we could not read what it had" were indistinguishable, so the
+  field this ticket is about could not be measured in a live session.
+- **`source: 'derived'`** on a `dealBadge` that was proven rather than printed.
+
+### Changed
+- A discount node is judged by its **text**, not by whether it has more than one
+  child, so a percentage wrapped in markup (`<span><b>-68%</b></span>`) is read.
+
+### Unchanged
+- The stored value for a product page that prints a badge, every other field,
+- the range rule (`0 < N < 100`, integers only),
+  every field other than `discountPercentage`/`dealBadge`, the Temu engine, the
+  DB schema, exports, settings and the 24-field diagnostics report.
+
+---
+
 ## [Unreleased] — Weights and variations in Collection Mode (SAD-385)
 
 A product collected by a run carried no **weight** and no full **variation**
@@ -149,7 +216,6 @@ that the page never rendered, so the field has to come from somewhere else.
   `docs/plans/SAD-383-rating-and-rating-count-plan.md` §12. It is why a `/deals`
   collection can return very few rows; the rating fix cannot apply to rows that
   are never created.
-
 
 ## [Unreleased] — Collection enrichment (SAD-379)
 

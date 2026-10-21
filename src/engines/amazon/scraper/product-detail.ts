@@ -24,6 +24,7 @@ import {
   normalizeWhitespace,
   parseRating,
   parseReviewCount,
+  scanDiscountNodes,
   validateAndNormalizeScrapedProduct,
   type VariationDimensionSummaryInput,
 } from './field-parsers';
@@ -36,6 +37,12 @@ import {
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
+import {
+  DEAL_LABEL_PATTERN,
+  DEAL_CONTAINER_SELECTORS,
+  deriveDealFromPrices,
+  detectDealEvidence,
+} from './deal-evidence';
 
 function isInsideExcludedDetailSubtree(el: Element): boolean {
   for (const selector of AMAZON_SELECTORS.detail.excludedSubtrees) {
@@ -909,6 +916,9 @@ export function parseAmazonProductDetail(
     let listPrice: number | undefined;
     let discountPercentage: string | undefined;
     let dealBadge: string | undefined;
+    // SAD-386 (diagnostics-only): true when `dealBadge` came from evidence
+    // (struck list price) rather than from text the page printed.
+    let dealBadgeDerived = false;
     let coupon: string | undefined;
 
     // SAD-359: pricing provenance. The shared card pricing cascade is not
@@ -949,12 +959,26 @@ export function parseAmazonProductDetail(
       if (dealBadge === undefined && scopedPricing.dealBadge !== undefined) {
         dealBadge = scopedPricing.dealBadge;
         dealBadgeSelector = scopeSelector;
+        dealBadgeDerived = scopedPricing.dealBadgeDerived === true;
       }
       if (coupon === undefined && scopedPricing.coupon !== undefined) {
         coupon = scopedPricing.coupon;
         couponSelector = scopeSelector;
       }
-      if (price !== null) break;
+      // SAD-386: the loop used to stop as soon as ONE scope yielded a price, so
+      // a later scope that carried the savings percentage, the deal badge or the
+      // coupon was never read (`product-detail.ts:957` before this change).
+      // Every field is still first-wins, so the price that wins today still wins;
+      // the loop now stops only when all five fields are settled.
+      if (
+        price !== null &&
+        listPrice !== undefined &&
+        discountPercentage !== undefined &&
+        dealBadge !== undefined &&
+        coupon !== undefined
+      ) {
+        break;
+      }
     }
 
     // Check legacy `#priceblock_ourprice` / `#priceblock_dealprice` if still null
@@ -1040,6 +1064,8 @@ export function parseAmazonProductDetail(
       diag?.missing('listPrice', 'no list price shown on the page', { source: 'dom' });
     }
 
+    // SAD-386 (diagnostics-only): a percentage node existed but was refused.
+    let discountNodeSeen = false;
     const savingsSelector =
       '#corePriceDisplay_desktop_feature_div .savingsPercentage, #corePrice_feature_div .savingsPercentage, #apex_desktop .savingsPercentage';
     let savingsRejected = false;
@@ -1056,9 +1082,16 @@ export function parseAmazonProductDetail(
     }
     if (discountPercentage !== undefined) {
       diag?.extracted('discountPercentage', {
-        source: 'dom',
+        source: discountSelector === 'detail-root:bounded-scan' ? 'derived' : 'dom',
         selector: discountSelector,
       });
+    } else if (discountNodeSeen) {
+      // SAD-386: honest status — a node was present and the parser refused it.
+      diag?.parseFailed(
+        'discountPercentage',
+        'a percentage node is present but its text is not a product discount (coupon, out of range, or unreadable)',
+        { selector: savingsSelector },
+      );
     } else if (savingsRejected) {
       diag?.parseFailed(
         'discountPercentage',
@@ -1069,22 +1102,87 @@ export function parseAmazonProductDetail(
       diag?.missing('discountPercentage', 'no discount shown on the page', { source: 'dom' });
     }
 
+    // SAD-386: still nothing? Scan the detail root container with the same
+    // bounded rules the listing path uses. No new Amazon-specific selector: this
+    // reads a label wherever the central column renders one.
+    const detailRoot = safeQuerySelector(
+      doc,
+      AMAZON_SELECTORS.detail.rootContainers.join(', '),
+    );
+    if (discountPercentage === undefined && detailRoot) {
+      const scanned = scanDiscountNodes(detailRoot, {
+        skip: isInsideExcludedDetailSubtree,
+      });
+      if (scanned.value !== undefined) {
+        discountPercentage = scanned.value;
+        discountSelector = 'detail-root:bounded-scan';
+      }
+      if (scanned.nodeSeen) discountNodeSeen = true;
+    }
+
     let dealBadgeRejectedSelector: string | undefined;
-    if (dealBadge === undefined) {
-      for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
-        const el = safeQuerySelector(doc, selector);
-        if (!el || isInsideExcludedDetailSubtree(el)) continue;
-        const text = normalizeWhitespace(el.textContent);
-        if (text && /deal|limited|lightning|prime day|black friday/i.test(text)) {
-          dealBadge = text;
-          dealBadgeSelector = selector;
-          break;
+    // SAD-386: a derived value never outranks a badge the page actually printed,
+    // so the badge search still runs when the current value is derived.
+    if (dealBadge === undefined || dealBadgeDerived) {
+      // SAD-386: the card list first (unchanged order), then the extra badge
+      // containers the card list does not name — both against the SAME shared
+      // vocabulary, which previously differed between this path and the card path.
+      // The result is collected in a local so an *already derived* value cannot
+      // terminate the search (it did on the first run: every PDP with a struck
+      // list price reported "Deal" instead of its printed badge).
+      let printedBadge: string | undefined;
+      let printedBadgeSelector: string | undefined;
+      for (const selector of [
+        ...AMAZON_SELECTORS.cardFields.dealBadge,
+        ...DEAL_CONTAINER_SELECTORS,
+      ]) {
+        const els = safeQuerySelectorAll(doc, selector);
+        for (const el of els) {
+          if (isInsideExcludedDetailSubtree(el)) continue;
+          const text = normalizeWhitespace(el.textContent);
+          if (text && DEAL_LABEL_PATTERN.test(text)) {
+            printedBadge = text;
+            printedBadgeSelector = selector;
+            break;
+          }
+          dealBadgeRejectedSelector ??= selector;
         }
-        dealBadgeRejectedSelector ??= selector;
+        if (printedBadge !== undefined) break;
+      }
+      if (printedBadge !== undefined) {
+        dealBadge = printedBadge;
+        dealBadgeSelector = printedBadgeSelector;
+        dealBadgeDerived = false;
+      }
+    }
+    // SAD-386: a deal label rendered anywhere in the central column (a promo
+    // block, a badge slot the lists above do not name) — bounded by the same
+    // non-badge regions and text length as the card path.
+    if (dealBadge === undefined && detailRoot) {
+      const evidence = detectDealEvidence(detailRoot, {
+        skip: isInsideExcludedDetailSubtree,
+      });
+      if (evidence) {
+        dealBadge = evidence.value;
+        dealBadgeDerived = evidence.derived;
+        dealBadgeSelector = 'detail-root:evidence';
+      }
+    }
+    // SAD-386 (D5): a struck-through list price above the selling price proves a
+    // deal even when the page prints no badge at all.
+    if (dealBadge === undefined) {
+      const derived = deriveDealFromPrices(price, listPrice);
+      if (derived) {
+        dealBadge = derived.value;
+        dealBadgeDerived = derived.derived;
+        dealBadgeSelector = 'derived:list-price';
       }
     }
     if (dealBadge !== undefined) {
-      diag?.extracted('dealBadge', { source: 'dom', selector: dealBadgeSelector });
+      diag?.extracted('dealBadge', {
+        source: dealBadgeDerived ? 'derived' : 'dom',
+        selector: dealBadgeSelector,
+      });
     } else if (dealBadgeRejectedSelector) {
       diag?.parseFailed('dealBadge', 'badge-like node present but its text is not a deal badge', {
         selector: dealBadgeRejectedSelector,

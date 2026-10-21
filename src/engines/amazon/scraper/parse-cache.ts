@@ -1,4 +1,5 @@
 import type { ScrapedAmazonProduct } from '../types';
+import { DEAL_LABEL_PATTERN } from './deal-evidence';
 
 /**
  * WeakMap-backed DOM Element parse cache (`AmazonParseCache`).
@@ -14,8 +15,17 @@ import type { ScrapedAmazonProduct } from '../types';
  * a fresh cache `4.5`). The entry now carries a cheap DOM signature, and a card
  * whose rating is still missing is re-parsed **only when its subtree changed**.
  *
+ * SAD-386: the same argument applies to the price family — a deal badge, a
+ * savings percentage and a struck list price are also injected after
+ * `asin`/`title`/`price`/`imageUrl`. Rather than a second mechanism (a TTL was
+ * measured to break the 480-card budget: a warm pass re-parsed every card), the
+ * rule below adds one condition: a card that is already settled for the reviews
+ * row is re-read only when its text now carries a `%` or a deal label that it
+ * did not carry before.
+ *
  * Cost is unchanged on the hot paths:
- * - a card that carries both values is settled and never re-parsed (today's behaviour);
+ * - a card that carries both rating values is settled and never re-parsed
+ *   unless price-family evidence appears;
  * - an unchanged rating-less card is re-parsed zero times after the first pass;
  * - the signature is two DOM reads (descendant count + text length), taken only
  *   for cards that are not settled.
@@ -33,6 +43,26 @@ function hasRatingFields(product: ScrapedAmazonProduct): boolean {
     product.reviewCount !== null &&
     product.reviewCount !== undefined
   );
+}
+
+/** SAD-386: does the stored product already carry any price-family value? */
+function hasBadgeFamilyFields(product: ScrapedAmazonProduct): boolean {
+  return Boolean(
+    product.discountPercentage ||
+      product.dealBadge ||
+      (product.listPrice !== null && product.listPrice !== undefined),
+  );
+}
+
+/**
+ * SAD-386: does the card's text show price-family evidence at all? A card whose
+ * text carries neither a `%` nor a deal label cannot have gained a badge, so
+ * SAD-383's guarantee ("a DOM change must not rewrite values the user was
+ * already shown") stands.
+ */
+function showsPriceFamilyEvidence(element: Element): boolean {
+  const text = element.textContent ?? '';
+  return text.includes('%') || DEAL_LABEL_PATTERN.test(text);
 }
 
 export class AmazonParseCache {
@@ -78,14 +108,17 @@ export class AmazonParseCache {
   ): ScrapedAmazonProduct | null {
     const entry = this.cache.get(element);
     if (entry) {
-      // SAD-383: a card that already carries both values is settled — re-parsing
-      // it could only change the numbers the user was shown. A card that is
-      // missing one is re-read exactly once per actual DOM change, so a reviews
-      // row injected after the first pass is picked up.
-      if (hasRatingFields(entry.product)) {
+      // SAD-386: the price family is present — nothing left to gain.
+      if (hasBadgeFamilyFields(entry.product)) {
         return entry.product;
       }
+      // SAD-383: an unchanged card is never re-parsed.
       if (this.signatureOf(element) === entry.signature) {
+        return entry.product;
+      }
+      // SAD-383's guarantee: a card that already carries both rating values is
+      // only re-read when the text now shows a badge or a percentage.
+      if (hasRatingFields(entry.product) && !showsPriceFamilyEvidence(element)) {
         return entry.product;
       }
     }
