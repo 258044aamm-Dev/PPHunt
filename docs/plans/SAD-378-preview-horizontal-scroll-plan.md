@@ -1,9 +1,10 @@
 # SAD-378 — Preview Horizontal Scroll Behaviour: Detailed Implementation Plan
 
-> **Status:** plan only. No file under `src/` or `tests/` was modified in this repository.
-> The candidate patch described in §7 was typed into a **separate throwaway clone**
-> (`/home/user/trial`, an independent `git clone` of this repo) and measured there, so the
-> numbers quoted below are observations of real layout, not predictions.
+> **Status: implemented.** Step 0 was this plan; steps 1–3 landed the change, the regression
+> guards and the docs/measurement artifact on `main` (§14 records the commits and the results).
+> Before any of it was written here, the candidate patch was typed into a **separate throwaway
+> clone** (an independent `git clone` of this repo) and measured there, so the numbers quoted
+> below are observations of real layout, not predictions.
 >
 > Linear: <https://linear.app/sad-mod/issue/SAD-378/preview-horizontal-scroll-behavior>
 > Team: Sad_mod · Project: PPHunt · Label: Bug · Priority: 1 (Urgent)
@@ -622,6 +623,46 @@ domains, `N data-field toggles`, and every design-token hex; and `ARCHITECTURE.m
 
 ---
 
+---
+
+## 14. Implementation record (steps 1–3 landed on `main`)
+
+| Step | Commit | Content |
+| --- | --- | --- |
+| 0 | `d474e86` | this plan |
+| 1 | `7e91fe9` | the fix — 3 files, 10 insertions, 7 deletions, exactly §7 |
+| 2 | `7e84b0e` | `tests/preview-sections-scroll-sad378.test.tsx` (5 tests; 3 of them fail on `5e24561`) |
+| 3 | this commit | measurement artifact, `CHANGELOG.md`, `ARCHITECTURE.md` invariant |
+
+Results after step 2 (real Chromium, artifact in
+`docs/plans/sad-378-scroll-measurement-2026-10-21.json`):
+
+| Scenario | scrollport w | scrollWidth before → after | nested H-scrollers | scrolls sideways |
+| --- | --- | --- | --- | --- |
+| Overlay · Sections ON · 400 px | 358 | 358 → **3376** | 3 → **0** | ❌ → ✅ |
+| Preview tab · Sections ON · 900 px | 850 | 850 → **3376** | 3 → **0** | ❌ → ✅ |
+| Overlay · Sections OFF · 400 px | 358 | 3354 → 3354 | 0 → 0 | ✅ → ✅ (unchanged) |
+| Preview tab · Temu · 400 px | 350 | 3068 → 3068 | 0 → 0 | ✅ → ✅ (unchanged) |
+| Toolbar @320/360/420 px | 288/320/388 | 2 → **0** clipped nodes | — | `+ Sort Field` ❌ → ✅ |
+
+`tsc --noEmit` clean · `vitest run` 102 suites / 1198 tests passing · `wxt build` emits
+`container-type:inline-size` · runtime Sections OFF → ON toggle verified · cell-expand modal still
+full-viewport · default-mode sticky `thead` unchanged.
+
+### Deviations from the plan as written
+
+1. **No `scripts/preview-scroll-measurement.mjs` in the repo** (§8.2 proposed one). The working
+   harness is reproduced in appendix A instead, and the measured JSON artifact is committed. Reason:
+   the ticket asks for no unnecessary code, and the script would duplicate appendix A while
+   requiring Playwright, which is not a project dependency (the SAD-359 harness loads it
+   opportunistically and is not part of `npm run verify` either). Add it later if the geometry needs
+   to be re-checked routinely.
+2. **New test file instead of extending** `tests/preview-horizontal-scroll.test.tsx` (§8.1 proposed
+   extending it). Keeping the SAD-138 assertions byte-identical is the safer non-regression stance,
+   since that suite guards the default table this change must not touch.
+3. **Header bars stay pinned** (`sticky`, §12 decision 1) and **sort controls wrap** (§12
+   decision 2) — both confirmed with the reporter before step 1.
+
 ## Appendix A — the measurement harness (working code, reproduces §4 and §9)
 
 > Throwaway, deliberately outside `src/`: run it, read the numbers, delete it. `{repo}/.harness/`
@@ -805,15 +846,14 @@ await b.close();
 
 ---
 
-## Appendix C — what is currently lying around (safe to delete)
+## Appendix C — files added by this ticket
 
 | Path | What it is |
 | ---- | ---------- |
-| `docs/plans/SAD-378-preview-horizontal-scroll-plan.md` | **this plan** — the only file added to the repo |
-| `.harness/` (repo root, untracked) | the throwaway Vite harness app from appendix A (mounts the real components, seeds both Dexie DBs) |
-| `vite.harness.config.ts` (repo root, untracked) | harness Vite config (`root: '.harness'`, host `0.0.0.0:5179`) |
-| `/home/user/trial` | a separate `git clone` of this repo with the §7 patch applied and verified; it is **not** part of this workspace's repo and can be deleted |
-| local Vite dev servers on `:5179` (`main` = buggy) and `:5180` (`trial` = patched) | live side-by-side reproduction; `/` = dedicated preview tab, `?mode=overlay&previewMode=sidebar&sections=1&count=60` = the reported case |
+| `docs/plans/SAD-378-preview-horizontal-scroll-plan.md` | this plan + implementation record |
+| `docs/plans/sad-378-scroll-measurement-2026-10-21.json` | before/after geometry recorded in real Chromium (7 scenarios + extra probes) |
+| `tests/preview-sections-scroll-sad378.test.tsx` | the 5 regression guards added in step 2 |
 
-Nothing else in the repo changed: `git status` shows only the plan file (plus the two untracked
-harness paths above), and no file under `src/` or `tests/` was modified.
+The measurement scaffolding used to produce the JSON is **not** committed: a throwaway Vite app at
+`.harness/` plus `vite.harness.config.ts` at the repo root (both untracked), reproducing from
+appendix A. Deleting them loses nothing.

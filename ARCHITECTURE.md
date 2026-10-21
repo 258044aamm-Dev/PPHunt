@@ -469,6 +469,34 @@ Sources: [`background.ts`](src/entrypoints/background.ts),
 [`popup/main.ts`](src/entrypoints/popup/main.ts),
 [`openingMode.ts`](src/lib/ui/openingMode.ts).
 
+### Preview table scrolling (SAD-378)
+
+The product table is virtualised and wide (≈3,354 px with the default columns),
+so horizontal scrolling is the primary way to reach the right-hand fields. The
+preview therefore has exactly **one** horizontal scroll surface, in every display
+mode and in both engines:
+
+- `preview-table-scroll-container` (`AmazonProductTable.tsx`,
+  `TemuProductTable.tsx`) is the only element with `overflow-x`. It owns the
+  SAD-138 scrollbar styling, the `role="region"` label, `tabIndex={0}`, and the
+  Arrow-key / Shift+wheel handlers; the virtualizer reads it as its scroll
+  element.
+- **Separate collapsible category sections must not introduce a nested
+  horizontal scroller.** That mode re-uses the same container: the wrapper is
+  `w-max min-w-full` (content width = widest table), each card is
+  `overflow-clip` (clips to its border *without* becoming a scroll container,
+  which would re-clamp the table and cancel `sticky`), and each header bar is
+  `sticky left-0 w-[100cqw]`.
+- `w-[100cqw]` resolves against `.preview-table-scroll`, which declares
+  `container-type: inline-size` in `global.css`. Removing that declaration
+  silently stretches the header bars to the table width instead of the visible
+  panel width. Both the structure and the declaration are pinned by
+  `tests/preview-sections-scroll-sad378.test.tsx`.
+
+Sources: [`AmazonProductTable.tsx`](src/engines/amazon/ui/table/AmazonProductTable.tsx),
+[`TemuProductTable.tsx`](src/engines/temu/ui/table/TemuProductTable.tsx),
+[`global.css`](src/entrypoints/sidepanel/global.css).
+
 ---
 
 ## Extension Lifecycle (MV3)

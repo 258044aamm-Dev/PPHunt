@@ -1,0 +1,291 @@
+{
+  "ticket": "SAD-378",
+  "title": "Preview horizontal scroll behavior",
+  "measuredAt": "2026-10-21T03:53:29.836Z",
+  "codeUnderTest": {
+    "before": {
+      "repo": "MakeTheNewHistory/PPHunt",
+      "commit": "5e24561",
+      "note": "main before this change"
+    },
+    "after": {
+      "repo": "MakeTheNewHistory/PPHunt",
+      "commit": "7e84b0e",
+      "note": "main after steps 1-2 (fix + regression guards)"
+    }
+  },
+  "harness": {
+    "what": "Real PreviewPageApp (dedicated preview tab) and real AmazonFullWidthPreviewModal mounted in Vite, real PPHuntDB/PPHuntTemuDB seeded through Dexie, driven by Playwright/Chromium (headless_shell). Throwaway scaffolding, never imported by src/.",
+    "seeded": {
+      "amazonRows": 60,
+      "temuRows": 40,
+      "sessionKey": "session_harness"
+    },
+    "viewports": [
+      "320x800",
+      "360x800",
+      "400x800",
+      "420x800",
+      "900x700",
+      "1200x800",
+      "1440x900"
+    ],
+    "probes": "getBoundingClientRect / clientWidth / scrollWidth / scrollLeft / getComputedStyle only. No jsdom and no assertions over class names: this file records geometry.",
+    "scriptSource": "docs/plans/SAD-378-preview-horizontal-scroll-plan.md appendix A (compare.mjs)"
+  },
+  "results": [
+    {
+      "scenario": "overlay sidebar · Sections ON · 400px",
+      "before": {
+        "name": "overlay sidebar · Sections ON · 400px",
+        "scrollportCW": 358,
+        "scrollportSW": 358,
+        "nestedHScrollers": 3,
+        "outerScrollWorks": false,
+        "innerScrollWorks": true,
+        "sectionHeaderBarsVisibleAtTop": [
+          true,
+          true,
+          true
+        ],
+        "verticalScrollWorks": true,
+        "hBarInViewport": true,
+        "errs": []
+      },
+      "after": {
+        "name": "overlay sidebar · Sections ON · 400px",
+        "scrollportCW": 358,
+        "scrollportSW": 3376,
+        "nestedHScrollers": 0,
+        "outerScrollWorks": true,
+        "innerScrollWorks": null,
+        "sectionHeaderBarsVisibleAtTop": [
+          true,
+          true,
+          true
+        ],
+        "verticalScrollWorks": true,
+        "hBarInViewport": true,
+        "errs": []
+      }
+    },
+    {
+      "scenario": "preview tab · Sections ON · 900px",
+      "before": {
+        "name": "preview tab · Sections ON · 900px",
+        "scrollportCW": 850,
+        "scrollportSW": 850,
+        "nestedHScrollers": 3,
+        "outerScrollWorks": false,
+        "innerScrollWorks": true,
+        "sectionHeaderBarsVisibleAtTop": [
+          true,
+          true,
+          true
+        ],
+        "verticalScrollWorks": true,
+        "hBarInViewport": true,
+        "errs": []
+      },
+      "after": {
+        "name": "preview tab · Sections ON · 900px",
+        "scrollportCW": 850,
+        "scrollportSW": 3376,
+        "nestedHScrollers": 0,
+        "outerScrollWorks": true,
+        "innerScrollWorks": null,
+        "sectionHeaderBarsVisibleAtTop": [
+          true,
+          true,
+          true
+        ],
+        "verticalScrollWorks": true,
+        "hBarInViewport": true,
+        "errs": []
+      }
+    },
+    {
+      "scenario": "overlay sidebar · Sections OFF · 400px",
+      "before": {
+        "name": "overlay sidebar · Sections OFF · 400px",
+        "scrollportCW": 358,
+        "scrollportSW": 3354,
+        "nestedHScrollers": 0,
+        "outerScrollWorks": true,
+        "innerScrollWorks": null,
+        "sectionHeaderBarsVisibleAtTop": [],
+        "verticalScrollWorks": true,
+        "hBarInViewport": true,
+        "errs": []
+      },
+      "after": {
+        "name": "overlay sidebar · Sections OFF · 400px",
+        "scrollportCW": 358,
+        "scrollportSW": 3354,
+        "nestedHScrollers": 0,
+        "outerScrollWorks": true,
+        "innerScrollWorks": null,
+        "sectionHeaderBarsVisibleAtTop": [],
+        "verticalScrollWorks": true,
+        "hBarInViewport": true,
+        "errs": []
+      }
+    },
+    {
+      "scenario": "preview tab · Temu · 400px",
+      "before": {
+        "name": "preview tab · Temu · 400px",
+        "scrollportCW": 350,
+        "scrollportSW": 3068,
+        "scrollX": true,
+        "theadSticky": true,
+        "hBarInViewport": true,
+        "rows": 19,
+        "errs": []
+      },
+      "after": {
+        "name": "preview tab · Temu · 400px",
+        "scrollportCW": 350,
+        "scrollportSW": 3068,
+        "scrollX": true,
+        "theadSticky": true,
+        "hBarInViewport": true,
+        "rows": 18,
+        "errs": []
+      }
+    },
+    {
+      "scenario": "toolbar · overlay 320px",
+      "before": {
+        "name": "toolbar · overlay 320px",
+        "containerW": 288,
+        "overflowingToolbarNodes": 2,
+        "presetFullyVisible": true,
+        "addSortFullyVisible": false,
+        "errs": []
+      },
+      "after": {
+        "name": "toolbar · overlay 320px",
+        "containerW": 288,
+        "overflowingToolbarNodes": 0,
+        "presetFullyVisible": true,
+        "addSortFullyVisible": true,
+        "errs": []
+      }
+    },
+    {
+      "scenario": "toolbar · tab 360px",
+      "before": {
+        "name": "toolbar · tab 360px",
+        "containerW": 320,
+        "overflowingToolbarNodes": 2,
+        "presetFullyVisible": true,
+        "addSortFullyVisible": false,
+        "errs": []
+      },
+      "after": {
+        "name": "toolbar · tab 360px",
+        "containerW": 320,
+        "overflowingToolbarNodes": 0,
+        "presetFullyVisible": true,
+        "addSortFullyVisible": true,
+        "errs": []
+      }
+    },
+    {
+      "scenario": "toolbar · overlay 420px",
+      "before": {
+        "name": "toolbar · overlay 420px",
+        "containerW": 388,
+        "overflowingToolbarNodes": 2,
+        "presetFullyVisible": true,
+        "addSortFullyVisible": false,
+        "errs": []
+      },
+      "after": {
+        "name": "toolbar · overlay 420px",
+        "containerW": 388,
+        "overflowingToolbarNodes": 0,
+        "presetFullyVisible": true,
+        "addSortFullyVisible": true,
+        "errs": []
+      }
+    }
+  ],
+  "extraProbes": {
+    "runtimeSectionsToggle": {
+      "note": "Overlay at 400px: Sections OFF, then click the toolbar Sections toggle to ON, no reload",
+      "after": {
+        "beforeToggle": {
+          "scrollportSW": 3354,
+          "scrollLeftWorks": true
+        },
+        "afterToggle": {
+          "scrollportCW": 358,
+          "scrollportSW": 3376,
+          "scrollLeftWorks": true,
+          "nestedHScrollers": 0,
+          "sectionBarWidths": [
+            358,
+            358,
+            358
+          ]
+        }
+      }
+    },
+    "sectionHeaderBars": {
+      "note": "Each bar is exactly the scrollport content box (100cqw) and stays pinned after scrollLeft = 600",
+      "after": {
+        "at400px": {
+          "width": 358,
+          "scrollportCW": 358,
+          "offsetAfterScrollLeft600": 1
+        },
+        "at900px": {
+          "width": 850,
+          "scrollportCW": 850,
+          "offsetAfterScrollLeft600": 1
+        }
+      }
+    },
+    "containmentSideEffects": {
+      "note": "container-type: inline-size implies contain: layout style inline-size; these are the observable risks checked",
+      "cellExpandModal": {
+        "onlyPositionFixedElementInSubtree": true,
+        "rendersAsSiblingOfScroller": true,
+        "rectAt400px": {
+          "top": 0,
+          "left": 0,
+          "width": 400,
+          "height": 800
+        },
+        "verdict": "unchanged, still covers the full viewport"
+      },
+      "defaultModeStickyTheadAfterScrollTop300": {
+        "topBefore": 396,
+        "topAfter": 396,
+        "verdict": "still pinned"
+      },
+      "temuTable": {
+        "scrollportCW": 350,
+        "scrollportSW": 3068,
+        "scrollLeftWorks": true,
+        "theadSticky": true,
+        "verdict": "unchanged (Temu has no sections mode)"
+      }
+    },
+    "cpuCost": {
+      "note": "Pre-existing and out of scope: sections mode renders every row instead of using the virtualizer. Recorded here so it is not mistaken for a regression from this change.",
+      "domNodes300AmazonRows": {
+        "defaultMode": 1698,
+        "sectionsMode": 27011
+      }
+    }
+  },
+  "verification": {
+    "tsc": "npx tsc --noEmit clean",
+    "vitest": "102 suites / 1198 tests passing (includes wxt build so the manifest suites run)",
+    "newGuards": "tests/preview-sections-scroll-sad378.test.tsx: 3 of 5 tests fail on 5e24561",
+    "productionCss": "wxt build emits container-type:inline-size in assets/global-*.css"
+  }
+}

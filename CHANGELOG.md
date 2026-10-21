@@ -5,6 +5,40 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Preview horizontal scrolling (SAD-378)
+
+The preview table could not be scrolled sideways while **Separate collapsible
+category sections** was on: each category card owned its own horizontal
+scrollbar, painted at the bottom of a section that can be thousands of pixels
+tall, and the table area itself had no horizontal overflow at all. There is now
+**one horizontal scrollbar for the whole table** in every mode.
+
+### Fixed
+- **Sections mode scrolls sideways from the top of the panel.** The table area
+  (`preview-table-scroll-container`) is the single horizontal scroll surface
+  again: the sections wrapper is sized to its widest table (`w-max min-w-full`),
+  the per-section `overflow-x-auto` is gone, and each card uses `overflow-clip`
+  so it clips to its border without becoming a scroll container. Arrow keys and
+  Shift+wheel scroll the table immediately, without scrolling down first. The
+  fix applies to the side panel (Sidebar and Overview) and the dedicated
+  `preview.html` tab, because all three render the same component.
+- **Section header bars stay readable while scrolling.** Each bar is pinned to
+  the left edge of the visible table area (`sticky left-0 w-[100cqw]`, backed by
+  `container-type: inline-size` on the scroller) instead of stretching to the
+  full table width.
+- **The sort controls no longer clip in a narrow panel.** Below roughly 420 px
+  the `+ Sort Field` select wrapped out of view behind `overflow-hidden`; the
+  control group now wraps onto a second row. This affects Amazon and Temu alike,
+  since both use the shared table toolbar.
+
+### Unchanged
+- The default (Sections off) table, Temu's table, sorting, filtering, category
+  pills, row selection, delete, cell expand, export scopes and export order are
+  untouched. Measured before/after geometry is recorded in
+  `docs/plans/sad-378-scroll-measurement-2026-10-21.json`.
+- Sections mode still renders every row rather than virtualising per section.
+  That cost predates this change and is left as a separate follow-up.
+
 ## [Unreleased] — Diagnostics in every situation + an enable/disable setting (SAD-369)
 
 > **Behaviour change:** extraction diagnostics are now **off by default**.
