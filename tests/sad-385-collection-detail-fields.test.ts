@@ -9,13 +9,15 @@
  * So this file proves, in the ticket's terms:
  * - T1/T2 — a Manual run and an Automatic run reach the same enrichment stage,
  *   with the same inputs (the two modes differ only in how the page scrolls);
- * - T5 — a run that lost its enrichment tail (the pump's queue is in memory, so
- *   an MV3 suspension drops it) re-derives the tail from the rows at the run
- *   boundary, and touches only rows still missing a detail-only field;
- * - T6 — the reconciliation is idempotent: a second run boundary does not queue
- *   the same tail again;
  * - T7 — a failing enrichment is never a collection error: the rows are stored
  *   and the run continues.
+ *
+ * The lost-tail recovery this file used to cover (T5/T6, an in-memory
+ * reconciliation at the run boundary) was removed by SAD-385 step 5: SAD-384
+ * shipped a durable `storage.session` queue for the same work, resumes it
+ * through an alarm and retries it with bounded backoff, so a second in-memory
+ * net would queue the same products twice and bypass that scheduler. The
+ * durable path is covered by `tests/collection-enrichment-recovery-sad384.test.ts`.
  *
  * The harness is the real background entrypoint driven through `runtime.
  * onMessage`, exactly as `collection-enrichment-wiring.test.ts` does. Only
@@ -247,73 +249,6 @@ describe('SAD-385: both collection modes reach the product page', () => {
       `https://www.amazon.com/dp/${automatic.asin}`,
     );
     expect(manual.sessionKey).not.toBe(automatic.sessionKey);
-  });
-});
-
-describe('SAD-385: the run-end reconciliation', () => {
-  /**
-   * Simulated suspension: the rows persist, the pump's in-memory queue, dedupe
-   * set and budget do not. After a worker restart the run boundary must derive
-   * the tail from the rows — that is the only durable record.
-   */
-  it('queues only the rows still missing a detail-only field', async () => {
-    const { onMessage } = await startBackground();
-    const pump = await import('@/engines/amazon/background/enrichment-pump');
-    const { db } = await import('@/lib/db/database');
-    const [done, missingWeight, missingBoth] = asins(3);
-
-    drive(onMessage, collected([done!, missingWeight!, missingBoth!]));
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(3));
-    await pump.whenCollectionEnrichmentIdle();
-
-    // One row reached full detail before the suspension…
-    await db.products
-      .where('asin')
-      .equals(done!)
-      .modify({ weight: '120 g', variations: '2 sizes' });
-    // …one has the twister data but no weight…
-    await db.products
-      .where('asin')
-      .equals(missingWeight!)
-      .modify({ variations: '2 sizes' });
-    // …and one has neither.
-
-    // The worker restarts: module state is gone, the rows are not.
-    pump.resetCollectionEnrichmentForTests();
-    enrichSavedProduct.mockClear();
-
-    drive(onMessage, { type: 'STOP_COLLECTION', payload: { tabId: 1 } });
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(2));
-    await pump.whenCollectionEnrichmentIdle();
-
-    expect(calledAsins().sort()).toEqual([missingWeight!, missingBoth!].sort());
-    // The complete row is not fetched again.
-    expect(calledAsins()).not.toContain(done!);
-  });
-
-  it('does not queue the same tail twice', async () => {
-    const { onMessage } = await startBackground();
-    const pump = await import('@/engines/amazon/background/enrichment-pump');
-    const [first] = asins(1);
-
-    drive(onMessage, collected([first!]));
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(1));
-    await pump.whenCollectionEnrichmentIdle();
-
-    pump.resetCollectionEnrichmentForTests();
-    enrichSavedProduct.mockClear();
-
-    drive(onMessage, { type: 'STOP_COLLECTION', payload: { tabId: 1 } });
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(1));
-    await pump.whenCollectionEnrichmentIdle();
-    const afterStop = enrichSavedProduct.mock.calls.length;
-
-    // A duplicate run boundary — the second STOP finds the session already
-    // reconciled and must not re-fetch anything.
-    drive(onMessage, { type: 'STOP_COLLECTION', payload: { tabId: 1 } });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    expect(enrichSavedProduct.mock.calls.length).toBe(afterStop);
   });
 });
 
