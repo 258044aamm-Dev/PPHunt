@@ -754,3 +754,29 @@ describe('SAD-359 extraction diagnostics logging', () => {
     expect(diagnosticLines(info)).toHaveLength(0);
   });
 });
+
+
+describe('SAD-384: isolated brand/rank fallback', () => {
+  const scope = { scope: 'brand-and-rank' as const };
+  it('changes exactly the two missing fields despite a rich PDP', () => {
+    const stored = storedRow({ brand: null, bestSellersRank: null });
+    const result = mergeDetailIntoStored(stored, detail({
+      brand: 'Anker', bestSellersRank: '#12 in Chargers',
+      features: ['new'], isPrime: true, seller: 'Different seller',
+      warrantyDescription: 'New warranty', imageUrl: 'https://example.com/new.jpg',
+    }), scope);
+    expect(result.patch).toEqual({ brand: 'Anker', bestSellersRank: '#12 in Chargers' });
+    expect(result.changedFields).toEqual(['brand', 'bestSellersRank']);
+  });
+  it('keeps an existing brand while filling missing BSR', () => {
+    expect(mergeDetailIntoStored(storedRow({ brand: 'Listing Brand' }), detail({
+      brand: 'PDP Brand', bestSellersRank: '#1 in Chargers',
+    }), scope).patch).toEqual({ bestSellersRank: '#1 in Chargers' });
+  });
+  it.each([null, undefined, '', '  '])('fills missing value %s but never erases', (brand) => {
+    expect(mergeDetailIntoStored(storedRow({ brand }), detail({ brand: 'Anker' }), scope).patch)
+      .toEqual({ brand: 'Anker' });
+    expect(mergeDetailIntoStored(storedRow({ brand: 'Anker' }), detail({ brand }), scope).patch)
+      .toEqual({});
+  });
+});

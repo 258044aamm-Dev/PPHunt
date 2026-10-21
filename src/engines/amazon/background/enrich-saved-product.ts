@@ -73,7 +73,11 @@ const FILL_ONLY_FIELDS = new Set<string>([
 
 export const PRICE_FAMILY = FILL_ONLY_FIELDS;
 
+export type EnrichmentScope = 'full' | 'brand-and-rank';
+
 export interface EnrichSavedProductInput {
+  /** Omitted by saves: preserves the existing full detail policy. */
+  scope?: EnrichmentScope;
   jobId: string;
   asin: string;
   productUrl: string;
@@ -122,10 +126,23 @@ export interface EnrichSavedProductDeps {
 export function mergeDetailIntoStored(
   stored: Product,
   detail: ScrapedProduct,
-  options: { skipPrice?: boolean } = {},
+  options: { skipPrice?: boolean; scope?: EnrichmentScope } = {},
 ): { patch: Partial<Product>; changedFields: string[] } {
   const patch: Partial<Product> = {};
   const changed: string[] = [];
+
+  // Collection fallback may fill only these missing fields, never overwrite a
+  // listing observation or leak other PDP fields through features/Prime below.
+  if (options.scope === 'brand-and-rank') {
+    for (const field of ['brand', 'bestSellersRank'] as const) {
+      const next = detail[field];
+      if (isDetailValueMissing(stored[field]) && !isDetailValueMissing(next)) {
+        patch[field] = next;
+        changed.push(field);
+      }
+    }
+    return { patch, changedFields: changed };
+  }
 
   const currencyMismatch =
     Boolean(stored.currency) &&
@@ -262,6 +279,7 @@ function logEnrichmentOutcome(
     const payload = {
       jobId: input.jobId,
       asin: input.asin,
+      scope: input.scope ?? 'full',
       status: result.status,
       ...(result.reason ? { reason: result.reason } : {}),
       ...(result.errorCode ? { errorCode: result.errorCode } : {}),
@@ -424,14 +442,17 @@ export async function enrichSavedProduct(
       });
     }
 
-    const { patch, changedFields } = mergeDetailIntoStored(stored, detail);
+    const { patch, changedFields } = mergeDetailIntoStored(stored, detail, { scope: input.scope });
     const currencyMismatch =
       Boolean(stored.currency) &&
       Boolean(detail.currency) &&
       stored.currency !== detail.currency;
 
     if (changedFields.length > 0) {
-      await db.products.update(stored.id, patch);
+      const updated = await db.products.update(stored.id, patch);
+      if (!updated) {
+        return finish(stop('failed', 'row-missing', 'DB_WRITE_FAILED'));
+      }
     }
 
     const snapshot = await appendSnapshot(
