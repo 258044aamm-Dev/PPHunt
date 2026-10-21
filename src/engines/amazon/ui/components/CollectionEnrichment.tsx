@@ -1,5 +1,6 @@
 import {
   DEFAULT_ENRICH_COLLECTED_LIMIT,
+  DEFAULT_RATING_BACKFILL,
   ENRICH_COLLECTED_LIMIT_OPTIONS,
   type EnrichCollectedLimit,
 } from '../../constants/defaults';
@@ -69,6 +70,9 @@ export function AmazonCollectionEnrichment() {
   const enabled = settings?.enrichCollectedProducts ?? false;
   const limit =
     settings?.enrichCollectedLimit ?? DEFAULT_ENRICH_COLLECTED_LIMIT;
+  // SAD-383: separate switch, separate stage, on by default.
+  const backfillRatings =
+    settings?.backfillCollectedRatings ?? DEFAULT_RATING_BACKFILL;
 
   const apply = (next: {
     enabled?: boolean;
@@ -86,6 +90,31 @@ export function AmazonCollectionEnrichment() {
 
   return (
     <div className="space-y-3">
+      {/* SAD-383: the rating/review-count backfill. Written immediately for the
+          same reason as the switch below — a queued debounce landing after
+          "Restore Defaults" would silently re-enable outbound requests. */}
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={backfillRatings}
+          onChange={(e) =>
+            void persistSettings({ backfillCollectedRatings: e.target.checked })
+          }
+          className="w-3.5 h-3.5 accent-clay cursor-pointer mt-0.5 shrink-0"
+        />
+        <span>
+          <span className="font-sans text-xs font-medium text-ink block">
+            Fill missing ratings from the product page
+          </span>
+          <span className="font-serif text-xs text-ink-muted leading-relaxed">
+            A listing card does not always print a rating and review count — the
+            Deals grid never does. When one is missing, this makes one small
+            request per product to fill just those two fields. A rating the card
+            printed is never replaced. On by default.
+          </span>
+        </span>
+      </label>
+
       <label className="flex items-start gap-3 cursor-pointer">
         <input
           type="checkbox"

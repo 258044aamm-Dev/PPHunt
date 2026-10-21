@@ -191,6 +191,8 @@ export interface AmazonSettings {
    * pre-SAD-379 behaviour.
    */
   enrichCollectedProducts: boolean;
+  /** SAD-383: backfill rating/reviewCount from the review popover. */
+  backfillCollectedRatings: boolean;
   /** SAD-379: per-run enrichment cap for a collection ('25' | '50' | 'all'). */
   enrichCollectedLimit: EnrichCollectedLimit;
 }
