@@ -21,7 +21,10 @@ import {
   setDiagnosticsEnabled,
   subscribeDiagnosticsEnabled,
 } from '../../utils/diagnostics-flag';
+import { setEnrichCollectedSettings } from '../../utils/enrich-collected-flag';
 import {
+  DEFAULT_ENRICH_COLLECTED,
+  DEFAULT_ENRICH_COLLECTED_LIMIT,
   SCROLL_INTERVAL_MAX,
   SCROLL_INTERVAL_MIN,
   SCROLL_SPEED_MAX,
@@ -36,6 +39,7 @@ import { db } from '../../db/database';
 import type { ValidatedSettings } from '../../schemas/settings';
 import { useAmazonSettings } from '../hooks/useAmazonSettings';
 import { AmazonQuickSaveBehavior } from './QuickSaveBehavior';
+import { AmazonCollectionEnrichment } from './CollectionEnrichment';
 import { useAmazonUIStore } from '../store/uiStore';
 
 export function AmazonSettingsOverlay() {
@@ -155,6 +159,12 @@ export function AmazonSettingsOverlay() {
     // settings row, so the IndexedDB reset above does not touch it.
     await setDiagnosticsEnabled(false);
     setDiagnosticsEnabledState(false);
+    // SAD-379: the enrichment switch is mirrored into storage.local, and the
+    // IndexedDB reset above cannot reach that copy.
+    await setEnrichCollectedSettings({
+      enabled: DEFAULT_ENRICH_COLLECTED,
+      limit: DEFAULT_ENRICH_COLLECTED_LIMIT,
+    });
   }, [restoreDefaults, askConfirm]);
 
   if (!settingsOpen) return null;
@@ -516,6 +526,12 @@ export function AmazonSettingsOverlay() {
               right-click save lands, which is a setting, not a collection. */}
           <SettingsSection title="RIGHT-CLICK SAVE">
             <AmazonQuickSaveBehavior />
+          </SettingsSection>
+
+          {/* SAD-379: the collection enrichment stage. Off by default, so a
+              collection behaves exactly as it did before this ticket. */}
+          <SettingsSection title="COLLECTION ENRICHMENT">
+            <AmazonCollectionEnrichment />
           </SettingsSection>
 
           <SettingsSection title="EXPORT DEFAULTS">
