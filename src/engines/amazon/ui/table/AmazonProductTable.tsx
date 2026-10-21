@@ -670,6 +670,7 @@ export function AmazonProductTable({
                     return (
                       <tr
                         key={row.id}
+                        ref={virtualizer.measureElement}
                         data-index={virtualRow.index}
                         className={`
                         border-b border-hairline-soft transition-colors
