@@ -9,7 +9,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   AMAZON_HOST_PERMISSIONS,
@@ -92,11 +92,18 @@ describe('offscreen permission (SAD-295)', () => {
 });
 
 describe.skipIf(!existsSync(manifestPath))('built manifest', () => {
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+  // `describe` bodies run at collection time even when skipped, so the read has
+  // to wait for a hook: `beforeAll` does not run for a skipped suite, which is
+  // what makes this a skip on a clean checkout rather than an ENOENT.
+  let manifest: {
     permissions: string[];
     host_permissions: string[];
     content_scripts: { matches: string[] }[];
   };
+
+  beforeAll(() => {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as typeof manifest;
+  });
 
   it('requests contextMenus', () => {
     expect(manifest.permissions).toContain('contextMenus');
