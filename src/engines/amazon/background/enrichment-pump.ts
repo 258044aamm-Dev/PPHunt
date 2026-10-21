@@ -1,48 +1,18 @@
-/**
- * SAD-379: the collection pipeline's missing enrichment stage.
- *
- * The save pipeline calls `enrichSavedProduct` once per product (SAD-296); a
- * collection produces many products in batches and ends at `addProducts`, so a
- * collected row only ever carried what the listing card printed — measured as a
- * median of 7 fields against the 19 a save reaches.
- *
- * This pump is the only new machinery: one queue, one serial runner, and one
- * call to the *same* function the save path uses. Nothing about extraction,
- * merging, snapshots or diagnostics is re-implemented here, so a collected row
- * and a saved row cannot drift apart.
- *
- * Design rules (each one is load-bearing):
- *
- * 1. **Never blocks the collection.** `enqueueCollectionEnrichment` returns
- *    immediately and the runner is never awaited by `pendingProductsChain`, so
- *    progress messages and `STOP_COLLECTION` do not wait on a ~2.4 s fetch.
- * 2. **Never twice per run.** A `(sessionKey, asin)` pair is queued once, even
- *    though an `updatedExisting` batch re-sends the whole run.
- * 3. **Deterministic job ids.** `appendSnapshot()` dedupes on
- *    `(asin, jobId, source)`, so a repeated pump cannot invent a second
- *    observation for the same collection.
- * 4. **Bounded.** The caller passes the per-run cap resolved from the setting
- *    (`'25' | '50' | 'all'`).
- * 5. **Stops when the host says stop.** A `skipped` outcome means a guard fired
- *    (no permission, breaker open); every remaining item would be skipped for
- *    the same reason, so the queue drains instead of hammering Amazon.
- * 6. **A failure is never a collection error.** The row keeps its card data and
- *    the run continues, exactly as a failed save does.
- *
- * Known limitation (documented in the ticket): the queue is in-memory, so an
- * MV3 worker suspension mid-run loses the remaining tail. Rows are untouched;
- * the `job-store` + `save-job-recovery` pattern remains the upgrade path.
- */
-import { enrichSavedProduct } from './enrich-saved-product';
+/** Serial collection queue. Full detail enrichment is capped; missing brand/BSR
+ * fallback is independent of that budget. Uses the save fetch/parser/limiter. */
+import { enrichSavedProduct, type EnrichmentScope } from './enrich-saved-product';
 
 export interface EnrichmentPumpDeps {
   /** Injectable for tests; production always uses `enrichSavedProduct`. */
   enrich?: typeof enrichSavedProduct;
   /** Per-run cap. `Number.POSITIVE_INFINITY` means "the whole run". */
   limit?: number;
+  /** Enable missing brand/BSR fallback beyond the full-detail budget. */
+  requiredFields?: boolean;
 }
 
 interface QueuedEnrichment {
+  scope?: EnrichmentScope;
   asin: string;
   productUrl: string;
   sessionKey: string;
@@ -75,7 +45,7 @@ export function collectionEnrichmentJobId(
  * ASIN or URL (they cannot be enriched and are ignored).
  */
 export function enqueueCollectionEnrichment(
-  products: readonly { asin?: string | null; url?: string | null }[],
+  products: readonly { asin?: string | null; url?: string | null; brand?: string | null; bestSellersRank?: string | null }[],
   sessionKey: string,
   deps: EnrichmentPumpDeps = {},
 ): void {
@@ -93,11 +63,16 @@ export function enqueueCollectionEnrichment(
     if (seen.has(key)) continue;
 
     const used = counts.get(sessionKey) ?? 0;
-    if (used >= limit) break;
-
+    const full = used < limit;
+    const missing = [product.brand, product.bestSellersRank].some(
+      value => typeof value !== 'string' || value.trim().length === 0,
+    );
     seen.add(key);
-    counts.set(sessionKey, used + 1);
-    queue.push({ asin, productUrl, sessionKey });
+    if (!full && (!deps.requiredFields || !missing)) continue;
+    if (full) counts.set(sessionKey, used + 1);
+    queue.push({ asin, productUrl, sessionKey,
+      ...(!full ? { scope: 'brand-and-rank' as const } : {}),
+    });
   }
 
   void start();
@@ -148,6 +123,7 @@ async function run(): Promise<void> {
       const item = queue.shift()!;
       try {
         const result = await enrichImpl({
+          ...(item.scope ? { scope: item.scope } : {}),
           jobId: collectionEnrichmentJobId(item.sessionKey, item.asin),
           asin: item.asin,
           productUrl: item.productUrl,

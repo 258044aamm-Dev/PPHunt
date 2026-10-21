@@ -252,3 +252,24 @@ describe('SAD-379: enrichment pump — run isolation', () => {
     expect(enrich).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe('SAD-384 required-field policy', () => {
+  const many = Array.from({ length: 60 }, (_, i) => product(`B${String(i).padStart(9, '0')}`));
+  it.each([0, 25, 50, Infinity])('limit %s caps full details only', async limit => {
+    const enrich = enrichSpy();
+    enqueueCollectionEnrichment(many, SESSION, { enrich, limit, requiredFields: true });
+    await whenCollectionEnrichmentIdle();
+    expect(enrich).toHaveBeenCalledTimes(60);
+    const calls = enrich.mock.calls.map(([input]) => input as EnrichInput & { scope?: string });
+    expect(calls.filter(input => !input.scope)).toHaveLength(Math.min(limit, 60));
+    expect(calls.filter(input => input.scope === 'brand-and-rank')).toHaveLength(60 - Math.min(limit, 60));
+  });
+  it('skips complete persisted rows, not just present card fields', async () => {
+    const enrich = enrichSpy();
+    enqueueCollectionEnrichment([{ ...product('B000000001'), brand: 'Anker', bestSellersRank: '#1 in Chargers' }], SESSION,
+      { enrich, limit: 0, requiredFields: true });
+    await whenCollectionEnrichmentIdle();
+    expect(enrich).not.toHaveBeenCalled();
+  });
+});

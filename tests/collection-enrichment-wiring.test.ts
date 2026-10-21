@@ -176,8 +176,8 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe('SAD-379: with the switch OFF, collection is unchanged', () => {
-  it('never calls the enrichment stage, and still stores every product', async () => {
+describe('SAD-384: switch OFF preserves full-policy opt-in', () => {
+  it('calls only brand/rank fallback, and still stores every product', async () => {
     const { db } = await import('@/lib/db/database');
     const { onMessage } = await startBackground();
     const pump = await import('@/engines/amazon/background/enrichment-pump');
@@ -187,7 +187,8 @@ describe('SAD-379: with the switch OFF, collection is unchanged', () => {
     await pump.whenCollectionEnrichmentIdle();
     await waitFor(async () => expect(await db.products.count()).toBe(before + 3));
 
-    expect(enrichSavedProduct).not.toHaveBeenCalled();
+    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(3));
+    expect(enrichSavedProduct.mock.calls.every(([input]) => input.scope === 'brand-and-rank')).toBe(true);
   });
 
   it('the flag defaults to off/false with no stored value', async () => {
@@ -222,16 +223,17 @@ describe('SAD-379: with the switch ON, collection runs the save pipeline stage',
     expect(call.sessionKey).toBeTruthy();
   });
 
-  it('honours the 25 cap from the setting', async () => {
+  it('honours the 25 full-detail cap and falls back beyond it', async () => {
     const { onMessage } = await startBackground({ enabled: true, limit: '25' });
     const pump = await import('@/engines/amazon/background/enrichment-pump');
 
     drive(onMessage, collected(ASINS(40)));
-    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(25));
+    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(40));
     await pump.whenCollectionEnrichmentIdle();
     // The cap is a ceiling, not a batch size: no 26th call ever arrives.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(enrichSavedProduct).toHaveBeenCalledTimes(25);
+    expect(enrichSavedProduct.mock.calls.filter(([input]) => !input.scope)).toHaveLength(25);
+    expect(enrichSavedProduct.mock.calls.filter(([input]) => input.scope === 'brand-and-rank')).toHaveLength(15);
   });
 
   it('is never awaited by the collection message path (a slow fetch cannot block progress)', async () => {
@@ -277,7 +279,9 @@ describe('SAD-379: the settings cache', () => {
 
     drive(onMessage, collected(ASINS(2)));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(enrichSavedProduct).not.toHaveBeenCalled();
+    await waitFor(() => expect(enrichSavedProduct).toHaveBeenCalledTimes(2));
+    expect(enrichSavedProduct.mock.calls.every(([input]) => input.scope === 'brand-and-rank')).toBe(true);
+    enrichSavedProduct.mockClear();
 
     // Settings writes `storage.local`; the worker picked up `onChanged` at boot.
     browser.storage.onChanged.emit(
