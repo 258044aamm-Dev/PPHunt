@@ -35,9 +35,17 @@ export const TEMU_SELECTORS = {
     sellingPrice:
       '[data-type="price"] [class*="srOnly"], [data-type="price"][aria-label], [data-type="price"]',
 
-    /** Reference / original struck-through price block */
+    /**
+     * Reference / original struck-through price block.
+     * SAD-380: aria vocabulary unified with the parsers (Original/Regular/
+     * List/Was). Note the step-1 live capture also showed `priceText`
+     * carrying promo text on feed cards — candidates from this selector are
+     * always validated (currency token + strictly above the selling price)
+     * in `extractTemuPricing`, which also has aria-scan and struck-leaf
+     * fallbacks; this selector alone never assigns a value.
+     */
     listPrice:
-      '[data-type="priceText"], [aria-label*="Original price" i], [aria-label*="Regular price" i], del, s',
+      '[data-type="priceText"], [aria-label*="Original price" i], [aria-label*="Regular price" i], [aria-label*="List price" i], [aria-label*="Was price" i], del, s',
 
     /** Discount percentage badge (`[data-type="discount"]` e.g. `-68%`) */
     discountPercentage:

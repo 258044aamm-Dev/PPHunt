@@ -248,11 +248,35 @@ export function parseTemuProductDetail(
         };
 
     const price = domPricing.price ?? ldMeta.price;
+    // SAD-380 F1: the struck reference price can live outside `#goods_price`
+    // (the long-dead `productDetail.listPrice` selector anticipated
+    // `#rightContent del/s`). If the price container yielded none, run ONE
+    // diagnostics-free pricing pass over the wider PDP scope and take only
+    // its `listPrice` — price/discount from the scoped pass are untouched,
+    // and the validator still enforces `listPrice > price` on the merge.
+    let listPrice = domPricing.listPrice;
+    if (listPrice === null && pdpScope && priceScope !== pdpScope) {
+      const widerPricing = extractTemuPricing(
+        pdpScope,
+        ldMeta.currency ?? 'USD'
+      );
+      if (widerPricing.listPrice !== null) {
+        listPrice = widerPricing.listPrice;
+        recordFallback(
+          diag,
+          'listPrice',
+          {
+            source: 'dom',
+            selector: TEMU_SELECTORS.productDetail.listPrice,
+          },
+          'price container had no list price; wider PDP scope used'
+        );
+      }
+    }
     const currency =
       domPricing.currency ??
       ldMeta.currency ??
-      (price !== null || domPricing.listPrice !== null ? 'USD' : null);
-    const listPrice = domPricing.listPrice;
+      (price !== null || listPrice !== null ? 'USD' : null);
     const discountPercentage = domPricing.discountPercentage;
 
     if (domPricing.price === null && ldMeta.price !== null) {
