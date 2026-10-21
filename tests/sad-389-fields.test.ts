@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseAmazonSearchCard } from '@/engines/amazon/scraper/search-results';
 import { parseAmazonCategoryCard } from '@/engines/amazon/scraper/category-page';
 import { parseAmazonProductDetail } from '@/engines/amazon/scraper/product-detail';
+import { readAmazonPastMonthSales, readAmazonCoupon } from '@/engines/amazon/scraper/field-parsers';
 import { parsePdpHtml } from '@/engines/amazon/offscreen/parse';
 import {
   createFieldDiagnosticsCollector,
@@ -165,5 +166,31 @@ describe('SAD-389: primary-product ownership', () => {
     expect(p?.coupon).toBeUndefined();
     expect(p?.pastMonthSales).toBeUndefined();
     for (const field of ['coupon', 'pastMonthSales']) expect(diag.build().fields.find(f => f.field === field)?.status).toBe('MISSING');
+  });
+});
+
+
+describe('SAD-389: cheap readers preserve diagnostics and selector priority', () => {
+  it('does no broad selector scan for cards with no monthly-sales evidence', () => {
+    const card = documentOf(cardHtml()).querySelector('[data-asin]')!;
+    const scan = vi.spyOn(card, 'querySelectorAll');
+    expect(readAmazonPastMonthSales(card)).toEqual({ nodeSeen: false });
+    expect(scan).not.toHaveBeenCalled();
+    scan.mockRestore();
+  });
+
+  it('still observes explicit empty/loading sales markers, including a root marker', () => {
+    const d = documentOf('<div id="social-proofing-faceout-title-tk_bought">Loading</div>');
+    expect(readAmazonPastMonthSales(d)).toMatchObject({ nodeSeen: true });
+    expect(readAmazonPastMonthSales(d.body.firstElementChild!)).toMatchObject({ nodeSeen: true });
+  });
+
+  it('keeps coupon selector priority independent of DOM order with only one candidate query', () => {
+    const d = documentOf(cardHtml('<span class="couponLabelText">Apply 10% coupon</span><span class="s-coupon-unclipped">Save $5 with coupon</span>'));
+    const card = d.querySelector('[data-asin]')!;
+    const scan = vi.spyOn(card, 'querySelectorAll');
+    expect(readAmazonCoupon(card).value).toBe('Save $5 with coupon');
+    expect(scan).toHaveBeenCalledTimes(1);
+    scan.mockRestore();
   });
 });

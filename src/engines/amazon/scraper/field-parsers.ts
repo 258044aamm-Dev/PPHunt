@@ -1656,9 +1656,11 @@ export function readAmazonCoupon(root: Element | Document, asin?: string): Amazo
   const excluded = signalScope(root, asin);
   const seen = new Set<Element>();
   let rejectedSelector: string | undefined;
+  // One DOM query, retaining the established selector-priority order below.
+  const candidates = signalCandidates(root, AMAZON_SELECTORS.cardFields.coupon.join(','));
   for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
-    for (const el of signalCandidates(root, selector)) {
-      if (seen.has(el)) continue;
+    for (const el of candidates) {
+      if (seen.has(el) || !el.matches(selector)) continue;
       seen.add(el);
       if (excluded(el)) continue;
       rejectedSelector ??= selector;
@@ -1683,6 +1685,15 @@ export function readAmazonCoupon(root: Element | Document, asin?: string): Amazo
  * Never scan the entire PDP body or concatenate an excluded recommendation.
  */
 export function readAmazonPastMonthSales(root: Element | Document, asin?: string): AmazonSignalResult {
+  // Most cards print no sales signal. Avoid five selector scans on that hot
+  // path, but retain PARSE_FAILED for an explicit empty/loading social-proof
+  // marker. This is only a prefilter, never evidence used as the field value.
+  const textRoot = root.nodeType === 1 ? root : (root as Document).documentElement;
+  if (!/bought/i.test(textRoot?.textContent ?? '') &&
+      !(root.nodeType === 1 && (root as Element).id === 'social-proofing-faceout-title-tk_bought') &&
+      !safeQuerySelector(root, '#social-proofing-faceout-title-tk_bought')) {
+    return { nodeSeen: false };
+  }
   const excluded = signalScope(root, asin);
   const seen = new Set<Element>();
   let rejectedSelector: string | undefined;
