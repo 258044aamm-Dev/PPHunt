@@ -1,7 +1,13 @@
 # SAD-385 — PLAN: product weight and variation data in Collection Mode
 
-> **Status:** decision-complete, **plan only** — no file under `src/` has been
-> modified.
+> **Merged:** `main` at **`8d04f92`** (2026-10-21), via PR #5. The merge commit
+> is `78b20fc` (SAD-385 onto `main` at `ec8467e`, SAD-384); `155cbe4` is the
+> follow-up that deleted the in-memory run-end reconciliation in favour of
+> SAD-384's durable queue. Gate at merge: tsc clean, 118 files / 1321 tests,
+> build 2.01 MB, audit 0 vulnerabilities, CI `verify` green. Live Amazon
+> verification (`SAD-385-live-verification-protocol.md`) is still unexecuted.
+
+> **Status:** decision-complete and **shipped** — see the *Merged* note above.
 > **Ticket:** [SAD-385 — Product weight and variation data](https://linear.app/sad-mod/issue/SAD-385/product-weight-and-variation-data)
 > (Bug, priority 1, project PPHunt).
 > **Predecessor this plan builds on:** SAD-379 (`docs/plans/SAD-379-FINAL-plan.md`) —
