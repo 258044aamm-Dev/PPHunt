@@ -182,6 +182,28 @@ export const AMAZON_SELECTORS = {
       // every existing priority are unchanged.
       '#tech',
     ],
+    /**
+     * SAD-357's container walk for the weight waterfall. Identical to
+     * `warrantyContainers` until SAD-393, which appended `#tech` for the
+     * warranty row only: `#tech` also carries `Weight` rows (measured on
+     * the full Echo PDP — post-#tech it began yielding `10.7 oz`), and no
+     * field outside badge/warranty may change behaviour on that account.
+     * Weight therefore keeps walking exactly the pre-SAD-393 list; adding
+     * `#tech` here is a separate, separately-evidenced decision.
+     */
+    weightContainers: [
+      '#productDetails_techSpec_section_1',
+      '#productDetails_techSpec_section_2',
+      '#productDetails_detailBullets_sections1',
+      '#productDetails_db_sections',
+      '#productDetails_expanderTables_depthLeftSections',
+      '#productDetails_expanderTables_depthRightSections',
+      '#productDetails_expanderSectionTables',
+      '[data-feature-name="productDetailsHomeAndGarden_Updated"]',
+      '#detailBulletsWrapper_feature_div',
+      '#productOverview_feature_div',
+      '#prodDetails',
+    ],
     twister: {
       inlineRows: 'div[id^="inline-twister-row-"]',
       inlineDimTitle: '[id^="inline-twister-dim-title-"]',
