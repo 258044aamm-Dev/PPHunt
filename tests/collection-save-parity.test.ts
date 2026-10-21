@@ -335,7 +335,7 @@ describe('SAD-379: a collected row equals a saved row', () => {
     ]);
   });
 
-  it('with the switch off the collected row keeps the card-only shape it always had', async () => {
+  it('with the switch off only missing brand/BSR enrich the collected row', async () => {
     const { onMessage } = await startBackground();
     const { db } = await import('@/lib/db/database');
 
@@ -347,11 +347,12 @@ describe('SAD-379: a collected row equals a saved row', () => {
     await waitFor(async () =>
       expect(await db.products.where('asin').equals('B0000000EE').count()).toBe(1),
     );
+    await waitFor(async () => expect((await rowFor('B0000000EE'))?.bestSellersRank).toBe(DETAIL.bestSellersRank));
     const row = await rowFor('B0000000EE');
-    // No detail fields: this is the pre-SAD-379 behaviour, still the default.
+    // Other detail fields remain opt-in.
     expect(row?.seller ?? null).toBeNull();
     expect(row?.description ?? null).toBeNull();
     expect(row?.weight).toBeUndefined();
-    expect(await db.snapshots.count()).toBe(0);
+    expect(await db.snapshots.count()).toBe(1);
   });
 });

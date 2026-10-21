@@ -187,3 +187,9 @@ describe('SAD-379 collection enrichment settings', () => {
     await expectStored({ enabled: false, limit: '50' });
   });
 });
+
+
+it('explains that missing brand/rank fallback is independent of the full-detail switch and cap', async () => {
+  await renderOverlay();
+  expect(await screen.findByText(/are always fetched, independently of this switch and limit/)).toBeTruthy();
+});

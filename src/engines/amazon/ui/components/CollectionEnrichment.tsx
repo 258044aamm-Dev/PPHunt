@@ -11,10 +11,9 @@ import { setEnrichCollectedSettings } from '../../utils/enrich-collected-flag';
 /**
  * SAD-379: the "Collection Enrichment" settings.
  *
- * The switch decides whether a collection run continues into the same
- * product-page fetch a save performs; the radio group caps how many products
- * per run may pay for that request. Off by default, because with it off a
- * collection is exactly what it was before this ticket.
+ * The switch and per-run cap control full detail enrichment only. SAD-384
+ * independently fetches missing brand/BSR, sharing the same request when a
+ * product qualifies for full enrichment. Defaults and stored settings stay put.
  *
  * Both writes are immediate rather than debounced (the hook's `updateSettings`
  * waits 500 ms). A queued debounce that lands after "Restore Defaults" would
@@ -40,12 +39,12 @@ export const LIMIT_OPTIONS: LimitOption[] = [
   {
     value: '25',
     title: '25 products per run',
-    description: 'The cheapest option: at most 25 extra product-page requests.',
+    description: 'Fetch full details for at most 25 products; missing brand/rank fallback is not capped.',
   },
   {
     value: '50',
     title: '50 products per run',
-    description: 'The default — matches the per-batch limit the save path uses.',
+    description: 'The default: full details for 50 products per run, plus missing brand/rank fallback.',
   },
   {
     value: 'all',
@@ -127,10 +126,11 @@ export function AmazonCollectionEnrichment() {
             Enrich collected products
           </span>
           <span className="font-serif text-xs text-ink-muted leading-relaxed">
-            After a collection stores a product, fetch its product page and fill
-            in the detail fields a save already collects (rating, features,
-            seller, availability and more). Off by default. Each enriched
-            product costs one extra request, so a run takes longer.
+            Fetch additional details such as rating, features, seller and
+            availability. Off by default. Missing brand and Best Sellers Rank
+            are always fetched, independently of this switch and limit. A
+            product-page request is needed per eligible product; fields appear
+            as requests finish, which may be after collection completes.
           </span>
         </span>
       </label>
