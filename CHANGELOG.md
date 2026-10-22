@@ -5,6 +5,48 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Availability holds the page's message; Source follows the PDP (SAD-392)
+
+Amazon product pages could store their own embedded script text as
+**Availability**: the buybox `#availability` div carries an `a-state` JSON
+`<script>` on every captured PDP, and the delivery-restricted variant hosts an
+AOD asset-loader `<script>` next to the message — `textContent` reads
+serialized both, so the reported row stored a 1011-character blob of
+`P.when(…)` code ahead of the real sentence. **Source** never followed the
+data: merge paths copied every field from a PDP observation but left `source`
+first-write-wins, so a row first collected from a listing stayed `search` even
+after its product page was read.
+
+### Fixed
+- **Availability reads the rendered page, not serialized scripts.** A new
+  `extractAmazonElementText` (mirroring the Temu engine's stripper) is used by
+  the product-page availability loop and the listing card's stock read:
+  byte-identical to `textContent` whenever no `script`/`style`/`noscript`
+  descendant exists — every captured clean shape is unchanged — and stripped
+  via a detached clone when one does. The reported variant now stores exactly
+  `This item cannot be shipped to your selected delivery location. Please
+  choose a different delivery location.`
+- **Source follows the PDP observation — upgrade-only.** The content-side
+  dedup merge (which the quick-save volatile pass also rides) and the
+  background `addProducts` enrichment promote `search`/`category` rows to
+  `detail`; a listing re-observation never downgrades. The rule sits after the
+  SAD-357 variations upgrade and preserves its precondition.
+- **Rows stored before the fix are cleaned once (database v3).** A one-time,
+  data-only Dexie upgrade runs a signature-gated sanitizer over `products`
+  and `snapshots`: polluted values recover the page's message, clean values
+  pass byte-identical, malformed values pass untouched, only changed rows are
+  written, and the upgrade never throws.
+
+### Unchanged
+- The card's leaf-node availability fallback (reads only childless nodes),
+  delivery and seller extraction — the same `delivery-recipe` block pollution
+  is measured and handed to SAD-390 — `cleanAvailability`, the selector
+  tables, and the diagnostics contract (`EXTRACTED`/`PARSE_FAILED` outcomes
+  behave exactly as before; an empty-after-strip value takes the existing
+  reject branch). The Temu engine keeps its own stripper and its separate
+  database. Enrichment (`mergeDetailIntoStored`) still never carries
+  `source`, by design.
+
 ## [Unreleased] — Temu features & description extraction (SAD-381)
 
 Temu products were storing an empty **Features** list and a **Description** that

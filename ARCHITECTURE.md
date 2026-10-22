@@ -257,7 +257,7 @@ PPHunt uses [Dexie.js](https://dexie.org) (IndexedDB wrapper) with 5 tables.
 The following files are authoritative; avoid copying partial interfaces into
 this document as if they were complete schemas:
 
-| Store | Indexes (database v2) | Data contract |
+| Store | Indexes (database v3) | Data contract |
 |---|---|---|
 | products | `++id, asin, sessionKey, collectedAt, [sessionKey+asin]` | [`Product`](src/types/product.ts), [`ProductSchema`](src/lib/schemas/product.ts) |
 | sessions | `id, tabId, status, startedAt, updatedAt` | [`SessionState`](src/types/session.ts) |
@@ -267,7 +267,16 @@ this document as if they were complete schemas:
 
 [`database.ts`](src/engines/amazon/db/database.ts) keeps v1 for existing-install
 upgrades; **v2 adds the `snapshots` store and nothing else** — the v1 stores are
-inherited untouched and no row is rewritten on upgrade.
+inherited untouched and no row is rewritten on upgrade. **v3 (SAD-392) is
+data-only**: `stores({})` inherits the v2 schema, and its upgrade pass cleans
+`availability` values in `products` and `snapshots` that were polluted by
+embedded-script text before the write-side fix, via the signature-gated
+`sanitizeAvailabilityText`
+([`availability-text.ts`](src/engines/amazon/utils/availability-text.ts)) —
+clean values pass byte-identical, malformed non-strings pass untouched, and
+only changed rows are written (Dexie 4's `Collection.modify` skips a write only
+on `return false`). The pass is fault-contained end to end: a throwing Dexie
+upgrade would block every DB open and take the extension down.
 
 > **The `[sessionKey+asin]` compound index on `products` was not removed and must
 > not be removed.** It is declared in v1 and is load-bearing:
@@ -309,6 +318,24 @@ See [`selectors.ts`](src/lib/scraper/selectors.ts) for the current selector
 arrays. Parsers also use metadata extraction and structural fallbacks; a markup
 change may require parser changes, not just edits to the shared tables.
 Live selector validity was not verified in this remediation.
+
+#### Availability text comes from the rendered page (SAD-392)
+
+Amazon embeds non-rendered nodes inside buybox containers: an `a-state` JSON
+`<script>` sits in the `#availability` div of every captured PDP, and the
+delivery-restricted variant hosts an AOD asset-loader `<script>` next to the
+message. A raw `textContent` read serializes those bytes into the field — the
+reported row stored a 1011-character blob of `P.when(…)` code ahead of the real
+message. Availability reads therefore go through `extractAmazonElementText` in
+[`field-parsers.ts`](src/engines/amazon/scraper/field-parsers.ts): byte-identical
+to `textContent` whenever the element hosts no `script`/`style`/`noscript`
+descendant (every captured clean shape — that identity is why working extractions
+did not move), and read from a detached clone with those nodes stripped when one
+exists. Both the product-page availability loop (all three selectors, including
+the `#outOfStock` fallback) and the listing card's stock read use it; the card's
+leaf-node fallback reads only childless nodes and is structurally immune — left
+untouched. Rows stored before this rule are cleaned **once** by database v3 (see
+Database Schema): a migration, not display-time hooks.
 
 #### Deal and discount evidence (SAD-386)
 
@@ -533,6 +560,16 @@ worse than a rare duplicate, and persistence is never affected.
 const dedup = new DeduplicationEngine(existingProducts);
 const unique = dedup.filterNew(scrapedProducts); // O(1) per check
 ```
+
+**Source follows the PDP, upgrade-only (SAD-392).** `source` says where a row
+was authoritatively observed. `mergeScrapedProductFields` promotes a
+`'search'`/`'category'` target to `'detail'` when a PDP observation merges onto
+it, and never downgrades on a listing re-observation. The rule sits **after**
+the SAD-357 variations upgrade, whose condition reads the pre-promotion
+`target.source !== 'detail'` — promoting first would silently kill the
+variations upgrade (pinned by test). `enrichStoredProductFields` (the
+`addProducts` background write) applies the same rule to its patch; the
+enrichment path (`mergeDetailIntoStored`) deliberately never carries `source`.
 
 ### 5. Price Parsing
 
