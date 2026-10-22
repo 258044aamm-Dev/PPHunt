@@ -1633,7 +1633,11 @@ export function extractCardDeliveryAndAvailability(card: Element): {
   const deliveryBlock = safeQuerySelector(card, '[data-cy="delivery-recipe"]');
   if (deliveryBlock) {
     const stockSpan = safeQuerySelector(deliveryBlock, '.a-color-price');
-    const stockText = normalizeWhitespace(stockSpan?.textContent);
+    // SAD-392: same stripped read as the PDP loop — a delivery-recipe block
+    // can host <script>/<style> nodes (the Prime-signup ingress seen live in
+    // 49/64 captured cards), and `textContent` would serialize them into the
+    // stock phrase check and the stored value.
+    const stockText = normalizeWhitespace(extractAmazonElementText(stockSpan));
     if (stockText && /left in stock|out of stock|unavailable/i.test(stockText)) {
       availability = stockText;
     }

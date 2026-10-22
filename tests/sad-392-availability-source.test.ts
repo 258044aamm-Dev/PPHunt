@@ -17,12 +17,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parsePdpHtml } from '@/engines/amazon/offscreen/parse';
-import { parseAmazonProductDetail } from '@/engines/amazon/scraper';
+import { parseAmazonProductDetail, parseAmazonSearchResults } from '@/engines/amazon/scraper';
 import {
   createFieldDiagnosticsCollector,
   type ExtractionDiagnosticsReport,
 } from '@/engines/amazon/scraper/extraction-diagnostics';
-import { extractAmazonElementText } from '@/engines/amazon/scraper/field-parsers';
+import {
+  extractAmazonElementText,
+  extractCardDeliveryAndAvailability,
+} from '@/engines/amazon/scraper/field-parsers';
 
 // Same fixture-loading convention as tests/drift-rating-coverage.test.ts (SAD-383).
 const fixture = (name: string): string =>
@@ -165,5 +168,77 @@ describe('SAD-392 step 1: diagnostics contract (case 11)', () => {
       reason: 'availability node present but rejected by the field parser',
       selector: '#availability span',
     });
+  });
+});
+
+describe('SAD-392 step 2: the card stock read (W3) and the leaf fallback (W4)', () => {
+  const SEARCH_URL = 'https://www.amazon.com/s?k=aa+batteries';
+
+  it('case 5 (real capture): the full search card parses with availability null and no field changed', () => {
+    const card = fixture('search-card-B09RTVD1GF.real.html');
+    const listingDoc = doc(`<!doctype html><html><head></head><body>${card}</body></html>`);
+    const products = parseAmazonSearchResults(listingDoc, SEARCH_URL);
+    expect(products).toHaveLength(1);
+
+    // Whole-object pin recorded from the real capture. The pre-fix and
+    // post-fix runs of this fixture were diffed byte-for-byte during step 2
+    // development and are identical: this card's delivery-recipe hosts no
+    // `.a-color-price`, so the stripped read is a proven no-op here.
+    const { delivery, ...rest } = products[0]!;
+    expect(rest).toEqual({
+      asin: 'B09RTVD1GF',
+      url: 'https://www.amazon.com/dp/B09RTVD1GF',
+      title:
+        'Energizer AA Batteries Alkaline Power, 32 Count Alkaline Double A Battery Pack',
+      price: 15.99,
+      currency: 'USD',
+      rating: 4.8,
+      reviewCount: 80700,
+      imageUrl:
+        'https://m.media-amazon.com/images/I/81AX1sbArxL._AC_UL960_FMwebp_QL65_.jpg',
+      isSponsored: false,
+      isPrime: true,
+      brand: null,
+      availability: null, // the card prints no stock phrase — stays null
+      seller: null,
+      description: null,
+      features: [],
+      source: 'search',
+      listPrice: 21.78,
+      dealBadge: 'Ends in 13:00:10',
+      pastMonthSales: '100K+ bought in past month',
+      badge: 'Overall Pick',
+    });
+    // Delivery still carries the Prime-signup CSS+JS blob — that pollution is
+    // SAD-390's field and must NOT change here (D5). Pinned by the measured
+    // edges so any accidental delivery-path edit in this ticket fails.
+    expect(delivery).toHaveLength(1416);
+    expect(delivery?.startsWith('.prime-brand-color {color: #0064f9; }Join Prime(function(f){')).toBe(true);
+    expect(delivery?.endsWith(' FREE delivery Mon, Oct 26 on $35 of items shipped by Amazon')).toBe(true);
+  });
+
+  it('case 6: a stock span hosting a <script> yields the clean phrase', () => {
+    // W3 hardening: before the fix, textContent concatenated the script
+    // bytes onto the phrase and the unanchored /left in stock/i regex still
+    // passed — storing the blob. The stripped read keeps the phrase only.
+    const card = doc(
+      `<div class="s-result-item"><div data-cy="delivery-recipe">` +
+        `<span class="a-color-price">Only 5 left in stock` +
+        `<script>P.when("A","ready").execute("ingress",function(){});</script>` +
+        `</span></div></div>`,
+    ).querySelector('div');
+    const result = extractCardDeliveryAndAvailability(card!);
+    expect(result.availability).toBe('Only 5 left in stock');
+    expect(result.availability).not.toContain('P.when');
+  });
+
+  it('case 7 (W4 pin): the leaf fallback still skips a script-hosting node', () => {
+    // Structurally safe and untouched (plan §3.1): the leaf loop reads only
+    // childless nodes, so a <script> host can never leak through it.
+    const card = doc(
+      `<div class="s-result-item"><span>Only 3 left in stock<script>ueLogError();</script></span></div>`,
+    ).querySelector('div');
+    const result = extractCardDeliveryAndAvailability(card!);
+    expect(result.availability).toBeNull();
   });
 });
