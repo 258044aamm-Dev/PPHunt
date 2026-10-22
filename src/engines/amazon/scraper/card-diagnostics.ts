@@ -47,6 +47,7 @@ export interface CardDiagnosticsInput {
   reviewCount: TieredValue<number | null>;
   image: { value: string | null; tier: AmazonExtractionTier };
   pastMonthSales?: string;
+  pastMonthSalesNodeSeen?: boolean;
   delivery?: string;
   availability: string | null;
   seller: string | null;
@@ -141,6 +142,8 @@ export function recordCardDiagnostics(
 
   if (input.pricing.coupon !== undefined) {
     collector.extracted('coupon', dom);
+  } else if (input.pricing.unparseableCouponNode) {
+    collector.parseFailed('coupon', 'coupon node present but its offer text did not parse', dom);
   } else {
     collector.missing('coupon', 'no coupon present on the card', dom);
   }
@@ -213,6 +216,8 @@ export function recordCardDiagnostics(
 
   if (input.pastMonthSales !== undefined) {
     collector.extracted('pastMonthSales', dom);
+  } else if (input.pastMonthSalesNodeSeen) {
+    collector.parseFailed('pastMonthSales', 'monthly-sales node present but its text did not parse', dom);
   } else {
     collector.missing(
       'pastMonthSales',

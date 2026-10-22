@@ -1,0 +1,292 @@
+{
+  "candidateCommit": "abc969d54648a7ad2611166bb6b13f3336521711",
+  "capturedAt": "2026-10-21T17:36:06.590Z",
+  "browserVersion": "156.0.8078.4",
+  "passed": true,
+  "results": [
+    {
+      "name": "manual_initial_absence",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38901",
+        "price": 59.99,
+        "coupon": null,
+        "pastMonthSales": null,
+        "sessionKey": "sad389-manual"
+      }
+    },
+    {
+      "name": "manual_hydration_storage",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38901",
+        "price": 59.99,
+        "coupon": "Save $5 with coupon",
+        "pastMonthSales": "500+ bought in past month",
+        "sessionKey": "sad389-manual"
+      }
+    },
+    {
+      "name": "automatic_initial_absence",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38902",
+        "price": 59.99,
+        "coupon": null,
+        "pastMonthSales": null,
+        "sessionKey": "sad389-automatic"
+      }
+    },
+    {
+      "name": "automatic_hydration_storage",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38902",
+        "price": 59.99,
+        "coupon": "Save $5 with coupon",
+        "pastMonthSales": "500+ bought in past month",
+        "sessionKey": "sad389-automatic"
+      }
+    },
+    {
+      "name": "button_save_real_offscreen_enrichment",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38903",
+        "price": 59.99,
+        "coupon": "Apply 50% coupon",
+        "pastMonthSales": "4K+ bought in past month",
+        "sessionKey": "oc_1792604165970"
+      }
+    },
+    {
+      "name": "context_menu_command_delivery",
+      "pass": true,
+      "detail": {
+        "ok": true
+      }
+    },
+    {
+      "name": "context_save_real_offscreen_enrichment",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38904",
+        "price": 59.99,
+        "coupon": "Apply 50% coupon",
+        "pastMonthSales": "4K+ bought in past month",
+        "sessionKey": "oc_1792604165970"
+      }
+    },
+    {
+      "name": "live_pdp_collection",
+      "pass": true,
+      "detail": {
+        "asin": "B0SAD38905",
+        "price": 79.99,
+        "coupon": "Apply 50% coupon",
+        "pastMonthSales": "4K+ bought in past month",
+        "sessionKey": "sad389-detail"
+      }
+    },
+    {
+      "name": "no_duplicate_rows",
+      "pass": true,
+      "detail": [
+        {
+          "asin": "B0SAD38901",
+          "price": 59.99,
+          "coupon": "Save $5 with coupon",
+          "pastMonthSales": "500+ bought in past month",
+          "sessionKey": "sad389-manual"
+        },
+        {
+          "asin": "B0SAD38902",
+          "price": 59.99,
+          "coupon": "Save $5 with coupon",
+          "pastMonthSales": "500+ bought in past month",
+          "sessionKey": "sad389-automatic"
+        },
+        {
+          "asin": "B0SAD38903",
+          "price": 59.99,
+          "coupon": "Apply 50% coupon",
+          "pastMonthSales": "4K+ bought in past month",
+          "sessionKey": "oc_1792604165970"
+        },
+        {
+          "asin": "B0SAD38904",
+          "price": 59.99,
+          "coupon": "Apply 50% coupon",
+          "pastMonthSales": "4K+ bought in past month",
+          "sessionKey": "oc_1792604165970"
+        },
+        {
+          "asin": "B0SAD38905",
+          "price": 79.99,
+          "coupon": "Apply 50% coupon",
+          "pastMonthSales": "4K+ bought in past month",
+          "sessionKey": "sad389-detail"
+        }
+      ]
+    },
+    {
+      "name": "snapshot_contract",
+      "pass": true,
+      "detail": {
+        "count": 7,
+        "detailCoupon": "Apply 50% coupon"
+      }
+    },
+    {
+      "name": "real_offscreen_document",
+      "pass": true,
+      "detail": [
+        "chrome-extension://gdfjflfgicmmddpdhnnnbgmepkbmefga/offscreen.html"
+      ]
+    },
+    {
+      "name": "csv_actual_offscreen_export",
+      "pass": true,
+      "detail": [
+        [
+          "ASIN",
+          "Monthly Sales",
+          "Coupon",
+          "Price"
+        ],
+        [
+          "B0SAD38901",
+          "500+ bought in past month",
+          "Save $5 with coupon",
+          "59.99"
+        ],
+        [
+          "B0SAD38902",
+          "500+ bought in past month",
+          "Save $5 with coupon",
+          "59.99"
+        ],
+        [
+          "B0SAD38903",
+          "4K+ bought in past month",
+          "Apply 50% coupon",
+          "59.99"
+        ],
+        [
+          "B0SAD38904",
+          "4K+ bought in past month",
+          "Apply 50% coupon",
+          "59.99"
+        ],
+        [
+          "B0SAD38905",
+          "4K+ bought in past month",
+          "Apply 50% coupon",
+          "79.99"
+        ]
+      ]
+    },
+    {
+      "name": "xlsx_actual_offscreen_export",
+      "pass": true,
+      "detail": [
+        [
+          "ASIN",
+          "Monthly Sales",
+          "Coupon",
+          "Price"
+        ],
+        [
+          "B0SAD38901",
+          "500+ bought in past month",
+          "Save $5 with coupon",
+          59.99
+        ],
+        [
+          "B0SAD38902",
+          "500+ bought in past month",
+          "Save $5 with coupon",
+          59.99
+        ],
+        [
+          "B0SAD38903",
+          "4K+ bought in past month",
+          "Apply 50% coupon",
+          59.99
+        ],
+        [
+          "B0SAD38904",
+          "4K+ bought in past month",
+          "Apply 50% coupon",
+          59.99
+        ],
+        [
+          "B0SAD38905",
+          "4K+ bought in past month",
+          "Apply 50% coupon",
+          79.99
+        ]
+      ]
+    },
+    {
+      "name": "service_worker_fetch_was_exercised",
+      "pass": true,
+      "detail": {
+        "requests": 11,
+        "workerPdpRequests": 5
+      }
+    }
+  ],
+  "network": [
+    {
+      "url": "https://www.amazon.com/s?k=sad389&scenario=manual",
+      "serviceWorker": false
+    },
+    {
+      "url": "https://www.amazon.com/dp/B0SAD38901",
+      "serviceWorker": true
+    },
+    {
+      "url": "https://www.amazon.com/s?k=sad389&scenario=automatic",
+      "serviceWorker": false
+    },
+    {
+      "url": "https://www.amazon.com/dp/B0SAD38902",
+      "serviceWorker": true
+    },
+    {
+      "url": "https://www.amazon.com/s?k=sad389&scenario=button",
+      "serviceWorker": false
+    },
+    {
+      "url": "https://www.amazon.com/dp/B0SAD38903",
+      "serviceWorker": true
+    },
+    {
+      "url": "https://www.amazon.com/s?k=sad389&scenario=context",
+      "serviceWorker": false
+    },
+    {
+      "url": "https://www.amazon.com/dp/B0SAD38904",
+      "serviceWorker": true
+    },
+    {
+      "url": "https://www.amazon.com/dp/B0SAD38905",
+      "serviceWorker": false
+    },
+    {
+      "url": "https://www.amazon.com/dp/B0SAD38905",
+      "serviceWorker": true
+    },
+    {
+      "url": "https://www.amazon.com/gp/customer-reviews/widgets/average-customer-review/popover/?ie=UTF8&asin=B0SAD38905",
+      "serviceWorker": true
+    }
+  ],
+  "consoleErrors": [],
+  "limitations": [
+    "Controlled network fixtures, not live Amazon Chrome coverage.",
+    "Context-menu dispatch programmatic after real capture; no OS menu-item click.",
+    "No account, coupon clipping, cart or purchase actions."
+  ]
+}

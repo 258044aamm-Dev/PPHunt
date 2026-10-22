@@ -1,0 +1,59 @@
+{
+  "applicationCommit": "abc969d54648a7ad2611166bb6b13f3336521711",
+  "baseCommit": "2ec7eaf024687c499a1bc2fcc077bd411509040e",
+  "nodeVersion": "v22.23.3",
+  "testCommand": "npx vitest run --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=<report.json>",
+  "tests": {
+    "passed": 1487,
+    "failed": 0,
+    "testFilesTotal": 133,
+    "testFilesPassed": 132,
+    "testFilesSkipped": 1,
+    "existingSkippedFile": "tests/temu-pdp-captures.test.ts (no live capture fixtures; zero tests)",
+    "snapshotsMatched": 7,
+    "snapshotsUpdated": 0
+  },
+  "performance": {
+    "cards": 480,
+    "coldMs": 3363.1170620000003,
+    "warmMs": 252.11636799999997,
+    "recoveryMs": 471.1550160000006,
+    "warmFullParses": 0
+  },
+  "checks": {
+    "typecheck": "pass",
+    "deadExports": "pass (42 files)",
+    "productionBuild": "pass",
+    "manifestSanity": "pass",
+    "protectedScopeDiff": "pass",
+    "diffWhitespace": "pass"
+  },
+  "productionAudit": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0,
+    "total": 0
+  },
+  "allDependenciesAudit": {
+    "info": 0,
+    "low": 0,
+    "moderate": 3,
+    "high": 8,
+    "critical": 5,
+    "total": 16
+  },
+  "auditNote": "Full/development dependency audit is informational under the existing CI policy. No dependency changes or audit fixes were applied.",
+  "applicationFiles": [
+    "src/engines/amazon/content/collection-mutations.ts",
+    "src/engines/amazon/scraper/card-diagnostics.ts",
+    "src/engines/amazon/scraper/category-page.ts",
+    "src/engines/amazon/scraper/field-parsers.ts",
+    "src/engines/amazon/scraper/parse-cache.ts",
+    "src/engines/amazon/scraper/product-detail.ts",
+    "src/engines/amazon/scraper/search-results.ts",
+    "src/engines/amazon/scraper/selectors.ts",
+    "src/entrypoints/amazon.content.ts"
+  ]
+}
