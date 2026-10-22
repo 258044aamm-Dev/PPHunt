@@ -1,0 +1,120 @@
+{
+  "ticket": "SAD-392",
+  "purpose": "Machine-readable live-capture and parser-probe record for the SAD-392 plan (docs/plans/SAD-392-availability-source-plan.md). All results produced by the real parsers, not paraphrase.",
+  "capturedAt": "2026-10-21T17:05:00Z/2026-10-22T03:15:00Z",
+  "repoBase": "main@2ec7eaf",
+  "captureTool": {
+    "name": "moli",
+    "version": "1.1.18",
+    "asset": "moli-x86_64-unknown-linux-gnu.tar.gz",
+    "installedOutsideRepo": "~/.moli-bin/moli-v1.1.18-x86_64-unknown-linux-gnu/moli"
+  },
+  "baseline": {
+    "command": "npx vitest run",
+    "testFilesPassed": 127,
+    "testFilesSkipped": 1,
+    "testsPassed": 1415,
+    "testsSkipped": 3,
+    "durationSeconds": 164.76
+  },
+  "captures": [
+    {
+      "url": "https://www.amazon.com/dp/B087GMJXMC",
+      "httpStatus": 200,
+      "bytes": 2581917,
+      "command": "moli fetch --disable-js --dump html \"https://www.amazon.com/dp/B087GMJXMC\"",
+      "sandboxArtifact": "/home/user/capture-B087GMJXMC.html",
+      "findings": {
+        "availabilityElementsWithDuplicateId": 2,
+        "buyboxShape": "span.primary-availability-message(\" In Stock \") + script[type=a-state](social-proofing-page-state JSON) + br",
+        "availabilityDivTextContentHead": "In Stock {\"isInternal\":false,\"showInsightsHub\":false,\"isRobot\":false,\"showFaceout\":true,\"merchantId\":\"ATVPDKIKX0DER\",\"availableBadges\":\"\",\"loggedIn\":false,\"asin\":\"B087GMJXMC\",\"showBadge\":false,\"ingressFaceout\":\"\",\"availableFaceouts\":\"TK_BOUGHT\"}",
+        "captcha": false
+      }
+    },
+    {
+      "url": "https://www.amazon.com/dp/B09RTVD1GF",
+      "httpStatus": 200,
+      "evalProbe": "probe-availability2.js",
+      "findings": { "spanCount": 1, "firstSpanText": "In Stock", "scriptCount": 1, "scriptTypes": ["a-state"], "textLeaksScriptJson": true, "captcha": false }
+    },
+    {
+      "url": "https://www.amazon.com/dp/B00NTCH52W",
+      "httpStatus": 200,
+      "evalProbe": "probe-availability2.js",
+      "findings": { "spanCount": 1, "firstSpanText": "In Stock", "scriptCount": 1, "scriptTypes": ["a-state"], "textLeaksScriptJson": true, "captcha": false }
+    },
+    {
+      "url": "https://www.amazon.com/dp/B00MNV8E0C",
+      "httpStatus": 200,
+      "evalProbe": "probe-availability2.js",
+      "findings": { "spanCount": 1, "firstSpanText": "In Stock", "scriptCount": 1, "scriptTypes": ["a-state"], "textLeaksScriptJson": true, "captcha": false }
+    },
+    {
+      "url": "https://www.amazon.com/s?k=aa+batteries",
+      "attempts": [
+        { "command": "moli fetch --disable-js --eval-file probe-asins.js", "httpStatus": 200, "result": "8 ASINs read from live cards" },
+        { "command": "moli fetch --disable-js --eval-file probe-cards.js", "httpStatus": 200, "result": "delivery-recipe blocks host <style> (.prime-brand-color) + <script> (udm-kata-sfx-prime-signup-ingress); stockSpan (.a-color-price) absent on probed cards" },
+        { "command": "moli fetch --disable-js --dump html", "httpStatus": 200, "bytes": 2236, "result": "bm-verify interstitial (meta-refresh shell) — recorded, not bypassed" },
+        { "command": "moli fetch --disable-js --dump html --wait load", "httpStatus": 200, "bytes": 1948578, "result": "full page, 50 s-search-result occurrences", "sandboxArtifact": "/home/user/capture-search-aa2.html" }
+      ]
+    }
+  ],
+  "parserProbes": {
+    "harness": "scratch vitest file running the real modules (deleted after the plan; formalized as tests/sad-392-availability-source.test.ts in step 1)",
+    "A_offscreen_realCapture": {
+      "fn": "parsePdpHtml(capture, url, 'B087GMJXMC')",
+      "ok": true,
+      "availability": "In Stock",
+      "source": "detail",
+      "delivery": "FREE delivery Monday, October 26 on orders shipped by Amazon over $35"
+    },
+    "B2_liveDom_reportedShape": {
+      "fn": "parseAmazonProductDetail(jsdom(capture) with every #availability set to <script>AOD loader</script> + bare ticket message, no span)",
+      "parsed": true,
+      "availabilityChars": 1011,
+      "availabilityStartsWith": "P.when(\"A\", \"load\").execute(\"aod-assets-loaded\", function(A){",
+      "availabilityEndsWithTicketMessage": true,
+      "source": "detail",
+      "verdict": "ticket value reproduced end-to-end through the real parser"
+    },
+    "C_liveDom_realCapture": {
+      "pageType": "product-detail",
+      "availability": "In Stock",
+      "source": "detail",
+      "note": "span selector rescues the value; raw #availability textContent still contains the a-state JSON"
+    },
+    "D_sourceMerge": {
+      "fn": "mergeScrapedProductFields(searchRow, detailObservation)",
+      "changed": true,
+      "targetSourceAfterMerge": "search",
+      "targetAvailabilityAfterMerge": "In Stock",
+      "verdict": "fields merge but source is first-write-wins — the provenance divergence behind the ticket"
+    },
+    "E_searchCapture_cardParser": {
+      "fn": "parseAmazonSearchResults(jsdom(capture-search-aa2))",
+      "productsParsed": 64,
+      "sourceOnAll": "search",
+      "availabilityPopulated": 0,
+      "availabilityPolluted": 0,
+      "deliveryPopulated": 49,
+      "deliveryPollutedWithCssJsBlob": 49,
+      "longestDeliveryHead": ".prime-brand-color {color: #0064f9; }Join Prime(function(f){var _np=(window.P._namespace(\"udm-kata-sfx-prime-signup-ingress-script\"));",
+      "handoff": "delivery pollution belongs to SAD-390 (In Progress); fixture search-card-delivery-recipe.real.html handed off"
+    }
+  },
+  "fixtures": {
+    "dir": "docs/plans/SAD-392-fixtures/",
+    "files": [
+      { "name": "pdp-availability-in-stock.real.html", "kind": "real", "source": "capture B087GMJXMC, first #availability verbatim" },
+      { "name": "pdp-availability-duplicate-id.real.html", "kind": "real", "source": "capture B087GMJXMC, second #availability verbatim" },
+      { "name": "pdp-availability-aod-script.reported.html", "kind": "reported", "source": "ticket paste inside the real div attributes, span removed — never labelled real" },
+      { "name": "search-card-delivery-recipe.real.html", "kind": "real", "source": "capture-search-aa2, B09RTVD1GF card delivery-recipe block (SAD-390 evidence)" },
+      { "name": "search-card-B09RTVD1GF.real.html", "kind": "real", "source": "capture-search-aa2, full card" }
+    ]
+  },
+  "honesty": [
+    "The exact ticket page variant (no span inside #availability, AOD loader script present) was not re-observed live from this sandbox: it depends on the operator's delivery-location context (region-locked item). It was reproduced by mutating the live capture to the reported shape and running the real parser (probe B2).",
+    "The a-state script inside #availability WAS observed live on 4/4 fetched PDPs; the leak mechanism (textContent serializes script bytes) is therefore live-proven, not hypothetical.",
+    "The bm-verify interstitial was recorded, retried once with a different wait strategy, never bypassed."
+  ]
+}
