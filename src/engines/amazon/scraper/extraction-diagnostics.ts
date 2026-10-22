@@ -115,6 +115,9 @@ export const DETAIL_DIAGNOSTIC_FIELDS: readonly string[] = [
   'variations',
   'weight',
   'isPrime',
+  // SAD-391: a derived boolean like `isPrime`; on a card it is the ad
+  // detector's verdict, on a product page the visited URL's ad markers.
+  'isSponsored',
 ];
 
 interface RecordOptions {
@@ -240,8 +243,8 @@ function isEmptyValue(value: unknown): boolean {
  * - whole product rejected (`normalized === null`) → entries are left as
  *   recorded; validation never passed, so no `validated` flag is invented.
  *
- * `isPrime` is excluded: `false` is a legitimate normalized value, not an
- * absence, so emptiness comparison does not apply to it.
+ * `isPrime` and `isSponsored` are excluded: `false` is a legitimate normalized
+ * value, not an absence, so emptiness comparison does not apply to them.
  *
  * The `PARTIAL` it writes means *obtained, then invalidated* — the value
  * existed and was parsed, and validation is what dropped it. That is a
@@ -260,7 +263,7 @@ export function applyValidationResults(
   const kept = normalized as unknown as Record<string, unknown>;
 
   for (const field of DETAIL_DIAGNOSTIC_FIELDS) {
-    if (field === 'isPrime') continue;
+    if (field === 'isPrime' || field === 'isSponsored') continue;
     if (isEmptyValue(raw[field])) continue;
 
     const entry = entries.get(field);

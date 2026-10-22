@@ -105,7 +105,8 @@ function diffProduct(existing: Product, next: Product): string[] {
  * - volatile fields: incoming non-null wins, null never overwrites;
  * - identity fields (`title`, `imageUrl`, `brand`, `seller`), `features` and
  *   `description`: fill-only, delegated to the tested `mergeScrapedProductFields`;
- * - `isPrime`: OR; listings context (`placements`, `sectionLabel`): appended;
+ * - `isPrime`: OR; `isSponsored`: OR (SAD-391 D6 — never cleared by a later
+ *   save); listings context (`placements`, `sectionLabel`): appended;
  * - price is frozen when the currencies differ (`currencyMismatch: true`).
  */
 export async function upsertProductFromQuickSave(
@@ -177,6 +178,18 @@ export async function upsertProductFromQuickSave(
       incoming.features.length > 0
     ) {
       merged.features = incoming.features;
+    }
+    // SAD-391 (D6): sponsorship is sticky across saves, like `isPrime`. The
+    // fill-only pass above already appended the newer placement (so a later
+    // organic save still shows as 'Organic Search' in `placements`), and the
+    // volatile pass carries no listing fields, so it can no longer clear the
+    // flag. What remains is the OR: an ad save of a product first saved from
+    // an organic card.
+    if (incoming.isSponsored === true && merged.isSponsored !== true) {
+      merged.isSponsored = true;
+      if (merged.listingCategory === 'organic') {
+        merged.listingCategory = 'sponsored';
+      }
     }
     merged.collectedAt = collectedAt;
 

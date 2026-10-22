@@ -1,6 +1,6 @@
 import type { ScrapedAmazonProduct } from '../types';
 import { resolveProductUrl } from '../utils/amazon-url';
-import { mergeScrapedProductFields } from './dedup';
+import { appendProductPlacement, mergeScrapedProductFields } from './dedup';
 import {
   defaultAmazonDriftTelemetry,
   logDriftReport,
@@ -13,7 +13,7 @@ import {
   extractCardBadgeResult,
   extractCardDeliveryAndAvailability,
   extractCardImageWithTier,
-  extractCardIsPrime,
+  extractCardPrimeSignal,
   extractCardIsSponsored,
   extractCardListingCategoryAndSection,
   readAmazonPastMonthSales,
@@ -107,7 +107,8 @@ export function parseAmazonSearchCard(
     const badge = badgeResult.badge;
     const { delivery, availability } = extractCardDeliveryAndAvailability(card);
     const seller = extractCardSeller(card);
-    const isPrime = extractCardIsPrime(card, delivery);
+    const primeSignal = extractCardPrimeSignal(card, delivery);
+    const isPrime = primeSignal !== null;
     const isSponsored = extractCardIsSponsored(card);
     const bestSellersRank = extractInlineCardBsr(card);
     const variations = extractCardVariations(card);
@@ -206,6 +207,8 @@ export function parseAmazonSearchCard(
         availability,
         seller,
         isPrime,
+        primeSignal,
+        isSponsored,
         bestSellersRank,
         variations,
         url,
@@ -399,6 +402,13 @@ export function parseAmazonSearchResults(
         const existingQuick = entriesByAsin.get(quickAsin);
         // If two primary `s-search-result` cards share an ASIN, first-card-wins without re-parsing
         if (existingQuick && existingQuick.isPrimary && isPrimary) {
+          // SAD-391 (D8): a Sponsored Products ad and the organic result of
+          // the same ASIN are both primary cards. Keep the first row as is,
+          // but record the second placement so the ad is not lost.
+          appendProductPlacement(
+            existingQuick.product,
+            extractCardIsSponsored(card) ? 'Sponsored Search' : 'Organic Search',
+          );
           continue;
         }
       }

@@ -149,10 +149,10 @@ describe('SAD-393 step 2: badge is visible to card diagnostics', () => {
       ${extra}
     </div>`;
 
-  it('rio Best Seller card: badge EXTRACTED and the card report carries 25 fields', () => {
+  it('rio Best Seller card: badge EXTRACTED and the card report carries 26 fields', () => {
     const report = reportFor(fixture('search-card-rio-bestseller-deal.real.html'));
     expect(report.asin).toBe('B0725WFLMB');
-    expect(report.fields).toHaveLength(25);
+    expect(report.fields).toHaveLength(26);
     const entry = report.fields.find((f) => f.field === 'badge');
     expect(entry).toMatchObject({ status: 'EXTRACTED' });
   });

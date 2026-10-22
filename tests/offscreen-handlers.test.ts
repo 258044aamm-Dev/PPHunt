@@ -116,7 +116,7 @@ describe('parsePdpHtml', () => {
     const fields = new Map(
       (result.fieldDiagnostics?.fields ?? []).map((e) => [e.field, e]),
     );
-    expect(fields.size).toBe(24);
+    expect(fields.size).toBe(25);
     expect(fields.get('price')).toMatchObject({ status: 'EXTRACTED' });
     // The fixture has no seller node: absent from the HTML, with a reason.
     expect(fields.get('seller')).toMatchObject({ status: 'MISSING' });

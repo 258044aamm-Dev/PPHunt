@@ -74,13 +74,22 @@ export interface CardDiagnosticsInput {
   availability: string | null;
   seller: string | null;
   isPrime: boolean;
+  /** SAD-391: which evidence made the card Prime; absent when `isPrime` is false. */
+  primeSignal?: 'badge' | 'ingress' | null;
+  /**
+   * SAD-391: the ad detector's verdict for this card. Optional on the type so
+   * callers that predate it still compile; when absent the field is left
+   * unrecorded and the report says UNKNOWN ("not attempted") rather than
+   * asserting an outcome nobody computed.
+   */
+  isSponsored?: boolean;
   bestSellersRank?: string;
   variations?: string | null;
   url: string | null;
 }
 
 /**
- * Records all modelled card fields (the 24 detail fields plus card-only
+ * Records all modelled card fields (the 25 detail fields plus card-only
  * `badge`, SAD-393) from the card parser's already-computed results. The
  * caller invokes this only when the parse produced a product: no report is
  * emitted when the parser returns `null` (no ASIN/title) — there is no
@@ -290,9 +299,23 @@ export function recordCardDiagnostics(
 
   // A derived boolean, not a DOM node — the detail-stage convention.
   if (input.isPrime) {
-    collector.extracted('isPrime', { source: 'derived' });
+    collector.extracted('isPrime', {
+      source: 'derived',
+      // SAD-391: say which evidence it was (badge vs. "Join Prime" ingress).
+      ...(input.primeSignal ? { reason: `prime ${input.primeSignal}` } : {}),
+    });
   } else {
-    collector.missing('isPrime', 'no Prime marker found', {
+    collector.missing('isPrime', 'no Prime badge or Prime ingress found', {
+      source: 'derived',
+    });
+  }
+
+  // SAD-391: the same convention for the ad verdict. `false` is a real
+  // outcome ("looked, found no Sponsored marker"), never UNKNOWN.
+  if (input.isSponsored === true) {
+    collector.extracted('isSponsored', { source: 'derived' });
+  } else if (input.isSponsored === false) {
+    collector.missing('isSponsored', 'no Sponsored marker found', {
       source: 'derived',
     });
   }

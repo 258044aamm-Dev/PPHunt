@@ -21,7 +21,11 @@ import {
 } from './deal-evidence';
 import type { AmazonTrackedField } from './drift-telemetry';
 import {
+  AMAZON_PRIME_BADGE_LABEL_PATTERN,
+  AMAZON_PRIME_INGRESS_TEXT_PATTERN,
   AMAZON_SELECTORS,
+  AMAZON_SPONSORED_LEAF_PATTERN,
+  AMAZON_SPONSORED_WORD_PATTERN,
   safeQuerySelector,
   safeQuerySelectorAll,
 } from './selectors';
@@ -1904,6 +1908,20 @@ export function extractCardBadge(card: Element): string | undefined {
 const DELIVERY_KEYWORD_RE =
   /delivery|lieferung|livraison|entrega|consegna|bezorging|dostawa|leverans/i;
 
+
+/**
+ * Delivery message and stock warning of a listing card.
+ *
+ * SAD-391 (F5): the unified delivery message (`.udm-primary-delivery-message`
+ * + `.udm-secondary-delivery-message`, 2025 markup) is read structurally
+ * first. Before, the recipe took the *first* `[aria-label]` — on the live
+ * markup that is the stock warning (`span[aria-label="Only 7 left in stock…"]`),
+ * which fails the delivery-word test, and the text fallback was then skipped
+ * because `availability` was already set, so the card lost its delivery
+ * message (4/16 live cards). The stock warning is still returned as
+ * `availability`; it simply no longer pre-empts `delivery`. Legacy markup
+ * (`span[aria-label="FREE delivery …"]`, plain text) is read exactly as before.
+ */
 export function extractCardDeliveryAndAvailability(card: Element): {
   delivery?: string;
   availability: string | null;
@@ -1939,9 +1957,34 @@ export function extractCardDeliveryAndAvailability(card: Element): {
       const udmBlock =
         safeQuerySelector(deliveryBlock, '[data-cy="delivery-block"]') ??
         deliveryBlock;
-      const fallbackText = extractCleanElementText(udmBlock, 'a-color-price');
-      if (fallbackText && DELIVERY_KEYWORD_RE.test(fallbackText)) {
-        delivery = fallbackText;
+      // SAD-391 (F5): a signed-in card renders the Prime badge
+      // (`.udm-badge-block`, e.g. "One-Day") inside the same block as the
+      // message rows; read the message rows first so badge text never
+      // prefixes the delivery string. Logged-out cards have an empty badge
+      // block and yield exactly the whole-block text.
+      const primaryMessage = safeQuerySelector(
+        udmBlock,
+        '.udm-primary-delivery-message',
+      );
+      if (primaryMessage) {
+        const messageText = [
+          extractCleanElementText(primaryMessage, 'a-color-price'),
+          extractCleanElementText(
+            safeQuerySelector(udmBlock, '.udm-secondary-delivery-message'),
+            'a-color-price',
+          ),
+        ]
+          .filter(Boolean)
+          .join(' ');
+        if (messageText && DELIVERY_KEYWORD_RE.test(messageText)) {
+          delivery = messageText;
+        }
+      }
+      if (!delivery) {
+        const fallbackText = extractCleanElementText(udmBlock, 'a-color-price');
+        if (fallbackText && DELIVERY_KEYWORD_RE.test(fallbackText)) {
+          delivery = fallbackText;
+        }
       }
     }
   } else if (
@@ -2015,22 +2058,69 @@ export function extractCardSeller(card: Element): string | null {
   return null;
 }
 
+/**
+ * SAD-391: which evidence made a listing Prime.
+ * - `badge`: the Prime badge itself (signed-in Prime member view).
+ * - `ingress`: the explicit Prime-eligibility wording Amazon prints for
+ *   everyone else ("Join Prime to get FREE delivery <date>").
+ */
+export type PrimeSignal = 'badge' | 'ingress';
+
+/**
+ * SAD-391: Tier-2 ARIA fallback for a class-less Prime badge — the first
+ * element under `root` whose whole `aria-label` is a Prime badge label
+ * (`AMAZON_PRIME_BADGE_LABEL_PATTERN`). A title's `aria-label` never matches
+ * because the pattern is anchored.
+ */
+export function findPrimeBadgeLabel(root: ParentNode): Element | null {
+  for (const el of safeQuerySelectorAll(root, '[aria-label*="prime" i]')) {
+    const label = normalizeWhitespace(el.getAttribute('aria-label'));
+    if (label && AMAZON_PRIME_BADGE_LABEL_PATTERN.test(label)) {
+      return el;
+    }
+  }
+  return null;
+}
+
+/**
+ * SAD-391 (D1): `isPrime` = Prime badge ∨ Prime-eligibility ingress.
+ *
+ * Before this, "FREE delivery" anywhere in the delivery text counted as
+ * Prime, so 11/16 logged-out live cards were "Prime" although the page showed
+ * no badge at all, and `[aria-label*="Prime" i]` matched product titles.
+ * Free delivery is a shipping fact, not a Prime signal, and is no longer read.
+ *
+ * `deliveryText` is the cleaned string from `extractCardDeliveryAndAvailability`;
+ * the regex is applied to it only (never to the whole card).
+ */
+export function extractCardPrimeSignal(
+  card: Element,
+  deliveryText?: string,
+): PrimeSignal | null {
+  for (const selector of AMAZON_SELECTORS.cardFields.prime) {
+    if (safeQuerySelector(card, selector)) {
+      return 'badge';
+    }
+  }
+  if (findPrimeBadgeLabel(card)) {
+    return 'badge';
+  }
+  for (const selector of AMAZON_SELECTORS.cardFields.primeIngress) {
+    if (safeQuerySelector(card, selector)) {
+      return 'ingress';
+    }
+  }
+  if (deliveryText && AMAZON_PRIME_INGRESS_TEXT_PATTERN.test(deliveryText)) {
+    return 'ingress';
+  }
+  return null;
+}
+
 export function extractCardIsPrime(
   card: Element,
   deliveryText?: string,
 ): boolean {
-  for (const selector of [
-    ...AMAZON_SELECTORS.cardFields.prime,
-    '[aria-label*="Prime" i]',
-  ]) {
-    if (safeQuerySelector(card, selector)) {
-      return true;
-    }
-  }
-  if (deliveryText && /\bFREE delivery\b/i.test(deliveryText)) {
-    return true;
-  }
-  return false;
+  return extractCardPrimeSignal(card, deliveryText) !== null;
 }
 
 export function extractCardIsSponsored(card: Element): boolean {
@@ -2071,10 +2161,7 @@ export function extractCardIsSponsored(card: Element): boolean {
       const text = normalizeWhitespace(
         el.getAttribute('aria-label') || el.textContent,
       );
-      if (
-        !text ||
-        /sponsored|gesponsert|sponsorisé|patrocinado|スポンサー/i.test(text)
-      ) {
+      if (!text || AMAZON_SPONSORED_WORD_PATTERN.test(text)) {
         return true;
       }
     }
@@ -2083,7 +2170,7 @@ export function extractCardIsSponsored(card: Element): boolean {
   for (const node of leafNodes) {
     if (node.children.length > 0) continue;
     const text = normalizeWhitespace(node.textContent);
-    if (/^(?:Sponsored|Gesponsert|Sponsorisé|Patrocinado|スポンサー)$/i.test(text)) {
+    if (AMAZON_SPONSORED_LEAF_PATTERN.test(text)) {
       return true;
     }
   }

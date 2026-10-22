@@ -486,7 +486,7 @@ value — and used to throw the decision away. A collector is threaded through
 the parser as an optional out-parameter so those decisions become one
 structured report per product.
 
-Each of the 24 modelled detail fields carries exactly one status:
+Each of the 25 modelled detail fields carries exactly one status:
 
 | Status | Meaning |
 |--------|---------|
@@ -524,9 +524,9 @@ migration/version bump. "Restore defaults" resets the flag explicitly.
 Diagnostics are a **side channel**. Card and product-detail parsers only
 create collectors when a sink is supplied; the extracted object must remain
 byte-identical with and without that observer. The shared card recorder
-models 25 fields — the detail stage's 24 plus card-only `badge` (SAD-393,
-built with `CARD_DIAGNOSTIC_FIELDS`; PDP reports stay at 24): **21
-card-extractable** fields and **4 card-inapplicable**
+models 26 fields — the detail stage's 25 (`isSponsored` joined with SAD-391)
+plus card-only `badge` (SAD-393, built with `CARD_DIAGNOSTIC_FIELDS`; PDP
+reports stay at 25): **22 card-extractable** fields and **4 card-inapplicable**
 fields (`description`, `features`, `weight`, `warrantyDescription`), which
 are `MISSING` with an explicit card-only reason (D4). Card cascade reports
 carry `tier`, not `selector`. The price cascade's additive

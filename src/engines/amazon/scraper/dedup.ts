@@ -37,6 +37,27 @@ const MERGEABLE_NULLABLE_FIELDS = [
 ] as const;
 
 /**
+ * SAD-391 (D8): records one more placement on an already-kept row without
+ * re-parsing anything — used when a second primary `s-search-result` card
+ * (typically the Sponsored Products ad of an ASIN that is also listed
+ * organically) is skipped as a duplicate. `isSponsored` / `listingCategory`
+ * of the kept row are untouched; the extra placement is what the Sponsored
+ * filter and badge read (`matchesListingCategoryFilter`). Returns whether the
+ * row changed.
+ */
+export function appendProductPlacement(
+  target: ScrapedAmazonProduct,
+  placement: string,
+): boolean {
+  const current = resolveProductPlacements(target);
+  if (current.includes(placement)) {
+    return false;
+  }
+  target.placements = [...current, placement];
+  return true;
+}
+
+/**
  * Merges fields from `source` into `target` in place.
  * When `preferSource` is true (e.g. `source` is a primary `s-search-result` card and `target`
  * came from a compact widget card), non-null/defined fields on `source` overwrite `target`
@@ -114,28 +135,42 @@ export function mergeScrapedProductFields(
     changed = true;
   }
 
+  // SAD-391 (F7): a source that carries no listing information at all — the
+  // quick-save volatile refresh object, an enrichment patch — must not be
+  // read as "an organic, unsponsored observation". Without this guard the
+  // placement union invented 'Organic Search', `listingCategory` was
+  // recomputed to 'organic' and `isSponsored` was overwritten with
+  // `undefined` on every re-save of a sponsored product.
+  const sourceHasListingContext =
+    (Array.isArray(source.placements) && source.placements.length > 0) ||
+    Boolean(source.sectionLabel) ||
+    source.listingCategory !== undefined ||
+    typeof source.isSponsored === 'boolean';
+
   // Record multi-placement context before overwriting `isSponsored` / `listingCategory`
-  const targetPlacements = resolveProductPlacements(target);
-  const sourcePlacements = resolveProductPlacements(source);
-  const orderedPlacements = preferSource
-    ? [...sourcePlacements, ...targetPlacements]
-    : [...targetPlacements, ...sourcePlacements];
-  const distinctPlacements: string[] = [];
-  for (const p of orderedPlacements) {
-    if (p && !distinctPlacements.includes(p)) {
-      distinctPlacements.push(p);
+  if (sourceHasListingContext) {
+    const targetPlacements = resolveProductPlacements(target);
+    const sourcePlacements = resolveProductPlacements(source);
+    const orderedPlacements = preferSource
+      ? [...sourcePlacements, ...targetPlacements]
+      : [...targetPlacements, ...sourcePlacements];
+    const distinctPlacements: string[] = [];
+    for (const p of orderedPlacements) {
+      if (p && !distinctPlacements.includes(p)) {
+        distinctPlacements.push(p);
+      }
     }
-  }
-  if (distinctPlacements.length > 1) {
-    const prevKey = (target.placements ?? []).join('|');
-    const nextKey = distinctPlacements.join('|');
-    if (prevKey !== nextKey) {
-      target.placements = distinctPlacements;
-      changed = true;
+    if (distinctPlacements.length > 1) {
+      const prevKey = (target.placements ?? []).join('|');
+      const nextKey = distinctPlacements.join('|');
+      if (prevKey !== nextKey) {
+        target.placements = distinctPlacements;
+        changed = true;
+      }
     }
   }
 
-  if (preferSource) {
+  if (preferSource && sourceHasListingContext) {
     const nextCategory = source.listingCategory ?? resolveListingCategory(source);
     if (target.listingCategory && target.listingCategory !== nextCategory) {
       target.listingCategory = nextCategory;
@@ -155,7 +190,11 @@ export function mergeScrapedProductFields(
     changed = true;
   }
 
-  if (preferSource && target.isSponsored !== source.isSponsored) {
+  if (
+    preferSource &&
+    typeof source.isSponsored === 'boolean' &&
+    target.isSponsored !== source.isSponsored
+  ) {
     target.isSponsored = source.isSponsored;
     changed = true;
   }

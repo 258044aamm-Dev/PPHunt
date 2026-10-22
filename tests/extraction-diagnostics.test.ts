@@ -157,7 +157,7 @@ describe('SAD-359 detail-parser field diagnostics', () => {
 
     expect(product).not.toBeNull();
     expect(report.asin).toBe('B0DELTA123');
-    expect(report.fields).toHaveLength(24);
+    expect(report.fields).toHaveLength(25);
 
     expect(fields.get('asin')).toMatchObject({ status: 'EXTRACTED', source: 'url' });
     // The product URL is a modelled field of its own (SAD-359 requirement 1).
@@ -442,7 +442,7 @@ describe('SAD-359 diagnostics collector', () => {
         counts.parseFailed +
         counts.partial +
         counts.unknown,
-    ).toBe(24);
+    ).toBe(25);
 
     const line = formatExtractionDiagnosticsLog(report, {
       jobId: 'job-1',
@@ -461,7 +461,7 @@ describe('SAD-359 diagnostics collector', () => {
     expect(payload.jobId).toBe('job-1');
     expect(payload.stage).toBe('enrichment-parse');
     expect(payload.counts).toEqual(counts);
-    expect(payload.fields).toHaveLength(24);
+    expect(payload.fields).toHaveLength(25);
   });
 
   it('carries the issue prefix and a bucket for every status', () => {

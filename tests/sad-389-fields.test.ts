@@ -85,9 +85,9 @@ describe.each([
     const withDiagnostics = parse(card, SEARCH_URL, { diagnosticsSink: { accept: r => reports.push(r) } });
     expect(withDiagnostics).toEqual(parse(card, SEARCH_URL));
     expect(withDiagnostics?.pastMonthSales).toBeUndefined();
-    // 25 since SAD-393: `badge` joined the card report on MergeBranch
-    // (24 on the SAD-389 branch, which pre-dates the badge field).
-    expect(reports[0]?.fields).toHaveLength(25);
+    // 26 on MergeBranch: 24 on the SAD-389 branch, +1 `badge` (SAD-393,
+    // card-only), +1 `isSponsored` (SAD-391, detail field).
+    expect(reports[0]?.fields).toHaveLength(26);
     expect(reports[0]?.fields.find(f => f.field === 'pastMonthSales')?.status).toBe('PARSE_FAILED');
   });
 

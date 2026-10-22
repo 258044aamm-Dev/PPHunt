@@ -8,6 +8,7 @@ import {
   type ExtractionDiagnosticsReport,
   type ExtractionDiagnosticsSink,
 } from '../scraper';
+import { extractCardIsSponsored } from '../scraper/field-parsers';
 import { AMAZON_SELECTORS } from '../scraper/selectors';
 import type { SaveExtractionContext, ScrapedProduct } from '../types';
 import { getDiagnosticsEnabled } from '../utils/diagnostics-flag';
@@ -29,9 +30,6 @@ export interface ResolvedSaveCandidate {
    */
   extractionDiagnostics?: ExtractionDiagnosticsReport;
 }
-
-const SPONSORED_HINT_SELECTOR =
-  '.puis-sponsored-label-text, [data-component-type="sp-sponsored-result"], [aria-label*="Sponsored" i]';
 
 /** Search-card parser first, category/deal parser second. */
 export function extractProductFromCard(
@@ -69,7 +67,9 @@ export function buildSaveContext(
     const index = cards.indexOf(card);
     if (index >= 0) context.searchPosition = index + 1;
 
-    context.listingCategory = card.querySelector(SPONSORED_HINT_SELECTOR)
+    // SAD-391: one detector for the row's `isSponsored` and the save context's
+    // placement, so a saved snapshot can never disagree with its own row.
+    context.listingCategory = extractCardIsSponsored(card)
       ? 'sponsored'
       : 'organic';
   }

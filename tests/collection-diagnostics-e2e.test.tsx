@@ -149,7 +149,7 @@ describe('SAD-369 step 3: collection diagnostics end-to-end', () => {
     }>;
     expect(reports).toHaveLength(10);
     for (const report of reports) {
-      expect(report.fields).toHaveLength(25);
+      expect(report.fields).toHaveLength(26);
     }
     // Reports belong to THIS run's products, in batch order.
     const productAsins = (payload.products as Array<{ asin: string }>).map(
@@ -254,7 +254,7 @@ describe('SAD-369 step 3: collection diagnostics end-to-end', () => {
     }>;
     expect(reports).toHaveLength(1);
     expect(reports[0]!.asin).toBe('B0DDDDDDDD');
-    expect(reports[0]!.fields).toHaveLength(24); // PDP detail report: 24 (cards are 25 since SAD-393)
+    expect(reports[0]!.fields).toHaveLength(25); // PDP detail report: 25 since SAD-391 (cards are 26: + badge since SAD-393)
   });
 
   it('T29/D8: the cap never applies to a save — a right-click after a capped run still carries its report', async () => {
@@ -295,6 +295,6 @@ describe('SAD-369 step 3: collection diagnostics end-to-end', () => {
       | { asin: string | null; fields: unknown[] }
       | undefined;
     expect(saveReport?.asin).toBe('B0CARD0055');
-    expect(saveReport?.fields).toHaveLength(25);
+    expect(saveReport?.fields).toHaveLength(26);
   });
 });

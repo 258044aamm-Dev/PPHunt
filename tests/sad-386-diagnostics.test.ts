@@ -51,9 +51,9 @@ const CARD = (inner: string) => `
   </div>`;
 
 describe('SAD-386: diagnostics honesty for discount and deal', () => {
-  it('still reports exactly 25 fields (card universe; 24 + badge since SAD-393)', () => {
+  it('still reports exactly 26 fields (card universe: 25 detail fields since SAD-391 + badge since SAD-393)', () => {
     const report = reportFor(CARD(''));
-    const expected = 25;
+    const expected = 26;
     expect(report.fields).toHaveLength(expected);
     expect(CARD_INAPPLICABLE_FIELDS).toHaveLength(4);
   });

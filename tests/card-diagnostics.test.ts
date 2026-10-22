@@ -1,8 +1,8 @@
 /**
  * SAD-369 step 2 (T13–T18) — the per-card diagnostics report.
  *
- * A listing-card parse with a diagnostics sink produces one 25-field report
- * per product (SAD-393: the 24 detail fields + card-only `badge`); the 4 fields a card can never carry are MISSING *with the
+ * A listing-card parse with a diagnostics sink produces one 26-field report
+ * per product (SAD-393: the 25 detail fields + card-only `badge`); the 4 fields a card can never carry are MISSING *with the
  * reason*; the extracted product is byte-identical with and without a sink;
  * and a validator-dropped value honestly shows PARTIAL.
  */
@@ -68,7 +68,7 @@ function byField(report: ExtractionDiagnosticsReport) {
 }
 
 describe('SAD-369 step 2: the card-level diagnostics report', () => {
-  it('a search card produces a 25-field report; the 4 card-inapplicable fields are MISSING with the reason', () => {
+  it('a search card produces a 26-field report; the 4 card-inapplicable fields are MISSING with the reason', () => {
     const card = renderCard(SEARCH_CARD);
     const sink = collectingSink();
 
@@ -81,9 +81,9 @@ describe('SAD-369 step 2: the card-level diagnostics report', () => {
     const report = sink.reports[0]!;
     expect(report.asin).toBe('B0CARDDIAG');
     // D3 as amended by SAD-393: the card report carries the detail
-    // report's 24 modelled fields plus card-only `badge` (25 total) —
-    // built with CARD_DIAGNOSTIC_FIELDS, not build()'s default list.
-    expect(report.fields).toHaveLength(25);
+    // report's 25 modelled fields (SAD-391 added isSponsored) plus card-only
+    // `badge` (26 total) — built with CARD_DIAGNOSTIC_FIELDS, not build()'s default list.
+    expect(report.fields).toHaveLength(26);
 
     const fields = byField(report);
     for (const field of CARD_INAPPLICABLE_FIELDS) {
@@ -119,7 +119,7 @@ describe('SAD-369 step 2: the card-level diagnostics report', () => {
         counts.parseFailed +
         counts.partial +
         counts.unknown,
-    ).toBe(25);
+    ).toBe(26);
     // Every field was looked at (or declared inapplicable) — nothing UNKNOWN.
     expect(counts.unknown).toBe(0);
   });
@@ -141,7 +141,7 @@ describe('SAD-369 step 2: the card-level diagnostics report', () => {
     expect(sink.reports).toHaveLength(0);
   });
 
-  it('a category card produces the same 25-field shape, including the 4 inapplicable rows', () => {
+  it('a category card produces the same 26-field shape, including the 4 inapplicable rows', () => {
     const card = renderCard(CATEGORY_CARD);
     const sink = collectingSink();
 
@@ -153,7 +153,7 @@ describe('SAD-369 step 2: the card-level diagnostics report', () => {
     expect(sink.reports).toHaveLength(1);
     const report = sink.reports[0]!;
     expect(report.asin).toBe('B0CATGDIAG');
-    expect(report.fields).toHaveLength(25);
+    expect(report.fields).toHaveLength(26);
 
     const fields = byField(report);
     expect(fields.get('asin')).toMatchObject({ status: 'EXTRACTED' });

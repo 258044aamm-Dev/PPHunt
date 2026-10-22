@@ -294,6 +294,23 @@ export function resolveProductUrl(
 export const normalizeProductUrl = resolveProductUrl;
 
 /**
+ * SAD-391: whether a product-page URL was reached through a Sponsored
+ * Products click. Verified on live amazon.com search markup (2026-10-21): ad
+ * links carry `sp_csd=<token>` in the query and `/ref=…_sspa` in the path
+ * (organic cards use `/ref=sr_1_N`); the redirect form is `/sspa/click?…`.
+ * Must be applied to the page URL as visited — the stored canonical
+ * `/dp/<ASIN>` URL has none of this and always yields `false`.
+ */
+export function isSponsoredDetailUrl(url: string | null | undefined): boolean {
+  if (!url || typeof url !== 'string') return false;
+  return (
+    /[?&]sp_csd=/.test(url) ||
+    /\/ref=[^/?#]*_sspa\b/.test(url) ||
+    /\/sspa\/click/.test(url)
+  );
+}
+
+/**
  * Normalizes an Amazon image URL without destroying valid regional image paths.
  */
 export function upgradeAmazonImageUrl(rawUrl: string | null | undefined): string {
