@@ -242,6 +242,23 @@ export function cleanBrand(raw: string | null | undefined): string | null {
 
 export const cleanAmazonBrandText = cleanBrand;
 
+/**
+ * SAD-392: Amazon embeds <script>/<style> text inside buybox containers (the
+ * a-state JSON on every PDP `#availability`, the AOD loader on the ticket's
+ * variant, the Prime-signup ingress inside `delivery-recipe`). `textContent`
+ * serializes those bytes into field values. Read text the way the page renders
+ * it: identical to `el.textContent` whenever no script/style/noscript
+ * descendant exists (every captured clean shape), stripped when one does.
+ * Mirrors the Temu engine's `extractTemuElementText`.
+ */
+export function extractAmazonElementText(el: Element | null | undefined): string | null {
+  if (!el) return null;
+  if (!el.querySelector('script, style, noscript')) return el.textContent;
+  const clone = el.cloneNode(true) as Element;
+  clone.querySelectorAll('script, style, noscript').forEach((n) => n.remove());
+  return clone.textContent;
+}
+
 export function cleanAvailability(raw: string | null | undefined): string | null {
   const text = normalizeWhitespace(raw);
   return text || null;

@@ -14,6 +14,7 @@ import {
   cleanAvailability,
   cleanBrand,
   cleanSeller,
+  extractAmazonElementText,
   extractBestImageUrl,
   extractCardPastMonthSales,
   extractCardPricingAndDiscounts,
@@ -1334,7 +1335,10 @@ export function parseAmazonProductDetail(
     for (const selector of AMAZON_SELECTORS.detail.availability) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
-        availability = cleanAvailability(el.textContent);
+        // SAD-392: read text without Amazon's embedded scripts — the buybox
+        // `#availability` div carries an a-state JSON <script> on every PDP,
+        // and the reported variant an AOD loader script next to the message.
+        availability = cleanAvailability(extractAmazonElementText(el));
         if (availability) {
           availabilitySelector = selector;
           break;
