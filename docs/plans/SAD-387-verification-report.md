@@ -152,3 +152,24 @@ npx wxt build           # load dist/chrome-mv3
 Then open the preview table: a row whose stored value is the blob shows
 `Limited time deal` in the Deal cell, in its tooltip, in the expand modal and in
 an exported CSV — and searching `no_of` finds nothing.
+
+## 9. Merge record (landed on `MergeBranch`)
+
+`main` was not the integration target for this fix. The fix landed on
+`MergeBranch`, the branch that already carried `main`'s tip plus SAD-388/389/390/392/393.
+
+| Ref | SHA / value |
+|---|---|
+| `MergeBranch` before | `c379da6` |
+| Phase A (feature branch merged with `MergeBranch`) | `d9dd46a` |
+| Merge into `MergeBranch` | **`3ccf2ce`** — *Merge fix/sad-387-deal-countdown (SAD-387 deal countdown text) into MergeBranch* |
+| `main` | `2ec7eaf` — untouched |
+| Conflicts | 2, both documentation (`CHANGELOG.md`, `ARCHITECTURE.md`), resolved as unions with no section dropped |
+| Code files auto-merged | `field-parsers.ts`, `product-detail.ts`, `columns.tsx`, `AmazonProductTable.tsx` — all 7 call sites verified present after the merge |
+| Gate on the merged tree | `tsc` clean · dead-exports clean · `wxt build` OK (2.05 MB) · **1597 tests / 139 files** · `npm audit --omit=dev` 0 vulnerabilities · manifest sanity OK |
+| CI | [run 39801274468](https://github.com/MakeTheNewHistory/PPHunt/actions/runs/39801274468) — `push` on `MergeBranch`, all 11 steps success |
+
+`.github/workflows/ci.yml` was extended in Phase A to also verify pushes to
+`MergeBranch`; before that change, pushes to that branch ran no CI at all. The
+merge was conflict-free by construction (`c379da6` is an ancestor of the feature
+branch), and the merged tree is byte-identical to the gated feature-branch tree.
