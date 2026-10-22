@@ -4,12 +4,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cleanSeller,
+  createFieldDiagnosticsCollector,
   extractCardDeliveryAndAvailability,
   extractCardSeller,
   extractCleanElementText,
-   parseAmazonCategoryPage,
+  parseAmazonCategoryPage,
+  parseAmazonProductDetail,
   parseAmazonSearchResults,
 } from '@/engines/amazon/scraper';
+import { mergeDetailIntoStored } from '@/engines/amazon/background/enrich-saved-product';
+import { parsePdpHtml } from '@/engines/amazon/offscreen/parse';
+import type { Product } from '@/engines/amazon/types';
 
 function createDoc(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
@@ -194,6 +199,253 @@ describe('SAD-390 Step 2: clean element text, seller normalization, and card del
         </div>
       `).querySelector('[data-asin="B0SELL0002"]')!;
       expect(extractCardSeller(cardWithMoreBuyingChoices)).toBeNull();
+    });
+  });
+
+  describe('SAD-390 Step 3: PDP seller and delivery extraction (ODF, accordion scoping, scripts, JSON-LD, enrichment)', () => {
+    it('extracts 1P seller "Amazon.com" from ODF desktop-merchant-info on verbatim Moli fixture B0G66ZJG3Y', () => {
+      const html = readFixture('pdp-1p-odf-merchant-info.real.html');
+      const doc = createDoc(html);
+      const collector = createFieldDiagnosticsCollector();
+
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B0G66ZJG3Y',
+        collector,
+      );
+      const fields = new Map(
+        collector.build().fields.map((entry) => [entry.field, entry]),
+      );
+
+      expect(product).not.toBeNull();
+      expect(product?.asin).toBe('B0G66ZJG3Y');
+      expect(product?.seller).toBe('Amazon.com');
+      expect(product?.delivery).toBe('FREE delivery Monday, October 26');
+      expect(fields.get('seller')).toMatchObject({
+        status: 'EXTRACTED',
+        source: 'dom',
+        selector:
+          '[offer-display-feature-name="desktop-merchant-info"] .offer-display-feature-text-message',
+      });
+      expect(fields.get('delivery')).toMatchObject({
+        status: 'EXTRACTED',
+        source: 'dom',
+      });
+    });
+
+    it('extracts active 1P seller "Amazon.com" and active delivery instead of collapsed #usedAccordionRow "Amazon Resale" on verbatim Moli fixture B00AHAWWO0', () => {
+      const html = readFixture('pdp-1p-accordion-with-used-row.real.html');
+      const doc = createDoc(html);
+
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B00AHAWWO0',
+      );
+
+      expect(product).not.toBeNull();
+      expect(product?.asin).toBe('B00AHAWWO0');
+      expect(product?.seller).toBe('Amazon.com');
+      expect(product?.delivery).toBe(
+        'FREE delivery Monday, October 26 on orders shipped by Amazon over $35',
+      );
+    });
+
+    it('prefers active 1P accordion row over an inactive accordion row that contains #sellerProfileTriggerId', () => {
+      const doc = createDoc(`
+        <!doctype html>
+        <html>
+          <body>
+            <span id="productTitle">Multi-Accordion Product</span>
+            <div id="corePriceDisplay_desktop_feature_div">
+              <span class="a-price"><span class="a-offscreen">$49.99</span></span>
+            </div>
+            <div id="buyBoxAccordion">
+              <div id="newAccordionRow_0" data-csa-c-is-in-initial-active-row="true">
+                <div id="merchantInfoFeature_feature_div">
+                  <div class="offer-display-feature-text" offer-display-feature-name="desktop-merchant-info">
+                    <span class="offer-display-feature-text-message">Amazon.com</span>
+                  </div>
+                </div>
+              </div>
+              <div id="newAccordionRow_1" data-csa-c-is-in-initial-active-row="false">
+                <a id="sellerProfileTriggerId">RightBox</a>
+              </div>
+            </div>
+            <img id="landingImage" src="https://m.media-amazon.com/images/I/multi._AC_SL1500_.jpg" />
+          </body>
+        </html>
+      `);
+
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B07ZPKN6YR',
+      );
+
+      expect(product?.seller).toBe('Amazon.com');
+    });
+
+    it('extracts seller from #shipFromSoldByAbbreviatedODF_feature_div when #merchantInfoFeature_feature_div is absent', () => {
+      const doc = createDoc(`
+        <!doctype html>
+        <html>
+          <body>
+            <span id="productTitle">Abbreviated ODF Product</span>
+            <div id="corePriceDisplay_desktop_feature_div">
+              <span class="a-price"><span class="a-offscreen">$24.99</span></span>
+            </div>
+            <div id="shipFromSoldByAbbreviatedODF_feature_div">
+              <div class="a-row"><span>Ships from:</span><span>Amazon.com</span></div>
+              <div class="a-row"><span>Sold by:</span><span>Amazon.com</span></div>
+            </div>
+            <img id="landingImage" src="https://m.media-amazon.com/images/I/abbr._AC_SL1500_.jpg" />
+          </body>
+        </html>
+      `);
+
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B00MNV8E0C',
+      );
+
+      expect(product?.seller).toBe('Amazon.com');
+    });
+
+    it('falls back to secondary/Used offer container on Used-only PDPs (#usedOnlyBuybox)', () => {
+      const doc = createDoc(`
+        <!doctype html>
+        <html>
+          <body>
+            <span id="productTitle">AMD Ryzen 9 5900X</span>
+            <div id="usedOnlyBuybox">
+              <div id="usedbuyBox">
+                <a id="sellerProfileTriggerId">Amazon Resale</a>
+                <div id="deliveryBlockMessage">
+                  <div id="mir-layout-DELIVERY_BLOCK">
+                    FREE delivery Tuesday, October 27
+                    <style>.prime-brand-color{color:#0064f9;}</style>
+                    <script type="text/javascript">(function(){ window.P._namespace("udm"); })();</script>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <img id="landingImage" src="https://m.media-amazon.com/images/I/ryzen._AC_SL1500_.jpg" />
+          </body>
+        </html>
+      `);
+
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B09V3KXJPB',
+      );
+
+      expect(product?.seller).toBe('Amazon Resale');
+      expect(product?.delivery).toBe('FREE delivery Tuesday, October 27');
+      expect(product?.delivery).not.toContain('window.P._namespace');
+    });
+
+    it('ignores "Fulfilled by Amazon" anchor inside #merchant-info and extracts the actual seller from #merchant-info text', () => {
+      const doc = createDoc(`
+        <!doctype html>
+        <html>
+          <body>
+            <span id="productTitle">Legacy Merchant Info Product</span>
+            <div id="merchant-info">
+              Sold by Acme Electronics and <a href="/gp/help/customer/display.html">Fulfilled by Amazon</a>.
+            </div>
+            <img id="landingImage" src="https://m.media-amazon.com/images/I/acme._AC_SL1500_.jpg" />
+          </body>
+        </html>
+      `);
+
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B0ACME0001',
+      );
+
+      expect(product?.seller).toBe('Acme Electronics');
+    });
+
+    it('falls back to JSON-LD offers.seller.name when DOM seller node is absent', () => {
+      const doc = createDoc(`
+        <!doctype html>
+        <html>
+          <body>
+            <span id="productTitle">JSON-LD Seller Product</span>
+            <img id="landingImage" src="https://m.media-amazon.com/images/I/jsonld._AC_SL1500_.jpg" />
+            <script type="application/ld+json">
+              {
+                "@type": "Product",
+                "name": "JSON-LD Seller Product",
+                "sku": "B0JSONLD01",
+                "offers": {
+                  "price": 34.99,
+                  "priceCurrency": "USD",
+                  "seller": { "name": "DirectBrand Official" }
+                }
+              }
+            </script>
+          </body>
+        </html>
+      `);
+
+      const collector = createFieldDiagnosticsCollector();
+      const product = parseAmazonProductDetail(
+        doc,
+        'https://www.amazon.com/dp/B0JSONLD01',
+        collector,
+      );
+      const fields = new Map(
+        collector.build().fields.map((entry) => [entry.field, entry]),
+      );
+
+      expect(product?.seller).toBe('DirectBrand Official');
+      expect(fields.get('seller')).toMatchObject({
+        status: 'EXTRACTED',
+        source: 'json-ld',
+      });
+    });
+
+    it('enriches a stored card row with PDP seller and delivery via parsePdpHtml and mergeDetailIntoStored', () => {
+      const html = readFixture('pdp-1p-odf-merchant-info.real.html');
+      const parsed = parsePdpHtml(
+        html,
+        'https://www.amazon.com/dp/B0G66ZJG3Y',
+        'B0G66ZJG3Y',
+      );
+      expect(parsed.ok).toBe(true);
+      if (!parsed.ok) return;
+
+      const stored: Product = {
+        id: 1,
+        asin: 'B0G66ZJG3Y',
+        url: 'https://www.amazon.com/dp/B0G66ZJG3Y',
+        title: 'Philips Sonicare 7300',
+        price: 149.96,
+        currency: 'USD',
+        rating: 4.6,
+        reviewCount: 512,
+        imageUrl: 'https://m.media-amazon.com/images/I/71sonicare._AC_UL320_.jpg',
+        isSponsored: false,
+        isPrime: true,
+        brand: null,
+        availability: null,
+        seller: null,
+        description: null,
+        features: [],
+        source: 'search',
+        collectedAt: '2026-10-22T00:00:00.000Z',
+        sessionKey: 'session_test',
+      };
+
+      const { patch, changedFields } = mergeDetailIntoStored(
+        stored,
+        parsed.product,
+      );
+
+      expect(patch.seller).toBe('Amazon.com');
+      expect(patch.delivery).toBe('FREE delivery Monday, October 26');
+      expect(changedFields).toContain('seller');
+      expect(changedFields).toContain('delivery');
     });
   });
 });

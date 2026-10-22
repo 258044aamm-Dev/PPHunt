@@ -325,7 +325,7 @@ export function cleanSeller(raw: string | null | undefined): string | null {
 
   // Handle combined abbreviated rows: "Ships from: Amazon.com Sold by: Amazon.com"
   const soldByAfterShipsFrom =
-    /\b(?:Sold by|Verkauf durch|Vendu par|Vendido por)\s*:?\s+(.+)$/i.exec(
+    /\b(?:Sold by|Verkauf durch|Vendu par|Vendido por)\s*(?::\s*|\s+)(.+)$/i.exec(
       cleaned,
     );
   if (soldByAfterShipsFrom?.[1] && /\bShips from\b/i.test(cleaned)) {
