@@ -387,9 +387,19 @@ const WARRANTY_WORD_NUMBERS: Readonly<Record<string, number>> = {
  * SAD-349: `<quantity><unit>` inside a warranty cell. Compound spelled numbers
  * are listed first so "twenty-four year" cannot be mis-read as "four year", and
  * the unit alternation accepts every plural/abbrev spelling Amazon uses.
+ *
+ * SAD-393: three narrow extensions, each pinned by the P-W2 probe table:
+ * - the consumed prefix `(?:^|[^\w.,])` (the weight matcher's shape) stops a
+ *   quantity from starting *mid-number* — "1.5 years" used to match the "5"
+ *   and store `5-year`, wrong data rather than missing data;
+ * - `\d{1,3}(?:\.\d+)?` accepts the fraction the seller printed, emitting the
+ *   exact token (`1.5-year`);
+ * - `(5)` accepts the parenthesized digit of "Five (5) Year" / "One (1) Year",
+ *   the form device/tool manufacturers print (the bare word alone fails
+ *   there: the parenthesis blocks the unit).
  */
 const WARRANTY_DURATION_RE =
-  /\b((?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
+  /(?:^|[^\w.,])(\(\s*\d{1,3}\s*\)|(?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
 
 /** Maps each unit spelling onto the one canonical singular form. */
 const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
@@ -409,7 +419,8 @@ const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
 
 /**
  * SAD-349: reduces an Amazon warranty cell to a compact, sortable token
- * (`1-year`, `2-year`, `90-day`, `lifetime`).
+ * (`1-year`, `2-year`, `90-day`, `lifetime`; SAD-393 adds the seller's exact
+ * fraction when printed, e.g. `1.5-year`).
  *
  * Returning `null` when the cell states no coverage period is deliberate and
  * load-bearing. The "Warranty & Support" block on essentially every amazon.com
@@ -428,7 +439,12 @@ const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
 export function normalizeWarrantyDescription(
   raw: string | null | undefined,
 ): string | null {
-  const text = normalizeWhitespace(raw);
+  // SAD-393: fold typographic dashes (U+2010–U+2015, U+2212 — the SAD-386
+  // discount set) to '-' inside THIS function only. Sellers print them
+  // ("2–year", "2 year"); the shared `normalizeWhitespace` stays untouched
+  // so no other field's parsing changes. `warrantyDescriptionRaw` is the
+  // caller's verbatim cell and is not affected.
+  const text = normalizeWhitespace(raw).replace(/[\u2010-\u2015\u2212]/g, '-');
   if (!text) return null;
 
   // "Limited lifetime warranty" states coverage that is not a duration.
@@ -437,9 +453,15 @@ export function normalizeWarrantyDescription(
   const match = WARRANTY_DURATION_RE.exec(text);
   if (!match) return null;
 
-  const quantityText = match[1]!.toLowerCase().replace(/\s+/g, '-');
-  const quantity = /^\d+$/.test(quantityText)
-    ? Number.parseInt(quantityText, 10)
+  // Parentheses belong to the "(5)" form only; stripping them leaves the
+  // plain digit (or word-number) the quantity lookup below already knows.
+  const quantityText = match[1]!
+    .toLowerCase()
+    .replace(/[()]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+  const quantity = /^\d+(?:\.\d+)?$/.test(quantityText)
+    ? Number.parseFloat(quantityText)
     : WARRANTY_WORD_NUMBERS[quantityText];
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
     return null;
@@ -1826,20 +1848,52 @@ export function extractCardPastMonthSales(card: Element): string | undefined {
   return readAmazonPastMonthSales(card).value;
 }
 
-export function extractCardBadge(card: Element): string | undefined {
+/**
+ * SAD-393: the wording this module accepts as a status/recognition badge.
+ * The stored value is always the page's own (whitespace-normalized) text —
+ * this pattern only decides whether a candidate node *is* that badge.
+ */
+const STATUS_BADGE_PATTERN =
+  /best seller|amazon's choice|overall pick|popular|new release|most wished/i;
+
+export interface CardBadgeResult {
+  badge?: string;
+  /**
+   * SAD-393: a non-deal badge candidate with readable text existed but was
+   * refused by the status-badge pattern. Diagnostics only — it is what turns
+   * "Amazon renamed the badge" into a visible PARSE_FAILED instead of a
+   * silent, permanent MISSING (the SAD-383 `nodeSeen` precedent).
+   */
+  nodeSeen: boolean;
+}
+
+export function extractCardBadgeResult(card: Element): CardBadgeResult {
+  let nodeSeen = false;
   for (const selector of AMAZON_SELECTORS.cardFields.statusBadge) {
-    const el = safeQuerySelector(card, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (
-      text &&
-      /best seller|amazon's choice|overall pick|popular|new release|most wished/i.test(
-        text,
-      )
-    ) {
-      return text;
+    // SAD-393: every match, not just the first. `.a-badge-label-inner` is
+    // shared with the deal badge, so a first-match read let a deal node end
+    // the search before the status node was ever considered (live cards
+    // carry both — `docs/plans/SAD-393-fixtures/`).
+    for (const el of safeQuerySelectorAll(card, selector)) {
+      // The deal badge's own subtree is never a status badge, whatever its
+      // text says — the same separation `deal-evidence.ts` enforces in the
+      // other direction.
+      if (el.closest('[data-a-badge-type="deal"]')) continue;
+      const text = normalizeWhitespace(el?.textContent);
+      if (!text) continue;
+      // Amazon prints both apostrophes (U+0027 and U+2019); folding is for
+      // the comparison only, the page's original text is what is stored.
+      if (STATUS_BADGE_PATTERN.test(text.replace(/\u2019/g, "'"))) {
+        return { badge: text, nodeSeen: true };
+      }
+      nodeSeen = true;
     }
   }
-  return undefined;
+  return { nodeSeen };
+}
+
+export function extractCardBadge(card: Element): string | undefined {
+  return extractCardBadgeResult(card).badge;
 }
 
 const DELIVERY_KEYWORD_RE =

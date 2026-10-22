@@ -758,15 +758,22 @@ describe('SAD-359 extraction diagnostics logging', () => {
 
 describe('SAD-384: isolated brand/rank fallback', () => {
   const scope = { scope: 'brand-and-rank' as const };
-  it('changes exactly the two missing fields despite a rich PDP', () => {
+  it('changes exactly brand, rank and (SAD-393) the warranty token despite a rich PDP', () => {
     const stored = storedRow({ brand: null, bestSellersRank: null });
     const result = mergeDetailIntoStored(stored, detail({
       brand: 'Anker', bestSellersRank: '#12 in Chargers',
       features: ['new'], isPrime: true, seller: 'Different seller',
       warrantyDescription: 'New warranty', imageUrl: 'https://example.com/new.jpg',
     }), scope);
-    expect(result.patch).toEqual({ brand: 'Anker', bestSellersRank: '#12 in Chargers' });
-    expect(result.changedFields).toEqual(['brand', 'bestSellersRank']);
+    // features/isPrime/seller/image still cannot leak through this scope;
+    // the warranty token now fills (the fetch already paid for it) and,
+    // this detail carrying no Raw, nothing dangles behind the token.
+    expect(result.patch).toEqual({
+      brand: 'Anker',
+      bestSellersRank: '#12 in Chargers',
+      warrantyDescription: 'New warranty',
+    });
+    expect(result.changedFields).toEqual(['brand', 'bestSellersRank', 'warrantyDescription']);
   });
   it('keeps an existing brand while filling missing BSR', () => {
     expect(mergeDetailIntoStored(storedRow({ brand: 'Listing Brand' }), detail({
@@ -778,5 +785,39 @@ describe('SAD-384: isolated brand/rank fallback', () => {
       .toEqual({ brand: 'Anker' });
     expect(mergeDetailIntoStored(storedRow({ brand: 'Anker' }), detail({ brand }), scope).patch)
       .toEqual({});
+  });
+
+  // SAD-393 step 6a: the warranty pair fills from the already-fetched PDP.
+  it('fills the warranty pair together when the row lacks the token', () => {
+    const result = mergeDetailIntoStored(
+      storedRow({ brand: 'Anker', bestSellersRank: '#1 in Chargers' }),
+      detail({ warrantyDescription: '2-year', warrantyDescriptionRaw: '2 Year Limited Warranty' }),
+      scope,
+    );
+    expect(result.patch).toEqual({
+      warrantyDescription: '2-year',
+      warrantyDescriptionRaw: '2 Year Limited Warranty',
+    });
+    expect(result.changedFields).toEqual(['warrantyDescription', 'warrantyDescriptionRaw']);
+  });
+
+  it('never overwrites a warranty the row already carries', () => {
+    const result = mergeDetailIntoStored(
+      storedRow({ warrantyDescription: '1-year', warrantyDescriptionRaw: '1 Year Limited Warranty' }),
+      detail({ warrantyDescription: '2-year', warrantyDescriptionRaw: '2 Year Limited Warranty' }),
+      scope,
+    );
+    expect(result.patch).toEqual({});
+    expect(result.changedFields).toEqual([]);
+  });
+
+  it('does not write a Raw sentence without its token', () => {
+    const result = mergeDetailIntoStored(
+      storedRow({ brand: 'Anker', bestSellersRank: '#1 in Chargers' }),
+      detail({ warrantyDescriptionRaw: '2 Year Limited Warranty' }),
+      scope,
+    );
+    expect(result.patch).toEqual({});
+    expect(result.changedFields).toEqual([]);
   });
 });

@@ -5,6 +5,56 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Warranty and badge fields (SAD-393)
+
+The **Badge** column was empty on most best sellers and **Warranty
+Description** was missing on whole product families. Live captures
+(`docs/plans/SAD-393-fixtures/`, step-0 evidence doc) showed Amazon moved
+Best Seller badges into an `amazonBadges` rio capsule the selectors never
+matched (14/14 lost, while old-markup "Overall Pick" cards kept working —
+the reported intermittency), and Amazon Devices PDPs publish their warranty
+row as `Warranty and Service` under `#tech`, outside both the container
+walk and the label pattern. A fractional warranty was worse than missing:
+`1.5 years` stored `5-year`.
+
+### Fixed
+- **Status badges are read in both markup generations.** `.rio-badge-label`
+  joins `cardFields.statusBadge`; the extractor scans every match (a deal
+  node sharing `.a-badge-label-inner` can no longer end the search), ignores
+  deal-badge subtrees, and stores the page's label only — never the
+  capsule's supplementary category text. Curly apostrophes match
+  ("Amazon's Choice" with U+2019) while the page's original text is stored.
+- **Amazon Devices warranties are reached.** `#tech` is appended to the
+  warranty container walk and the label pattern accepts `Warranty and
+  Service` (`and|& + support|service`). Kindle → `1-year`, Echo → `90-day`
+  (the included term, not the optional extensions the same cell offers),
+  with the seller's full sentence kept in `warrantyDescriptionRaw`.
+- **Fractional warranties are no longer garbled.** The duration matcher
+  cannot start mid-number, stores the printed fraction (`1.5-year`),
+  accepts parenthesized digits (`Five (5) Year` → `5-year`), and folds
+  typographic dashes inside the warranty normalizer only.
+
+### Added
+- `badge` in card diagnostics (EXTRACTED / PARSE_FAILED when a badge-shaped
+  node carries unknown text / MISSING). Card reports now carry 25 fields
+  (detail 24 + `badge`); PDP reports stay at 24.
+- Parse-cache freshness for the badge family: a card cached before its
+  badge exists is re-read once when badge evidence appears; an extracted
+  badge settles the card. Signature gating and the warm-pass performance
+  contract are unchanged.
+- The collection `brand-and-rank` fallback now also fills a missing
+  warranty pair (fill-only, together) from the product page it already
+  fetched. No extra requests; a missing warranty alone never triggers one.
+
+### Unchanged
+- Everything else: an A/B replay of the six verbatim captures against the
+  pre-fix baseline (`tests/sad-393-parity.test.ts`) proves only `badge` and
+  the warranty pair moved. The weight extractor deliberately keeps its
+  pre-SAD-393 container list, so `#tech` cannot widen it. Lifetime-first
+  and first-duration-wins warranty semantics, all SAD-349 boilerplate
+  rejections, and honest `No` where no duration is published (TOZO/AirPods
+  class) all stand. Temu diff and `src/lib` diff are empty.
+
 ## [Unreleased] — Temu features & description extraction (SAD-381)
 
 Temu products were storing an empty **Features** list and a **Description** that

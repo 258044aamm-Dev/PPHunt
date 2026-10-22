@@ -1,6 +1,7 @@
 import type { ScrapedAmazonProduct } from '../types';
 import { DEAL_LABEL_PATTERN } from './deal-evidence';
-import { readAmazonCoupon, readAmazonPastMonthSales } from './field-parsers';
+import { readAmazonCoupon, readAmazonPastMonthSales, extractCardBadge } from './field-parsers';
+import { AMAZON_SELECTORS, safeQuerySelectorAll } from './selectors';
 
 /**
  * WeakMap-backed DOM Element parse cache (`AmazonParseCache`).
@@ -32,6 +33,14 @@ import { readAmazonCoupon, readAmazonPastMonthSales } from './field-parsers';
  * parser triggers for reviews/pricing below are deliberately unchanged.
  * Unchanged no-signal cards still perform zero extra full parses, with no TTL,
  * timers or observers owned by the cache.
+ *
+ * SAD-393: the status badge (`badge` — Best Seller &c.) joins this lane as a
+ * fill-only target. A late-arriving badge capsule never triggers a full
+ * card re-parse on a settled card; it is filled by `recoverMissingTargets`
+ * alongside coupon and monthly sales. (Live captures show rio badges are
+ * server-rendered in the no-JS HTML, so this guards the measured lazy-card
+ * staleness of the cache itself, not a proven hydration sequence.)
+ */
  */
 interface AmazonParseCacheEntry {
   product: ScrapedAmazonProduct;
@@ -66,6 +75,28 @@ function hasBadgeFamilyFields(product: ScrapedAmazonProduct): boolean {
 function showsPriceFamilyEvidence(element: Element): boolean {
   const text = element.textContent ?? '';
   return text.includes('%') || DEAL_LABEL_PATTERN.test(text);
+}
+
+/** SAD-393: does the stored product already carry its status badge? */
+function hasStatusBadgeField(product: ScrapedAmazonProduct): boolean {
+  return Boolean(product.badge);
+}
+
+/**
+ * SAD-393: does the card now show a status-badge-shaped node? Node presence
+ * under the registry's `statusBadge` selectors, deal-badge subtrees
+ * excluded (a deal arriving is price-family evidence, not badge evidence),
+ * with readable text. Only consulted after the signature moved, so the
+ * query cost lands once per actual DOM change, never on a warm pass.
+ */
+function showsStatusBadgeEvidence(element: Element): boolean {
+  for (const selector of AMAZON_SELECTORS.cardFields.statusBadge) {
+    for (const el of safeQuerySelectorAll(element, selector)) {
+      if (el.closest('[data-a-badge-type="deal"]')) continue;
+      if ((el.textContent ?? '').trim().length > 0) return true;
+    }
+  }
+  return false;
 }
 
 export class AmazonParseCache {
@@ -108,22 +139,31 @@ export class AmazonParseCache {
   /** Fill only missing targets on a path that previously returned a frozen card. */
   private recoverMissingTargets(element: Element, entry: AmazonParseCacheEntry): ScrapedAmazonProduct {
     const product = entry.product;
-    if (product.pastMonthSales && product.coupon) return product;
+    if (product.pastMonthSales && product.coupon && product.badge) return product;
     const text = element.textContent ?? '';
+    const updates: Partial<ScrapedAmazonProduct> = {};
+    let changed = false;
+
     const pastMonthSales = !product.pastMonthSales && /bought/i.test(text)
       ? readAmazonPastMonthSales(element, product.asin).value
       : undefined;
+    if (pastMonthSales !== undefined) { updates.pastMonthSales = pastMonthSales; changed = true; }
+
     const coupon = !product.coupon && /coupon|voucher|rabatt|remise|\b(?:save|apply|clip|get|you\s+pay)\b/i.test(text)
       ? readAmazonCoupon(element, product.asin).value
       : undefined;
-    if (pastMonthSales === undefined && coupon === undefined) return product;
+    if (coupon !== undefined) { updates.coupon = coupon; changed = true; }
+
+    // SAD-393: fill a late-arriving status badge without re-parsing the card.
+    if (!product.badge && showsStatusBadgeEvidence(element)) {
+      const badge = extractCardBadge(element);
+      if (badge) { updates.badge = badge; changed = true; }
+    }
+
+    if (!changed) return product;
     // Do not mutate the object a previous collection batch may still hold:
     // dedup must observe a real change and emit its existing updated batch.
-    entry.product = {
-      ...product,
-      ...(pastMonthSales !== undefined ? { pastMonthSales } : {}),
-      ...(coupon !== undefined ? { coupon } : {}),
-    };
+    entry.product = { ...product, ...updates };
     return entry.product;
   }
 
@@ -133,16 +173,20 @@ export class AmazonParseCache {
   ): ScrapedAmazonProduct | null {
     const entry = this.cache.get(element);
     if (entry) {
-      // SAD-386: do not reopen the settled price family.
+      // SAD-386 + SAD-393: price family AND status badge present — settled.
+      if (
+        hasBadgeFamilyFields(entry.product) &&
+        hasStatusBadgeField(entry.product)
+      ) {
+        return entry.product;
+      }
+      // SAD-386: price family present — fill missing targets (badge included)
+      // via cheap reads, never re-parse for badge alone (badge_in_lane).
       if (hasBadgeFamilyFields(entry.product)) {
         return this.recoverMissingTargets(element, entry);
       }
-      // SAD-383: an unchanged card is never re-parsed.
-      if (this.signatureOf(element) === entry.signature) {
-        return this.recoverMissingTargets(element, entry);
-      }
-      // SAD-383's guarantee: a card that already carries both rating values is
-      // only re-read when the text now shows a badge or a percentage.
+      // SAD-383: ratings complete — re-read only on price-family evidence.
+      // Badge evidence alone fills the badge without re-parsing.
       if (hasRatingFields(entry.product) && !showsPriceFamilyEvidence(element)) {
         return this.recoverMissingTargets(element, entry);
       }

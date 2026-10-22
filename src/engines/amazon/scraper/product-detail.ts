@@ -448,7 +448,7 @@ function extractDetailWeight(
   let dimensionsWeightFallback: string | undefined;
   let dimensionsWeightSelector: string | undefined;
 
-  for (const selector of AMAZON_SELECTORS.detail.warrantyContainers) {
+  for (const selector of AMAZON_SELECTORS.detail.weightContainers) {
     const container = safeQuerySelector(doc, selector);
     if (!container || isInsideExcludedDetailSubtree(container)) continue;
 

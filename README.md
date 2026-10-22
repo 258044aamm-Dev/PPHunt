@@ -260,7 +260,10 @@ MIT
 Manual and Automatic collections fetch missing **Brand** and **Best Sellers Rank**
 from product pages independently of Settings → Collection Enrichment. That switch
 and its 25/50/all limit control additional full details only. Outside that budget,
-only missing brand/rank values are filled; other listing fields are preserved.
+only missing brand/rank values are filled — plus, since SAD-393, a missing
+**Warranty Description** from that same already-fetched product page (no extra
+request, and a missing warranty alone never triggers one); other listing fields
+are preserved.
 When both fields already exist, no fallback request is needed. This means the
 switch being off no longer means zero additional product-page requests.
 

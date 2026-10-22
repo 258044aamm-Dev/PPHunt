@@ -22,9 +22,14 @@ export const AMAZON_SELECTOR_REGISTRY_VERSION = '2.0.0';
  * The pattern is anchored on the whole label so a neighbouring row cannot match
  * by containing the word, and a match alone is never enough to store a value:
  * `normalizeWarrantyDescription` must also find a duration in the cell.
+ *
+ * SAD-393: Amazon Devices PDPs (Kindle/Echo/Fire TV — three live captures,
+ * `docs/plans/SAD-393-fixtures/`) label the row `Warranty and Service`. The
+ * only change is `and|& + support` → `and|& + support|service`; the anchor
+ * and every previously accepted label are untouched.
  */
 export const AMAZON_WARRANTY_LABEL_PATTERN =
-  /^(?:product\s+|manufacturer(?:['\u2019]s)?\s+)?warranty(?:\s+(?:description|details?|policy|type|period|coverage|information|service|support|(?:&|and)\s+support))*\s*:?$/i;
+  /^(?:product\s+|manufacturer(?:['\u2019]s)?\s+)?warranty(?:\s+(?:description|details?|policy|type|period|coverage|information|service|support|(?:&|and)\s+(?:support|service)))*\s*:?$/i;
 
 /**
  * SAD-357: Priority-1 spec-row labels stating the item's own physical mass.
@@ -171,6 +176,33 @@ export const AMAZON_SELECTORS = {
       '#detailBulletsWrapper_feature_div',
       '#productOverview_feature_div',
       '#prodDetails',
+      // SAD-393: Amazon Devices PDPs keep their spec tables (incl. the
+      // `Warranty and Service` row) under `#tech` — live-proven on
+      // Kindle/Echo/Fire TV. Appended last: narrowest-first order and
+      // every existing priority are unchanged.
+      '#tech',
+    ],
+    /**
+     * SAD-357's container walk for the weight waterfall. Identical to
+     * `warrantyContainers` until SAD-393, which appended `#tech` for the
+     * warranty row only: `#tech` also carries `Weight` rows (measured on
+     * the full Echo PDP — post-#tech it began yielding `10.7 oz`), and no
+     * field outside badge/warranty may change behaviour on that account.
+     * Weight therefore keeps walking exactly the pre-SAD-393 list; adding
+     * `#tech` here is a separate, separately-evidenced decision.
+     */
+    weightContainers: [
+      '#productDetails_techSpec_section_1',
+      '#productDetails_techSpec_section_2',
+      '#productDetails_detailBullets_sections1',
+      '#productDetails_db_sections',
+      '#productDetails_expanderTables_depthLeftSections',
+      '#productDetails_expanderTables_depthRightSections',
+      '#productDetails_expanderSectionTables',
+      '[data-feature-name="productDetailsHomeAndGarden_Updated"]',
+      '#detailBulletsWrapper_feature_div',
+      '#productOverview_feature_div',
+      '#prodDetails',
     ],
     twister: {
       inlineRows: 'div[id^="inline-twister-row-"]',
@@ -298,6 +330,12 @@ export const AMAZON_SELECTORS = {
     statusBadge: [
       '[data-component-type="s-status-badge-component"] .a-badge-text',
       '.a-badge-label-inner',
+      // SAD-393: Amazon moved Best Seller badges to the `amazonBadges` capsule
+      // (`data-csa-c-slot-id="amazonBadges-search-badge"`, live captures
+      // 2026-10-21: 14/14 Best Seller cards, `docs/plans/SAD-393-fixtures/`).
+      // The label span only — the sibling `.rio-badge-supplementary-text`
+      // ("in <Category>") repeats the BSR category and is never stored.
+      '.rio-badge-label',
     ],
     coupon: [
       '.s-coupon-unclipped',
