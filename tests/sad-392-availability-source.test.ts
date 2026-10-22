@@ -197,7 +197,7 @@ describe('SAD-392 step 1: diagnostics contract (case 11)', () => {
 describe('SAD-392 step 2: the card stock read (W3) and the leaf fallback (W4)', () => {
   const SEARCH_URL = 'https://www.amazon.com/s?k=aa+batteries';
 
-  it('case 5 (real capture): the full search card parses with availability null and no field changed', () => {
+  it('case 5 (real capture): the full search card parses with availability null; only SAD-390’s delivery cleanup moves', () => {
     const card = fixture('search-card-B09RTVD1GF.real.html');
     const listingDoc = doc(`<!doctype html><html><head></head><body>${card}</body></html>`);
     const products = parseAmazonSearchResults(listingDoc, SEARCH_URL);
@@ -232,12 +232,16 @@ describe('SAD-392 step 2: the card stock read (W3) and the leaf fallback (W4)', 
       pastMonthSales: '100K+ bought in past month',
       badge: 'Overall Pick',
     });
-    // Delivery still carries the Prime-signup CSS+JS blob — that pollution is
-    // SAD-390's field and must NOT change here (D5). Pinned by the measured
-    // edges so any accidental delivery-path edit in this ticket fails.
-    expect(delivery).toHaveLength(1416);
-    expect(delivery?.startsWith('.prime-brand-color {color: #0064f9; }Join Prime(function(f){')).toBe(true);
-    expect(delivery?.endsWith(' FREE delivery Mon, Oct 26 on $35 of items shipped by Amazon')).toBe(true);
+    // Delivery, post-merge: SAD-390 (merged into MergeBranch after this
+    // branch was cut) strips the Prime-signup CSS+JS pollution from the
+    // delivery read, so the dirty 1416-char blob this ticket measured and
+    // handed over (D5) is now a clean 122-char sentence. Re-recorded from
+    // the merged parser's measured output (merge-plan S2). Availability
+    // stays null and every other field of the whole-object pin above is
+    // unchanged — SAD-392 never touched the delivery path.
+    expect(delivery).toBe(
+      'Join Prime to get FREE delivery Fri, Oct 23 Or Non-members get FREE delivery Mon, Oct 26 on $35 of items shipped by Amazon',
+    );
   });
 
   it('case 6: a stock span hosting a <script> yields the clean phrase', () => {
