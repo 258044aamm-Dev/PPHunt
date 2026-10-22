@@ -15,9 +15,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { mergeDetailIntoStored } from '@/engines/amazon/background/enrich-saved-product';
+import { db } from '@/engines/amazon/db/database';
+import { addProducts } from '@/engines/amazon/db/products';
+import { upsertProductFromQuickSave } from '@/engines/amazon/db/quick-save';
 import { parsePdpHtml } from '@/engines/amazon/offscreen/parse';
 import { parseAmazonProductDetail, parseAmazonSearchResults } from '@/engines/amazon/scraper';
+import { mergeScrapedProductFields } from '@/engines/amazon/scraper/dedup';
 import {
   createFieldDiagnosticsCollector,
   type ExtractionDiagnosticsReport,
@@ -26,6 +31,7 @@ import {
   extractAmazonElementText,
   extractCardDeliveryAndAvailability,
 } from '@/engines/amazon/scraper/field-parsers';
+import type { Product, ScrapedAmazonProduct } from '@/engines/amazon/types';
 
 // Same fixture-loading convention as tests/drift-rating-coverage.test.ts (SAD-383).
 const fixture = (name: string): string =>
@@ -240,5 +246,126 @@ describe('SAD-392 step 2: the card stock read (W3) and the leaf fallback (W4)', 
     ).querySelector('div');
     const result = extractCardDeliveryAndAvailability(card!);
     expect(result.availability).toBeNull();
+  });
+});
+
+describe('SAD-392 step 3: Source follows the PDP observation (case 10, D1)', () => {
+  const ASIN = 'B08N5WRWNW';
+  const PRODUCT_URL = 'https://www.amazon.com/dp/B08N5WRWNW';
+  const SESSION = 'oc_1700000000392';
+
+  function scraped(overrides: Partial<ScrapedAmazonProduct> = {}): ScrapedAmazonProduct {
+    return {
+      asin: ASIN,
+      url: PRODUCT_URL,
+      title: 'Anker 65W Charger',
+      price: 19.99,
+      currency: 'USD',
+      rating: 4.5,
+      reviewCount: 1200,
+      source: 'search',
+      ...overrides,
+    } as ScrapedAmazonProduct;
+  }
+
+  function storedRow(overrides: Partial<Product> = {}): Product {
+    return {
+      ...scraped(),
+      sessionKey: SESSION,
+      collectedAt: '2026-10-22T10:00:00.000Z',
+      ...overrides,
+    } as unknown as Product;
+  }
+
+  beforeEach(async () => {
+    await db.delete();
+    await db.open();
+  });
+
+  it('10a: a detail observation promotes source — for every non-detail origin', () => {
+    const target = scraped();
+    const changed = mergeScrapedProductFields(
+      target,
+      scraped({ source: 'detail', availability: TICKET_MESSAGE }),
+    );
+    expect(changed).toBe(true);
+    expect(target.source).toBe('detail');
+    expect(target.availability).toBe(TICKET_MESSAGE);
+
+    // ProductSource is 'search' | 'category' | 'detail' — the rule is exact
+    // for the third value too.
+    const categoryTarget = scraped({ source: 'category' });
+    mergeScrapedProductFields(categoryTarget, scraped({ source: 'detail' }));
+    expect(categoryTarget.source).toBe('detail');
+  });
+
+  it('10b: a listing observation never downgrades a detail row', () => {
+    const target = scraped({ source: 'detail', availability: TICKET_MESSAGE });
+    mergeScrapedProductFields(
+      target,
+      scraped({ source: 'search', availability: 'In Stock' }),
+    );
+    expect(target.source).toBe('detail');
+    // The fill-only availability rule is untouched by this ticket.
+    expect(target.availability).toBe(TICKET_MESSAGE);
+  });
+
+  it('10e (SAD-357 ordering pin): detail variations upgrade AND source promotion both fire', () => {
+    // The promotion sits AFTER the variations block on purpose: that block's
+    // condition reads the pre-promotion `target.source !== 'detail'`, so
+    // promoting first would silently kill the SAD-357 upgrade.
+    const target = scraped({ variations: 'Color: Black' });
+    mergeScrapedProductFields(
+      target,
+      scraped({ source: 'detail', variations: 'Color: Black | Size: 10 Pack' }),
+    );
+    expect(target.variations).toBe('Color: Black | Size: 10 Pack');
+    expect(target.source).toBe('detail');
+  });
+
+  it('10c: addProducts — a PDP re-collection promotes the stored search row', async () => {
+    await addProducts([scraped()], SESSION);
+    await addProducts(
+      [scraped({ source: 'detail', availability: TICKET_MESSAGE })],
+      SESSION,
+    );
+    const row = await db.products
+      .where('[sessionKey+asin]')
+      .equals([SESSION, ASIN])
+      .first();
+    expect(row?.source).toBe('detail');
+    expect(row?.availability).toBe(TICKET_MESSAGE);
+  });
+
+  it('10d: quick-save PDP re-save over a search row promotes source', async () => {
+    await upsertProductFromQuickSave(scraped(), SESSION, {
+      collectedAt: '2026-10-22T10:00:00.000Z',
+    });
+    const result = await upsertProductFromQuickSave(
+      scraped({ source: 'detail', availability: TICKET_MESSAGE }),
+      SESSION,
+      { collectedAt: '2026-10-22T10:05:00.000Z' },
+    );
+    expect(result.created).toBe(false);
+    expect(result.updatedFields).toContain('source');
+    const row = await db.products
+      .where('[sessionKey+asin]')
+      .equals([SESSION, ASIN])
+      .first();
+    expect(row?.source).toBe('detail');
+  });
+
+  it('10f (D1b pin): the enrichment merge never carries source', () => {
+    const stored = storedRow();
+    const { patch, changedFields } = mergeDetailIntoStored(
+      stored,
+      scraped({ source: 'detail', title: 'Anker 65W Charger — PDP title' }),
+    );
+    // The patch works (a detail title lands) — while source stays out of it:
+    // enrichment re-reads a PDP for a row the user already collected, and D1b
+    // keeps provenance on the collection paths only.
+    expect(patch.title).toBe('Anker 65W Charger — PDP title');
+    expect(Object.keys(patch)).not.toContain('source');
+    expect(changedFields).not.toContain('source');
   });
 });
