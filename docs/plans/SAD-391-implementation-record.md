@@ -185,3 +185,17 @@ Landed in two phases, following the SAD-392/SAD-387 precedent (plan:
 - **Behaviour check:** the live `/s?k=laptop` replay (33 rows) is identical
   before and after the merge — Prime 12, Sponsored 17, 0 inline-code leaks,
   0 lost deliveries.
+
+### Merge record (landed on `MergeBranch`)
+
+| | |
+|---|---|
+| `MergeBranch` head before | `36589c3` |
+| Phase A (reconciliation on the feature branch) | `5b344b9` plan · `c33cd82` `Merge MergeBranch into fix/sad-391-prime-sponsored` |
+| Phase B merge commit | `5fa0926` `Merge fix/sad-391-prime-sponsored (SAD-391 Prime and Sponsored fields) into MergeBranch` — parents `36589c3` + `c33cd82`; no conflicts; tree byte-identical to `c33cd82` |
+| `git diff --stat 36589c3..5fa0926` | 36 files, +2880 / −98 |
+| Gate on the merged tree (local) | `tsc` clean · `check:dead-exports` clean · vitest **144 files / 1681 tests, 0 failed** · `wxt build` 2.06 MB · `npm audit --omit=dev` 0 vulnerabilities · manifest sanity OK |
+| Live replay | `/s?k=laptop` capture, 33 rows identical to the branch: Prime 12, Sponsored 17, 0 inline-code leaks, 0 lost deliveries |
+| CI | [run 39807999776](https://github.com/MakeTheNewHistory/PPHunt/actions/runs/39807999776) — `push` on `MergeBranch`, all 11 steps success |
+| `main` | unchanged at `2ec7eaf` |
+| Linear | SAD-391 stays **In Review** (manual browser matrix still open) |
