@@ -60,6 +60,16 @@ function enrichStoredProductFields(
     hasChanges = true;
   }
 
+  // SAD-392 (D1): upgrade-only provenance promotion on the background write
+  // path, mirroring the content-side dedup merge — a row first collected from
+  // a listing follows its PDP observation to 'detail'; a later listing
+  // re-observation never downgrades it. Enrichment (mergeDetailIntoStored)
+  // deliberately stays out of this (D1b).
+  if (incoming.source === 'detail' && existing.source !== 'detail') {
+    patch.source = 'detail';
+    hasChanges = true;
+  }
+
   if (!existing.isPrime && incoming.isPrime) {
     patch.isPrime = true;
     hasChanges = true;

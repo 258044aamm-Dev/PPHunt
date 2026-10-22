@@ -1340,7 +1340,14 @@ export function parseAmazonProductDetail(
     for (const selector of AMAZON_SELECTORS.detail.availability) {
       const el = safeQuerySelector(doc, selector);
       if (el && !isInsideExcludedDetailSubtree(el)) {
-        availability = cleanAvailability(el.textContent);
+        // SAD-392: read text without Amazon's embedded scripts — the buybox
+        // `#availability` div carries an a-state JSON <script> on every PDP,
+        // and the reported variant an AOD loader script next to the message.
+        // Unified (merge plan D-M4) onto SAD-390's `extractCleanElementText`,
+        // a measured superset of SAD-392's retired clone-based stripper: it
+        // also skips hidden/preload/template subtrees and normalizes, which
+        // `cleanAvailability` did downstream anyway.
+        availability = cleanAvailability(extractCleanElementText(el));
         if (availability) {
           availabilitySelector = selector;
           break;
