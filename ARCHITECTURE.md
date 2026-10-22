@@ -363,11 +363,44 @@ similar-items carousel can never answer for the product.
 
 The parse cache never freezes a card before its price family exists. SAD-383
 already treated a card as settled only once `rating`/`reviewCount` were present;
-SAD-386 extends the same rule to `discountPercentage`/`dealBadge`/`listPrice`.
+SAD-386 extends the same rule to `discountPercentage`/`dealBadge`/`listPrice`,
+and SAD-393 to the status badge (`badge`) as its own family alongside — not
+inside — the price-family predicate.
 A card that is not settled is re-read **once per actual DOM change** (its
 subtree signature), and a settled card is re-read only when its text now carries
-a `%` or a deal label — so a badge injected after the first pass is picked up,
+a `%` or a deal label — or, for the badge, when the changed subtree shows a
+status-badge node — so a badge injected after the first pass is picked up,
 and a settled card is never re-parsed otherwise.
+
+#### Status badge and warranty provenance (SAD-393)
+
+`badge` (the **Badge** column) is a listing-card field with two live markup
+generations: the old `s-status-badge-component` (still how "Overall Pick"
+renders) and the `amazonBadges` rio capsule (`.rio-badge-label`, how
+"Best Seller" renders since Amazon's reskin — 14/14 live captures). The
+stored value is the label only; the capsule's supplementary category text
+repeats the BSR category and is never stored. Deal-badge subtrees are
+invisible to the status extractor (and vice versa), and candidate nodes are
+gated by the status vocabulary, apostrophe-folded for comparison only. The
+product-detail parser does not produce `badge` (no PDP specimen has ever
+been captured — listing-only is settled design unless one is), so
+enrichment can never backfill it; `DETAIL_FIELDS` keeps listing it for the
+shared merge, harmlessly.
+
+`warrantyDescription` is a PDP-only field (SAD-349). SAD-393 extends its
+reach to Amazon Devices PDPs: the row lives under `#tech` with the label
+`Warranty and Service` (Kindle/Echo/Fire TV captures). `#tech` is appended
+to `detail.warrantyContainers` **for the warranty walk only** — the weight
+waterfall keeps its own `weightContainers` (the pre-SAD-393 list), because
+`#tech` also carries `Weight` rows and no third field may change on a
+warranty fix. The normalizer stores the seller's exact fraction (`1.5-year`,
+never the pre-fix mid-number garble `5-year`), accepts parenthesized digits
+(`Five (5) Year`), and folds typographic dashes locally; lifetime-first and
+first-duration-wins semantics are unchanged, and a row without a duration
+still stores nothing. Over-budget collection rows whose `brand-and-rank`
+fallback already fetched the PDP also fill the warranty pair (fill-only,
+together) — zero extra requests, and a missing warranty never triggers
+that fetch.
 
 ### 3. Parsing
 
@@ -470,7 +503,9 @@ migration/version bump. "Restore defaults" resets the flag explicitly.
 Diagnostics are a **side channel**. Card and product-detail parsers only
 create collectors when a sink is supplied; the extracted object must remain
 byte-identical with and without that observer. The shared card recorder
-models all 24 fields: **20 card-extractable** fields and **4 card-inapplicable**
+models 25 fields — the detail stage's 24 plus card-only `badge` (SAD-393,
+built with `CARD_DIAGNOSTIC_FIELDS`; PDP reports stay at 24): **21
+card-extractable** fields and **4 card-inapplicable**
 fields (`description`, `features`, `weight`, `warrantyDescription`), which
 are `MISSING` with an explicit card-only reason (D4). Card cascade reports
 carry `tier`, not `selector`. The price cascade's additive

@@ -117,7 +117,7 @@ describe('SAD-369 step 2: the card-icon save path', () => {
       | { asin: string | null; fields: unknown[] }
       | undefined;
     expect(report?.asin).toBe('B0ICONDIAG');
-    expect(report?.fields).toHaveLength(24);
+    expect(report?.fields).toHaveLength(25);
   });
 
   it('sends no diagnostics with the switch off (the default)', async () => {

@@ -73,6 +73,13 @@ const FILL_ONLY_FIELDS = new Set<string>([
 
 export const PRICE_FAMILY = FILL_ONLY_FIELDS;
 
+/**
+ * `'brand-and-rank'` is the persisted collection-fallback scope (SAD-384).
+ * The name is historical and the string is part of the stored job schema:
+ * since SAD-393 the scope's *merge* also fills the warranty pair from the
+ * PDP it already fetched (see `mergeDetailIntoStored`). What triggers the
+ * fetch is unchanged — missing brand/BSR only.
+ */
 export type EnrichmentScope = 'full' | 'brand-and-rank';
 
 export interface EnrichSavedProductInput {
@@ -140,6 +147,24 @@ export function mergeDetailIntoStored(
       if (isDetailValueMissing(stored[field]) && !isDetailValueMissing(next)) {
         patch[field] = next;
         changed.push(field);
+      }
+    }
+    // SAD-393 (step 6a): this fetch already happened for brand/rank and the
+    // parse already produced the warranty — fill the pair instead of
+    // discarding it (probe P-W4). Fill-only, and the pair moves together:
+    // `warrantyDescriptionRaw` is the seller sentence behind the token and
+    // is meaningless without it. A row that already carries a token is left
+    // alone entirely. Eligibility is untouched: a missing warranty never
+    // triggers this scope's fetch, so this adds zero requests.
+    if (
+      isDetailValueMissing(stored.warrantyDescription) &&
+      !isDetailValueMissing(detail.warrantyDescription)
+    ) {
+      patch.warrantyDescription = detail.warrantyDescription;
+      changed.push('warrantyDescription');
+      if (!isDetailValueMissing(detail.warrantyDescriptionRaw)) {
+        patch.warrantyDescriptionRaw = detail.warrantyDescriptionRaw;
+        changed.push('warrantyDescriptionRaw');
       }
     }
     return { patch, changedFields: changed };

@@ -16,8 +16,11 @@ import {
   cleanSeller,
   extractAmazonElementText,
   extractBestImageUrl,
-  extractCardPastMonthSales,
+  readAmazonPastMonthSales,
+  readAmazonCoupon,
+  isAmazonCouponRegion,
   extractCardPricingAndDiscounts,
+  extractCleanElementText,
   formatVariationDimensionsSummary,
   normalizeDiscountBadge,
   normalizeWarrantyDescription,
@@ -58,10 +61,42 @@ function isInsideExcludedDetailSubtree(el: Element): boolean {
   return false;
 }
 
+const SECONDARY_OFFER_SUBTREES = [
+  '#usedBuySection',
+  '#usedAccordionRow',
+  '#usedOnlyBuybox',
+  '#used_buybox_desktop',
+  '#usedbuyBox',
+  '#olpLinkWidget_feature_div',
+  '#moreBuyingChoices_feature_div',
+  '#snsAccordionRowMiddle',
+  '#snsDetailPage',
+  '#buyBoxAccordion [data-csa-c-is-in-initial-active-row="false"]',
+].join(', ');
+
+function isHiddenDetailCandidate(el: Element): boolean {
+  try {
+    return Boolean(
+      el.closest('[hidden], .aok-hidden, .a-hidden, .a-popover-preload'),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isInsideSecondaryOfferSubtree(el: Element): boolean {
+  try {
+    return Boolean(el.closest(SECONDARY_OFFER_SUBTREES));
+  } catch {
+    return false;
+  }
+}
+
 interface JsonLdProductMetadata {
   asin?: string;
   title?: string;
   brand?: string;
+  seller?: string;
   imageUrl?: string;
   description?: string;
   price?: number;
@@ -120,7 +155,10 @@ function extractProductJsonLd(doc: Document): JsonLdProductMetadata {
           result.description = normalizeWhitespace(rec.description);
         }
 
-        const offers = rec.offers as Record<string, unknown> | undefined;
+        const rawOffers = rec.offers;
+        const offers = (
+          Array.isArray(rawOffers) ? rawOffers[0] : rawOffers
+        ) as Record<string, unknown> | undefined;
         if (offers && typeof offers === 'object') {
           const rawPrice = offers.price ?? offers.lowPrice;
           if (
@@ -140,6 +178,19 @@ function extractProductJsonLd(doc: Document): JsonLdProductMetadata {
             isIsoCurrency(offers.priceCurrency)
           ) {
             result.currency = offers.priceCurrency.toUpperCase();
+          }
+          if (!result.seller && offers.seller) {
+            const rawSeller =
+              typeof offers.seller === 'string'
+                ? offers.seller
+                : typeof offers.seller === 'object'
+                  ? ((offers.seller as Record<string, unknown>).name as
+                      | string
+                      | undefined)
+                  : undefined;
+            if (typeof rawSeller === 'string') {
+              result.seller = cleanSeller(rawSeller) ?? undefined;
+            }
           }
         }
 
@@ -398,7 +449,7 @@ function extractDetailWeight(
   let dimensionsWeightFallback: string | undefined;
   let dimensionsWeightSelector: string | undefined;
 
-  for (const selector of AMAZON_SELECTORS.detail.warrantyContainers) {
+  for (const selector of AMAZON_SELECTORS.detail.weightContainers) {
     const container = safeQuerySelector(doc, selector);
     if (!container || isInsideExcludedDetailSubtree(container)) continue;
 
@@ -920,7 +971,8 @@ export function parseAmazonProductDetail(
     // SAD-386 (diagnostics-only): true when `dealBadge` came from evidence
     // (struck list price) rather than from text the page printed.
     let dealBadgeDerived = false;
-    let coupon: string | undefined;
+    const couponResult = readAmazonCoupon(doc, asin);
+    const coupon = couponResult.value;
 
     // SAD-359: pricing provenance. The shared card pricing cascade is not
     // instrumented internally, so at this level "a buybox scope element was
@@ -932,7 +984,6 @@ export function parseAmazonProductDetail(
     let listPriceSelector: string | undefined;
     let discountSelector: string | undefined;
     let dealBadgeSelector: string | undefined;
-    let couponSelector: string | undefined;
 
     for (const scopeSelector of AMAZON_SELECTORS.detail.buyboxScopes) {
       const scopeEl = safeQuerySelector(doc, scopeSelector);
@@ -962,15 +1013,10 @@ export function parseAmazonProductDetail(
         dealBadgeSelector = scopeSelector;
         dealBadgeDerived = scopedPricing.dealBadgeDerived === true;
       }
-      if (coupon === undefined && scopedPricing.coupon !== undefined) {
-        coupon = scopedPricing.coupon;
-        couponSelector = scopeSelector;
-      }
-      // SAD-386: the loop used to stop as soon as ONE scope yielded a price, so
-      // a later scope that carried the savings percentage, the deal badge or the
-      // coupon was never read (`product-detail.ts:957` before this change).
-      // Every field is still first-wins, so the price that wins today still wins;
-      // the loop now stops only when all five fields are settled.
+      // SAD-386: do not stop at the first price; later scopes can carry deals.
+      // SAD-389 reads coupons once with full primary-ASIN ownership above,
+      // rather than borrowing an unrelated descendant of a buybox wrapper.
+      // Prices/list prices/discounts/deals retain their first-wins behavior.
       if (
         price !== null &&
         listPrice !== undefined &&
@@ -1073,7 +1119,7 @@ export function parseAmazonProductDetail(
     if (discountPercentage === undefined) {
       const savEl = safeQuerySelector(doc, savingsSelector);
       if (savEl && !isInsideExcludedDetailSubtree(savEl)) {
-        discountPercentage = normalizeDiscountBadge(savEl.textContent);
+        discountPercentage = isAmazonCouponRegion(savEl) ? undefined : normalizeDiscountBadge(savEl.textContent);
         if (discountPercentage !== undefined) {
           discountSelector = savingsSelector;
         } else {
@@ -1192,66 +1238,26 @@ export function parseAmazonProductDetail(
       diag?.missing('dealBadge', 'no deal badge shown on the page', { source: 'dom' });
     }
 
-    let couponRejectedSelector: string | undefined;
-    if (coupon === undefined) {
-      for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
-        const el = safeQuerySelector(doc, selector);
-        if (!el || isInsideExcludedDetailSubtree(el)) continue;
-        const text = normalizeWhitespace(el.textContent);
-        if (text && /coupon|voucher|rabatt/i.test(text)) {
-          coupon = text.replace(/\s*Terms\s*$/i, '').trim();
-          couponSelector = selector;
-          break;
-        }
-        couponRejectedSelector ??= selector;
-      }
-    }
     if (coupon !== undefined) {
-      diag?.extracted('coupon', { source: 'dom', selector: couponSelector });
-    } else if (couponRejectedSelector) {
-      diag?.parseFailed('coupon', 'coupon-like node present but its text is not a coupon', {
-        selector: couponRejectedSelector,
+      diag?.extracted('coupon', { source: 'dom', selector: couponResult.selector });
+    } else if (couponResult.nodeSeen) {
+      diag?.parseFailed('coupon', 'coupon node present but its offer text did not parse', {
+        selector: couponResult.selector,
       });
     } else {
-      diag?.missing('coupon', 'no coupon shown on the page', { source: 'dom' });
+      diag?.missing('coupon', 'no eligible coupon shown for this product', { source: 'dom' });
     }
 
-    // Past Month Sales
-    const pastMonthSelector =
-      '#social-proofing-faceout-title-tk_bought span, #social-proofing-faceout-title-tk_bought';
-    let pastMonthSales: string | undefined;
-    let pastMonthRejected = false;
-    let pastMonthFromScan = false;
-    const boughtEl = safeQuerySelector(doc, pastMonthSelector);
-    if (boughtEl && !isInsideExcludedDetailSubtree(boughtEl)) {
-      const text = normalizeWhitespace(boughtEl.textContent);
-      const match =
-        /(\d+(?:[.,]\d+)?\s*[KkMm+]?\+?\s*bought in past month)/i.exec(text);
-      if (match?.[1]) {
-        pastMonthSales = match[1].trim();
-      } else {
-        pastMonthRejected = true;
-      }
-    }
-    if (!pastMonthSales && (doc.body || doc.documentElement)) {
-      pastMonthSales = extractCardPastMonthSales(
-        (doc.body ?? doc.documentElement)!,
-      );
-      pastMonthFromScan = pastMonthSales !== undefined;
-    }
+    const salesResult = readAmazonPastMonthSales(doc, asin);
+    const pastMonthSales = salesResult.value;
     if (pastMonthSales !== undefined) {
-      diag?.extracted('pastMonthSales', {
-        source: 'dom',
-        selector: pastMonthFromScan ? '(document text scan)' : pastMonthSelector,
+      diag?.extracted('pastMonthSales', { source: 'dom', selector: salesResult.selector });
+    } else if (salesResult.nodeSeen) {
+      diag?.parseFailed('pastMonthSales', 'monthly-sales node present but its text did not parse', {
+        selector: salesResult.selector,
       });
-    } else if (pastMonthRejected) {
-      diag?.parseFailed(
-        'pastMonthSales',
-        'social-proof node present but the bought-in-past-month pattern did not match',
-        { selector: pastMonthSelector },
-      );
     } else {
-      diag?.missing('pastMonthSales', 'no bought-in-past-month social proof on the page', { source: 'dom' });
+      diag?.missing('pastMonthSales', 'no bought-in-past-month signal for this product', { source: 'dom' });
     }
 
     // Rating & Review count
@@ -1362,16 +1368,26 @@ export function parseAmazonProductDetail(
     let delivery: string | undefined;
     let deliverySelector: string | undefined;
     let deliveryRejectedSelector: string | undefined;
-    for (const selector of AMAZON_SELECTORS.detail.delivery) {
-      const el = safeQuerySelector(doc, selector);
-      if (el && !isInsideExcludedDetailSubtree(el)) {
-        const text = normalizeWhitespace(el.textContent);
-        if (text) {
-          delivery = text;
-          deliverySelector = selector;
-          break;
+    for (const allowSecondaryOffer of [false, true]) {
+      if (delivery !== undefined) break;
+      for (const selector of AMAZON_SELECTORS.detail.delivery) {
+        const els = safeQuerySelectorAll(doc, selector);
+        for (const el of els) {
+          if (isInsideExcludedDetailSubtree(el) || isHiddenDetailCandidate(el)) {
+            continue;
+          }
+          if (!allowSecondaryOffer && isInsideSecondaryOfferSubtree(el)) {
+            continue;
+          }
+          const text = extractCleanElementText(el);
+          if (text) {
+            delivery = text;
+            deliverySelector = selector;
+            break;
+          }
+          deliveryRejectedSelector ??= selector;
         }
-        deliveryRejectedSelector ??= selector;
+        if (delivery !== undefined) break;
       }
     }
     if (delivery !== undefined) {
@@ -1388,25 +1404,50 @@ export function parseAmazonProductDetail(
     let seller: string | null = null;
     let sellerSelector: string | undefined;
     let sellerRejectedSelector: string | undefined;
-    for (const selector of AMAZON_SELECTORS.detail.seller) {
-      const el = safeQuerySelector(doc, selector);
-      if (el && !isInsideExcludedDetailSubtree(el)) {
-        seller = cleanSeller(el.textContent);
-        if (seller) {
-          sellerSelector = selector;
-          break;
+    for (const allowSecondaryOffer of [false, true]) {
+      if (seller) break;
+      for (const selector of AMAZON_SELECTORS.detail.seller) {
+        const els = safeQuerySelectorAll(doc, selector);
+        for (const el of els) {
+          if (isInsideExcludedDetailSubtree(el) || isHiddenDetailCandidate(el)) {
+            continue;
+          }
+          if (!allowSecondaryOffer && isInsideSecondaryOfferSubtree(el)) {
+            continue;
+          }
+          seller = cleanSeller(extractCleanElementText(el));
+          if (seller) {
+            sellerSelector = selector;
+            break;
+          }
+          sellerRejectedSelector ??= selector;
         }
-        sellerRejectedSelector ??= selector;
+        if (seller) break;
       }
     }
-    if (seller) {
+    if (seller && sellerSelector) {
       diag?.extracted('seller', { source: 'dom', selector: sellerSelector });
-    } else if (sellerRejectedSelector) {
-      diag?.parseFailed('seller', 'seller node present but rejected by the field parser', {
-        selector: sellerRejectedSelector,
-      });
-    } else {
-      diag?.missing('seller', 'no seller/merchant node in the fetched HTML', { source: 'dom' });
+    }
+    if (!seller && jsonLd.seller) {
+      seller = jsonLd.seller;
+      if (sellerRejectedSelector) {
+        diag?.rescued(
+          'seller',
+          'seller node present but rejected by the field parser; JSON-LD fallback used',
+          { source: 'json-ld', selector: sellerRejectedSelector },
+        );
+      } else {
+        diag?.extracted('seller', { source: 'json-ld' });
+      }
+    }
+    if (!seller) {
+      if (sellerRejectedSelector) {
+        diag?.parseFailed('seller', 'seller node present but rejected by the field parser', {
+          selector: sellerRejectedSelector,
+        });
+      } else {
+        diag?.missing('seller', 'no seller/merchant node in the fetched HTML', { source: 'dom' });
+      }
     }
 
     // Features

@@ -20,6 +20,10 @@ import {
 } from '@/engines/amazon/utils/diagnostics-flag';
 import { createSingleReportSink } from '@/engines/amazon/scraper/card-diagnostics';
 import { createCollectionDiagnosticsRun } from '@/engines/amazon/content/collection-diagnostics';
+import {
+  AMAZON_COLLECTION_OBSERVER_OPTIONS,
+  isRelevantAmazonCollectionMutation,
+} from '@/engines/amazon/content/collection-mutations';
 import type { ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { validateExtensionMessage } from '@/engines/amazon/schemas/validate-message';
 import { ScrollController } from '@/lib/scraper/scroll-controller';
@@ -334,30 +338,12 @@ export default defineContentScript({
 
       mutationObserver = new MutationObserver((mutations) => {
         if (!isCollecting || currentMode !== 'manual') return;
-        let hasRelevantMutation = false;
-        for (const m of mutations) {
-          if (m.addedNodes.length > 0) {
-            const targetEl =
-              m.target instanceof Element ? m.target : m.target.parentElement;
-            if (
-              targetEl &&
-              (!targetEl.closest('.a-carousel-card') ||
-                Boolean(targetEl.closest('.s-main-slot')))
-            ) {
-              hasRelevantMutation = true;
-              break;
-            }
-          }
-        }
-        if (hasRelevantMutation) {
+        if (mutations.some(isRelevantAmazonCollectionMutation)) {
           debouncedManualScrape.notify();
         }
       });
 
-      mutationObserver.observe(document.body, {
-        childList: true,
-        subtree: true,
-      });
+      mutationObserver.observe(document.body, AMAZON_COLLECTION_OBSERVER_OPTIONS);
     };
 
     const runScrapeBatch = (isNewBatch: boolean): number => {

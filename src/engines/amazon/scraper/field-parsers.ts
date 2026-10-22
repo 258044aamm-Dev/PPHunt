@@ -66,6 +66,8 @@ export interface CardPricingAndDiscounts {
   unparseableDiscountNode?: boolean;
   /** SAD-386 (diagnostics-only): the deal value came from evidence, not a printed badge. */
   dealBadgeDerived?: boolean;
+  /** SAD-389: an eligible coupon node existed but its offer text was rejected. */
+  unparseableCouponNode?: boolean;
 }
 
 const RATING_PATTERNS: readonly RegExp[] = [
@@ -264,18 +266,110 @@ export function cleanAvailability(raw: string | null | undefined): string | null
   return text || null;
 }
 
+const NON_CONTENT_TAG_NAMES = new Set([
+  'SCRIPT',
+  'STYLE',
+  'NOSCRIPT',
+  'TEMPLATE',
+]);
+
+const BLOCK_BOUNDARY_TAG_NAMES = new Set([
+  'DIV',
+  'P',
+  'LI',
+  'TR',
+  'BR',
+]);
+
+function isExcludedCleanTextElement(
+  el: Element,
+  extraExcludeClass?: string,
+): boolean {
+  if (NON_CONTENT_TAG_NAMES.has(el.tagName)) return true;
+  if (el.hasAttribute('hidden')) return true;
+  const cls = el.classList;
+  if (
+    cls &&
+    (cls.contains('aok-hidden') ||
+      cls.contains('a-hidden') ||
+      cls.contains('a-popover-preload') ||
+      (extraExcludeClass !== undefined && cls.contains(extraExcludeClass)))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * SAD-390: Extracts human-visible text from an element without cloning or
+ * mutating the DOM, skipping `<script>`, `<style>`, `<noscript>`, `<template>`,
+ * and hidden/preload subtrees while preserving whitespace across block rows.
+ */
+export function extractCleanElementText(
+  root: Element | null | undefined,
+  extraExcludeClass?: string,
+): string {
+  if (!root || isExcludedCleanTextElement(root, extraExcludeClass)) return '';
+  const parts: string[] = [];
+
+  const walk = (node: Node): void => {
+    if (node.nodeType === 3) {
+      if (node.nodeValue) parts.push(node.nodeValue);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const el = node as Element;
+    if (isExcludedCleanTextElement(el, extraExcludeClass)) return;
+
+    const isBlock = BLOCK_BOUNDARY_TAG_NAMES.has(el.tagName);
+    if (isBlock) parts.push(' ');
+    for (let child = el.firstChild; child; child = child.nextSibling) {
+      walk(child);
+    }
+    if (isBlock) parts.push(' ');
+  };
+
+  for (let child = root.firstChild; child; child = child.nextSibling) {
+    walk(child);
+  }
+
+  return normalizeWhitespace(parts.join(''));
+}
+
 export function cleanSeller(raw: string | null | undefined): string | null {
   const text = normalizeWhitespace(raw);
   if (!text) return null;
 
-  const cleaned = text
-    .replace(/^Ships from and sold by\s+/i, '')
-    .replace(/^Sold by\s+/i, '')
+  let cleaned = text;
+
+  // Handle combined abbreviated rows: "Ships from: Amazon.com Sold by: Amazon.com"
+  const soldByAfterShipsFrom =
+    /\b(?:Sold by|Verkauf durch|Vendu par|Vendido por)\s*(?::\s*|\s+)(.+)$/i.exec(
+      cleaned,
+    );
+  if (soldByAfterShipsFrom?.[1] && /\bShips from\b/i.test(cleaned)) {
+    cleaned = soldByAfterShipsFrom[1];
+  }
+
+  cleaned = cleaned
+    .replace(/^Ships from and sold by\s*:?\s*/i, '')
+    .replace(/^Shipper\s*\/\s*Seller\s*:?\s*/i, '')
+    .replace(/^(?:Sold by|Verkauf durch|Vendu par|Vendido por)\s*:?\s*/i, '')
     .replace(/\s+and\s+Fulfilled by Amazon\.?$/i, '')
+    .replace(/\s*\(\d+\s+used\s*&\s*new\s+offers?\)$/i, '')
     .replace(/\.$/, '')
     .trim();
 
-  return cleaned || null;
+  if (
+    !cleaned ||
+    /^(?:Fulfilled by Amazon|Ships from(?:\s+and\s+sold\s+by)?|Sold by|Shipper\s*\/\s*Seller)$/i.test(
+      cleaned,
+    )
+  ) {
+    return null;
+  }
+
+  return cleaned;
 }
 
 /** SAD-349: spelled-out quantities Amazon writes into warranty cells. */
@@ -310,9 +404,19 @@ const WARRANTY_WORD_NUMBERS: Readonly<Record<string, number>> = {
  * SAD-349: `<quantity><unit>` inside a warranty cell. Compound spelled numbers
  * are listed first so "twenty-four year" cannot be mis-read as "four year", and
  * the unit alternation accepts every plural/abbrev spelling Amazon uses.
+ *
+ * SAD-393: three narrow extensions, each pinned by the P-W2 probe table:
+ * - the consumed prefix `(?:^|[^\w.,])` (the weight matcher's shape) stops a
+ *   quantity from starting *mid-number* — "1.5 years" used to match the "5"
+ *   and store `5-year`, wrong data rather than missing data;
+ * - `\d{1,3}(?:\.\d+)?` accepts the fraction the seller printed, emitting the
+ *   exact token (`1.5-year`);
+ * - `(5)` accepts the parenthesized digit of "Five (5) Year" / "One (1) Year",
+ *   the form device/tool manufacturers print (the bare word alone fails
+ *   there: the parenthesis blocks the unit).
  */
 const WARRANTY_DURATION_RE =
-  /\b((?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
+  /(?:^|[^\w.,])(\(\s*\d{1,3}\s*\)|(?:twenty|thirty|sixty|ninety)[\s-](?:one|two|three|four|five|six|seven|eight|nine)|\d{1,3}(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|eighteen|twenty|thirty|sixty|ninety)[\s-]*(years?|yrs?|months?|mos?|days?|weeks?)\b/i;
 
 /** Maps each unit spelling onto the one canonical singular form. */
 const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
@@ -332,7 +436,8 @@ const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
 
 /**
  * SAD-349: reduces an Amazon warranty cell to a compact, sortable token
- * (`1-year`, `2-year`, `90-day`, `lifetime`).
+ * (`1-year`, `2-year`, `90-day`, `lifetime`; SAD-393 adds the seller's exact
+ * fraction when printed, e.g. `1.5-year`).
  *
  * Returning `null` when the cell states no coverage period is deliberate and
  * load-bearing. The "Warranty & Support" block on essentially every amazon.com
@@ -351,7 +456,12 @@ const WARRANTY_UNIT_CANONICAL: Readonly<Record<string, string>> = {
 export function normalizeWarrantyDescription(
   raw: string | null | undefined,
 ): string | null {
-  const text = normalizeWhitespace(raw);
+  // SAD-393: fold typographic dashes (U+2010–U+2015, U+2212 — the SAD-386
+  // discount set) to '-' inside THIS function only. Sellers print them
+  // ("2–year", "2 year"); the shared `normalizeWhitespace` stays untouched
+  // so no other field's parsing changes. `warrantyDescriptionRaw` is the
+  // caller's verbatim cell and is not affected.
+  const text = normalizeWhitespace(raw).replace(/[\u2010-\u2015\u2212]/g, '-');
   if (!text) return null;
 
   // "Limited lifetime warranty" states coverage that is not a duration.
@@ -360,9 +470,15 @@ export function normalizeWarrantyDescription(
   const match = WARRANTY_DURATION_RE.exec(text);
   if (!match) return null;
 
-  const quantityText = match[1]!.toLowerCase().replace(/\s+/g, '-');
-  const quantity = /^\d+$/.test(quantityText)
-    ? Number.parseInt(quantityText, 10)
+  // Parentheses belong to the "(5)" form only; stripping them leaves the
+  // plain digit (or word-number) the quantity lookup below already knows.
+  const quantityText = match[1]!
+    .toLowerCase()
+    .replace(/[()]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+  const quantity = /^\d+(?:\.\d+)?$/.test(quantityText)
+    ? Number.parseFloat(quantityText)
     : WARRANTY_WORD_NUMBERS[quantityText];
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
     return null;
@@ -946,7 +1062,7 @@ export function scanDiscountNodes(
     if (!rawText || rawText.length > 24 || !rawText.includes('%')) continue;
     const label = `${el.className} ${el.id} ${el.getAttribute('aria-label') ?? ''}`;
     const looksLikeSavings = /saving|discount|percent|\boff\b/i.test(label);
-    const normalized = normalizeDiscountBadge(rawText, {
+    const normalized = isAmazonCouponRegion(el) ? undefined : normalizeDiscountBadge(rawText, {
       allowBare: looksLikeSavings,
     });
     if (normalized) return { value: normalized, nodeSeen };
@@ -1161,7 +1277,7 @@ export function extractCardPricingAndDiscounts(
       // already refuses coupon/currency text.
       const rawText = normalizeWhitespace(el?.textContent);
       if (!rawText || rawText.length > 32) continue;
-      const normalized = normalizeDiscountBadge(rawText);
+      const normalized = isAmazonCouponRegion(el) ? undefined : normalizeDiscountBadge(rawText);
       if (normalized) {
         discountPercentage = normalized;
         break;
@@ -1223,19 +1339,8 @@ export function extractCardPricingAndDiscounts(
     }
   }
 
-  // Coupon (`Save 15% with coupon`, `Save $20.00 with coupon`)
-  let coupon: string | undefined;
-  for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
-    const els = safeQuerySelectorAll(card, selector);
-    for (const el of els) {
-      const text = normalizeWhitespace(el?.textContent);
-      if (text && /coupon|voucher|rabatt|remise/i.test(text)) {
-        coupon = text.replace(/\s*Terms\s*$/i, '').trim();
-        break;
-      }
-    }
-    if (coupon !== undefined) break;
-  }
+  const couponResult = readAmazonCoupon(card);
+  const coupon = couponResult.value;
 
   const result: CardPricingAndDiscounts = {
     price,
@@ -1255,6 +1360,7 @@ export function extractCardPricingAndDiscounts(
     result.unparseableDiscountNode = true;
   }
   if (coupon !== undefined) result.coupon = coupon;
+  else if (couponResult.nodeSeen) result.unparseableCouponNode = true;
   // SAD-369 D9: only meaningful when no tier produced a price — otherwise the
   // observation is noise next to a successfully extracted value.
   if (price === null && unparseablePriceTier !== undefined) {
@@ -1594,34 +1700,221 @@ export function extractCardImageWithTier(
   return { value: null, tier: 'missing' };
 }
 
-export function extractCardPastMonthSales(card: Element): string | undefined {
-  const candidates = safeQuerySelectorAll(card, 'span, div');
-  for (const el of candidates) {
-    if (el.children.length > 1) continue;
-    const text = normalizeWhitespace(el.textContent);
-    const match = PAST_MONTH_SALES_REGEX.exec(text);
-    if (match?.[1]) {
-      return match[1].trim();
+/** Transient parser evidence only; never persisted on the product. */
+interface AmazonSignalResult {
+  value?: string;
+  nodeSeen: boolean;
+  selector?: string;
+}
+
+const SIGNAL_EXCLUDED = [
+  ...AMAZON_SELECTORS.detail.excludedSubtrees,
+  // A title, description or review quoting an offer is not a product signal.
+  'h1', 'h2', '#productTitle', '[data-cy="title-recipe"]',
+  '[id^="title-"]', '[class*="p13n-sc-css-line-clamp"]',
+  '#productDescription', '#feature-bullets', '#customerReviews',
+  '#reviewsMedley', '[data-hook="review"]', '.a-popover-preload',
+].join(',');
+const SIGNAL_HIDDEN = 'script, style, template, noscript, [hidden], .aok-hidden, .a-hidden';
+const COUPON_STRONG = '.s-coupon-unclipped, .couponLabelText, [id^="couponText"], [data-component-type="s-coupon-component"], #couponBadgeRegularVpc, #vpcButton';
+
+/** Semantic coupon text must not become a product discount when it omits "coupon". */
+export function isAmazonCouponRegion(el: Element): boolean {
+  return Boolean(el.closest(COUPON_STRONG) || el.querySelector(COUPON_STRONG));
+}
+
+/**
+ * A card is its own ownership boundary, including when it lives in a carousel.
+ * A Document is a PDP: every ancestor and every different-ASIN subtree matters.
+ * No layout reads: this also works in an offscreen DOMParser document. In
+ * particular aria-hidden alone is NOT proof of invisibility (Amazon uses it
+ * for visible text with a separate accessible equivalent).
+ */
+function signalScope(root: Element | Document, asin?: string) {
+  const owner = asin ?? (root.nodeType === 1 ? normalizeASIN((root as Element).getAttribute('data-asin')) : null);
+  const excluded = (el: Element): boolean => {
+    for (let node: Element | null = el; node; node = node.parentElement) {
+      if (node.matches(SIGNAL_HIDDEN)) return true;
+      const style = (node as HTMLElement).style;
+      if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse') return true;
+      if (node !== root) {
+        if (node.matches(SIGNAL_EXCLUDED)) return true;
+        const nestedAsin = normalizeASIN(node.getAttribute('data-asin'));
+        if (nestedAsin && nestedAsin !== owner) return true;
+      }
+      if (node === root) break;
+    }
+    return false;
+  };
+  return excluded;
+}
+
+/** Bounded, non-mutating text walk. Exclusions apply to descendants too. */
+function cleanSignalText(el: Element, excluded: (el: Element) => boolean, coupon = false): string {
+  const parts: string[] = [];
+  let length = 0;
+  let visited = 0;
+  const visit = (node: Node): void => {
+    if (++visited > 128 || length > 512) return;
+    if (node.nodeType === 3) {
+      const text = node.nodeValue ?? '';
+      parts.push(text);
+      length += text.length;
+    } else if (node.nodeType === 1) {
+      const child = node as Element;
+      if (excluded(child)) return;
+      if (coupon && child.matches('a') && /^(?:shop items|terms(?: and conditions)?|details)$/i.test(normalizeWhitespace(child.textContent))) return;
+      for (const next of child.childNodes) {
+        visit(next);
+        if (visited > 128 || length > 512) break;
+      }
+    }
+  };
+  visit(el);
+  // Never return a truncated offer as though it were complete.
+  return visited > 128 || length > 512 ? '' : normalizeWhitespace(parts.join(' '));
+}
+
+function signalCandidates(root: Element | Document, selector: string): Element[] {
+  const found = safeQuerySelectorAll(root, selector);
+  return root.nodeType === 1 && (root as Element).matches(selector)
+    ? [root as Element, ...found]
+    : found;
+}
+
+/** Shared listing/PDP coupon reader; no coupon-to-price/discount conversion. */
+export function readAmazonCoupon(root: Element | Document, asin?: string): AmazonSignalResult {
+  const excluded = signalScope(root, asin);
+  const seen = new Set<Element>();
+  let rejectedSelector: string | undefined;
+  // One DOM query, retaining the established selector-priority order below.
+  const candidates = signalCandidates(root, AMAZON_SELECTORS.cardFields.coupon.join(','));
+  for (const selector of AMAZON_SELECTORS.cardFields.coupon) {
+    for (const el of candidates) {
+      if (seen.has(el) || !el.matches(selector)) continue;
+      seen.add(el);
+      if (excluded(el)) continue;
+      rejectedSelector ??= selector;
+      const text = cleanSignalText(el, excluded, true)
+        .replace(/\s*(?:shop items\s*(?:[|·]\s*)?)?terms(?: and conditions)?\s*$/i, '')
+        .replace(/\s*(?:shop items|[|·])\s*$/i, '')
+        .trim();
+      if (!text || /\b(?:no coupons?|expired|unavailable)\b/i.test(text)) continue;
+      const hasKeyword = /coupon|voucher|rabatt|remise/i.test(text);
+      const hasOffer = /\d|\bapply\b|\bclip\b/i.test(text);
+      const provenOffer = el.matches(COUPON_STRONG) && /(?:save|apply|get|you pay)\s+(?:[$£€]\s*\d|\d+(?:[.,]\d+)?\s*%)/i.test(text);
+      if ((hasKeyword && hasOffer) || provenOffer) {
+        return { value: text, nodeSeen: true, selector };
+      }
     }
   }
-  return undefined;
+  return { nodeSeen: rejectedSelector !== undefined, selector: rejectedSelector };
+}
+
+/**
+ * Semantic markers first, then short owned elements of a card/main PDP scope.
+ * Never scan the entire PDP body or concatenate an excluded recommendation.
+ */
+export function readAmazonPastMonthSales(root: Element | Document, asin?: string): AmazonSignalResult {
+  // Most cards print no sales signal. Avoid five selector scans on that hot
+  // path, but retain PARSE_FAILED for an explicit empty/loading social-proof
+  // marker. This is only a prefilter, never evidence used as the field value.
+  const textRoot = root.nodeType === 1 ? root : (root as Document).documentElement;
+  if (!/bought/i.test(textRoot?.textContent ?? '') &&
+      !(root.nodeType === 1 && (root as Element).id === 'social-proofing-faceout-title-tk_bought') &&
+      !safeQuerySelector(root, '#social-proofing-faceout-title-tk_bought')) {
+    return { nodeSeen: false };
+  }
+  const excluded = signalScope(root, asin);
+  const seen = new Set<Element>();
+  let rejectedSelector: string | undefined;
+  const read = (el: Element, selector: string, explicit = false): AmazonSignalResult | undefined => {
+    if (seen.has(el)) return;
+    seen.add(el);
+    // Cheap rejection before the bounded text walk, important on large lists.
+    const raw = el.textContent ?? '';
+    if (!explicit && (!/bought/i.test(raw) || raw.length > 512)) return;
+    if (excluded(el)) return;
+    const text = cleanSignalText(el, excluded);
+    if (!explicit && !/bought\s+in\s+past\s+month/i.test(text)) return;
+    rejectedSelector ??= selector;
+    const value = PAST_MONTH_SALES_REGEX.exec(text)?.[1]?.trim();
+    if (value) return { value, nodeSeen: true, selector };
+  };
+  for (const selector of AMAZON_SELECTORS.cardFields.boughtInPastMonth) {
+    for (const el of signalCandidates(root, selector)) {
+      const result = read(el, selector, el.id === 'social-proofing-faceout-title-tk_bought');
+      if (result) return result;
+    }
+  }
+  const scopes = root.nodeType === 1
+    ? [root as Element]
+    : safeQuerySelectorAll(root, AMAZON_SELECTORS.detail.rootContainers.join(','));
+  for (const scope of scopes) {
+    if (excluded(scope)) continue;
+    for (const el of signalCandidates(scope, 'span, div, p, b, strong')) {
+      const result = read(el, '(owned short monthly-sales text)');
+      if (result) return result;
+    }
+  }
+  return { nodeSeen: rejectedSelector !== undefined, selector: rejectedSelector };
+}
+
+/** Compatibility string API for existing callers. */
+export function extractCardPastMonthSales(card: Element): string | undefined {
+  return readAmazonPastMonthSales(card).value;
+}
+
+/**
+ * SAD-393: the wording this module accepts as a status/recognition badge.
+ * The stored value is always the page's own (whitespace-normalized) text —
+ * this pattern only decides whether a candidate node *is* that badge.
+ */
+const STATUS_BADGE_PATTERN =
+  /best seller|amazon's choice|overall pick|popular|new release|most wished/i;
+
+export interface CardBadgeResult {
+  badge?: string;
+  /**
+   * SAD-393: a non-deal badge candidate with readable text existed but was
+   * refused by the status-badge pattern. Diagnostics only — it is what turns
+   * "Amazon renamed the badge" into a visible PARSE_FAILED instead of a
+   * silent, permanent MISSING (the SAD-383 `nodeSeen` precedent).
+   */
+  nodeSeen: boolean;
+}
+
+export function extractCardBadgeResult(card: Element): CardBadgeResult {
+  let nodeSeen = false;
+  for (const selector of AMAZON_SELECTORS.cardFields.statusBadge) {
+    // SAD-393: every match, not just the first. `.a-badge-label-inner` is
+    // shared with the deal badge, so a first-match read let a deal node end
+    // the search before the status node was ever considered (live cards
+    // carry both — `docs/plans/SAD-393-fixtures/`).
+    for (const el of safeQuerySelectorAll(card, selector)) {
+      // The deal badge's own subtree is never a status badge, whatever its
+      // text says — the same separation `deal-evidence.ts` enforces in the
+      // other direction.
+      if (el.closest('[data-a-badge-type="deal"]')) continue;
+      const text = normalizeWhitespace(el?.textContent);
+      if (!text) continue;
+      // Amazon prints both apostrophes (U+0027 and U+2019); folding is for
+      // the comparison only, the page's original text is what is stored.
+      if (STATUS_BADGE_PATTERN.test(text.replace(/\u2019/g, "'"))) {
+        return { badge: text, nodeSeen: true };
+      }
+      nodeSeen = true;
+    }
+  }
+  return { nodeSeen };
 }
 
 export function extractCardBadge(card: Element): string | undefined {
-  for (const selector of AMAZON_SELECTORS.cardFields.statusBadge) {
-    const el = safeQuerySelector(card, selector);
-    const text = normalizeWhitespace(el?.textContent);
-    if (
-      text &&
-      /best seller|amazon's choice|overall pick|popular|new release|most wished/i.test(
-        text,
-      )
-    ) {
-      return text;
-    }
-  }
-  return undefined;
+  return extractCardBadgeResult(card).badge;
 }
+
+const DELIVERY_KEYWORD_RE =
+  /delivery|lieferung|livraison|entrega|consegna|bezorging|dostawa|leverans/i;
 
 export function extractCardDeliveryAndAvailability(card: Element): {
   delivery?: string;
@@ -1642,19 +1935,41 @@ export function extractCardDeliveryAndAvailability(card: Element): {
       availability = stockText;
     }
 
-    const ariaEl = safeQuerySelector(deliveryBlock, '[aria-label]');
-    const ariaText = normalizeWhitespace(
-      ariaEl?.getAttribute('aria-label') || ariaEl?.textContent,
-    );
-    if (ariaText && /delivery|lieferung|livraison|entrega/i.test(ariaText)) {
-      delivery = ariaText;
-    } else if (!availability) {
-      const fallbackText = normalizeWhitespace(deliveryBlock.textContent);
-      if (
-        fallbackText &&
-        /delivery|lieferung|livraison|entrega/i.test(fallbackText)
-      ) {
+    for (const ariaEl of safeQuerySelectorAll(deliveryBlock, '[aria-label]')) {
+      if (ariaEl.closest('.a-color-price')) continue;
+      const ariaText = normalizeWhitespace(
+        ariaEl.getAttribute('aria-label') || extractCleanElementText(ariaEl),
+      );
+      if (ariaText && DELIVERY_KEYWORD_RE.test(ariaText)) {
+        delivery = ariaText;
+        break;
+      }
+    }
+
+    if (!delivery) {
+      const udmBlock =
+        safeQuerySelector(deliveryBlock, '[data-cy="delivery-block"]') ??
+        deliveryBlock;
+      const fallbackText = extractCleanElementText(udmBlock, 'a-color-price');
+      if (fallbackText && DELIVERY_KEYWORD_RE.test(fallbackText)) {
         delivery = fallbackText;
+      }
+    }
+  } else if (
+    DELIVERY_KEYWORD_RE.test(card.textContent ?? '') ||
+    /delivery/i.test(card.innerHTML)
+  ) {
+    for (const selector of AMAZON_SELECTORS.cardFields.delivery) {
+      if (selector.startsWith('[data-cy="delivery-recipe"]')) continue;
+      const el = safeQuerySelector(card, selector);
+      if (!el) continue;
+      const candidateText = normalizeWhitespace(
+        el.getAttribute('aria-label') ||
+          extractCleanElementText(el, 'a-color-price'),
+      );
+      if (candidateText && DELIVERY_KEYWORD_RE.test(candidateText)) {
+        delivery = candidateText;
+        break;
       }
     }
   }
@@ -1684,8 +1999,12 @@ export function extractCardSeller(card: Element): string | null {
     '[data-cy="secondary-offer-recipe"]',
   );
   if (offerBlock) {
-    const text = normalizeWhitespace(offerBlock.textContent);
-    if (/sold by/i.test(text)) {
+    const text = extractCleanElementText(offerBlock);
+    if (
+      /sold by|ships from and sold by|verkauf durch|vendu par|vendido por/i.test(
+        text,
+      )
+    ) {
       return cleanSeller(text);
     }
   }
@@ -1694,7 +2013,11 @@ export function extractCardSeller(card: Element): string | null {
   for (const node of leafNodes) {
     if (node.children.length > 0) continue;
     const text = normalizeWhitespace(node.textContent);
-    if (/^(?:Ships from and sold by|Sold by)\s+.+/i.test(text)) {
+    if (
+      /^(?:Ships from and sold by|Sold by|Verkauf durch|Vendu par|Vendido por)\s*:?\s+.+/i.test(
+        text,
+      )
+    ) {
       const cleaned = cleanSeller(text);
       if (cleaned) return cleaned;
     }
