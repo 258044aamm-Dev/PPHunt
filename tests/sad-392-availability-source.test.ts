@@ -9,17 +9,32 @@
  * bytes into the stored value (1011 chars, reproduced end-to-end in plan
  * §1.1). `extractAmazonElementText` reads text the way the page renders it.
  *
+ * Step 2 pins (cases 5–7): the card stock read uses the same stripped text;
+ * the structurally-safe leaf fallback stays untouched.
+ *
+ * Step 3 pins (case 10a–f, D1): source promotion is upgrade-only, lives in
+ * the two collection-side merges AFTER the SAD-357 variations block, and
+ * never touches enrichment (D1b).
+ *
+ * Step 4 pins (cases 8, 9, 12, D2/D2b): `sanitizeAvailabilityText` recovers
+ * the message from already-stored blobs, and the one-time Dexie v3 upgrade
+ * cleans products + snapshots — writing exactly the polluted rows, never
+ * throwing on malformed ones, and staying idempotent.
+ *
  * Fixtures in docs/plans/SAD-392-fixtures/ are verbatim extracts of the live
  * captures (`real`) or clearly-labelled reproductions of the ticket paste
  * (`reported`) — see the plan §1.2/§1.1 for provenance.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mergeDetailIntoStored } from '@/engines/amazon/background/enrich-saved-product';
-import { db } from '@/engines/amazon/db/database';
+import { db, PPHuntDB } from '@/engines/amazon/db/database';
 import { addProducts } from '@/engines/amazon/db/products';
 import { upsertProductFromQuickSave } from '@/engines/amazon/db/quick-save';
+import { buildCSVContent } from '@/engines/amazon/export/csv';
+import { EXPORT_COLUMNS } from '@/engines/amazon/export/types';
 import { parsePdpHtml } from '@/engines/amazon/offscreen/parse';
 import { parseAmazonProductDetail, parseAmazonSearchResults } from '@/engines/amazon/scraper';
 import { mergeScrapedProductFields } from '@/engines/amazon/scraper/dedup';
@@ -28,10 +43,12 @@ import {
   type ExtractionDiagnosticsReport,
 } from '@/engines/amazon/scraper/extraction-diagnostics';
 import {
+  cleanAvailability,
   extractAmazonElementText,
   extractCardDeliveryAndAvailability,
 } from '@/engines/amazon/scraper/field-parsers';
-import type { Product, ScrapedAmazonProduct } from '@/engines/amazon/types';
+import type { AmazonProduct, Product, ScrapedAmazonProduct } from '@/engines/amazon/types';
+import { sanitizeAvailabilityText } from '@/engines/amazon/utils/availability-text';
 
 // Same fixture-loading convention as tests/drift-rating-coverage.test.ts (SAD-383).
 const fixture = (name: string): string =>
@@ -367,5 +384,246 @@ describe('SAD-392 step 3: Source follows the PDP observation (case 10, D1)', () 
     expect(patch.title).toBe('Anker 65W Charger — PDP title');
     expect(Object.keys(patch)).not.toContain('source');
     expect(changedFields).not.toContain('source');
+  });
+});
+
+/**
+ * The exact value the write-side bug stored for the reported variant:
+ * `cleanAvailability(textContent)` over the fixture's script + bare message
+ * (plan §1.1 B2 — measured 1011 chars through the real parser). Derived from
+ * the fixture at runtime, never hand-typed.
+ */
+function reportedStoredBlob(): string {
+  const value = cleanAvailability(
+    doc(fixture(REPORTED_AOD)).querySelector('#availability')?.textContent ?? null,
+  );
+  expect(value?.startsWith('P.when("A", "load")')).toBe(true); // control: the blob is the stored shape
+  expect(value).toContain(TICKET_MESSAGE);
+  return value!;
+}
+
+describe('SAD-392 step 4: sanitizeAvailabilityText (case 8)', () => {
+  it('recovers the exact message from the ticket blob', () => {
+    const cleaned = sanitizeAvailabilityText(reportedStoredBlob());
+    expect(cleaned).toBe(TICKET_MESSAGE);
+    expect(cleaned).not.toContain('P.when');
+    expect(cleaned!.length).toBeLessThan(200);
+  });
+
+  it('recovers "In Stock" from the live a-state span-less shape', () => {
+    // The real buybox div with the span unwrapped: its stored textContent is
+    // `In Stock {"isInternal":false,…}` (probe C measured this live).
+    const realDiv = fixture(REAL_AVAILABILITY);
+    const unwrapped = realDiv.replace(/<span[^>]*>(\s*In Stock\s*)<\/span>/, '$1');
+    expect(unwrapped).not.toBe(realDiv);
+    const blob = cleanAvailability(
+      doc(unwrapped).querySelector('#availability')?.textContent ?? null,
+    )!;
+    expect(blob).toContain('{"isInternal"');
+    expect(sanitizeAvailabilityText(blob)).toBe('In Stock');
+  });
+
+  it('returns clean messages byte-identical (fast path)', () => {
+    for (const clean of [
+      'In Stock',
+      'Only 5 left in stock',
+      'Temporarily out of stock',
+      'Currently unavailable',
+      'Auf Lager',
+      TICKET_MESSAGE,
+    ]) {
+      expect(sanitizeAvailabilityText(clean)).toBe(clean);
+    }
+  });
+
+  it('maps null/empty/whitespace to null', () => {
+    expect(sanitizeAvailabilityText(null)).toBeNull();
+    expect(sanitizeAvailabilityText(undefined)).toBeNull();
+    expect(sanitizeAvailabilityText('')).toBeNull();
+    expect(sanitizeAvailabilityText('   ')).toBeNull();
+  });
+
+  it('collapses script-only values with no message to null', () => {
+    const scriptOnly =
+      doc(fixture(REPORTED_AOD)).querySelector('#availability script')?.textContent ?? '';
+    expect(scriptOnly.length).toBeGreaterThan(0);
+    expect(sanitizeAvailabilityText(scriptOnly)).toBeNull();
+    expect(
+      sanitizeAvailabilityText('{"isInternal":false,"asin":"B087GMJXMC"}'),
+    ).toBeNull();
+  });
+});
+
+describe('SAD-392 step 4: the Dexie v3 migration (case 9)', () => {
+  const LEGACY_NAME = 'PPHuntSad392MigrationTest';
+  const CLEAN_NAME = 'PPHuntSad392CleanRerunTest';
+  const SESSION_M = 'session-sad392-migration';
+
+  function legacyProduct(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      asin: 'B0MIGRATE01',
+      url: 'https://www.amazon.com/dp/B0MIGRATE01',
+      title: 'Migration Test Product',
+      price: 19.99,
+      currency: 'USD',
+      collectedAt: '2026-10-20T10:00:00.000Z',
+      sessionKey: SESSION_M,
+      source: 'detail',
+      ...overrides,
+    };
+  }
+
+  function legacySnapshot(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      asin: 'B0MIGRATE01',
+      sessionKey: SESSION_M,
+      jobId: 'job-sad392',
+      source: 'listing',
+      capturedAt: '2026-10-20T10:05:00.000Z',
+      price: 19.99,
+      currency: 'USD',
+      ...overrides,
+    };
+  }
+
+  /** Seeds a v2-era database (the schema before this ticket) and closes it. */
+  async function seedLegacy(name: string): Promise<Dexie> {
+    const legacy = new Dexie(name);
+    legacy.version(1).stores({
+      products: '++id, asin, sessionKey, collectedAt, [sessionKey+asin]',
+      sessions: 'id, tabId, status, startedAt, updatedAt',
+      history: '++id, sessionKey, startedAt, completedAt, status',
+      settings: 'id',
+    });
+    legacy.version(2).stores({
+      snapshots: '++id, asin, sessionKey, capturedAt, [asin+capturedAt]',
+    });
+    await legacy.open();
+    return legacy;
+  }
+
+  afterEach(async () => {
+    await Dexie.delete(LEGACY_NAME);
+    await Dexie.delete(CLEAN_NAME);
+  });
+
+  it('cleans polluted products and snapshots once — never throws, never touches clean rows', async () => {
+    const legacy = await seedLegacy(LEGACY_NAME);
+    const garbageId = (await legacy
+      .table('products')
+      .add(legacyProduct({ availability: reportedStoredBlob() }))) as number;
+    const cleanId = (await legacy
+      .table('products')
+      .add(legacyProduct({ availability: 'In Stock' }))) as number;
+    const nullId = (await legacy
+      .table('products')
+      .add(legacyProduct({ availability: null }))) as number;
+    const noKeyId = (await legacy.table('products').add(legacyProduct())) as number;
+    const malformedId = (await legacy
+      .table('products')
+      .add(legacyProduct({ availability: 42 }))) as number;
+    const snapId = (await legacy
+      .table('snapshots')
+      .add(legacySnapshot({ availability: reportedStoredBlob() }))) as number;
+    legacy.close();
+
+    const upgraded = new PPHuntDB(LEGACY_NAME);
+    // Write counters double as the control that hooks fire during the
+    // upgrade: exactly the two polluted rows may be written.
+    let productWrites = 0;
+    let snapshotWrites = 0;
+    upgraded.products.hook('updating', () => {
+      productWrites += 1;
+    });
+    upgraded.snapshots.hook('updating', () => {
+      snapshotWrites += 1;
+    });
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(3);
+    expect((await upgraded.products.get(garbageId))?.availability).toBe(TICKET_MESSAGE);
+    expect((await upgraded.snapshots.get(snapId))?.availability).toBe(TICKET_MESSAGE);
+    expect(productWrites).toBe(1);
+    expect(snapshotWrites).toBe(1);
+
+    // Clean, null and malformed rows are byte-identical, every other field
+    // (id, collectedAt, sessionKey, …) untouched.
+    expect(await upgraded.products.get(cleanId)).toEqual({
+      id: cleanId,
+      ...legacyProduct({ availability: 'In Stock' }),
+    });
+    expect(await upgraded.products.get(nullId)).toEqual({
+      id: nullId,
+      ...legacyProduct({ availability: null }),
+    });
+    expect(await upgraded.products.get(malformedId)).toEqual({
+      id: malformedId,
+      ...legacyProduct({ availability: 42 }), // survives, never throws
+    });
+    const noKey = await upgraded.products.get(noKeyId);
+    expect(noKey).toEqual({ id: noKeyId, ...legacyProduct() });
+    expect(noKey ? 'availability' in noKey : true).toBe(false); // key never added
+    upgraded.close();
+
+    // Re-open: the v3 database runs no upgrade and performs zero writes;
+    // values are stable (idempotent).
+    const reopened = new PPHuntDB(LEGACY_NAME);
+    let reopenWrites = 0;
+    reopened.products.hook('updating', () => {
+      reopenWrites += 1;
+    });
+    reopened.snapshots.hook('updating', () => {
+      reopenWrites += 1;
+    });
+    await reopened.open();
+    expect(reopened.verno).toBe(3);
+    expect(reopenWrites).toBe(0);
+    expect((await reopened.products.get(garbageId))?.availability).toBe(TICKET_MESSAGE);
+    expect((await reopened.products.get(cleanId))?.availability).toBe('In Stock');
+    expect((await reopened.snapshots.get(snapId))?.availability).toBe(TICKET_MESSAGE);
+    reopened.close();
+  });
+
+  it('a v2 database whose values are already clean upgrades with zero row writes', async () => {
+    const legacy = await seedLegacy(CLEAN_NAME);
+    await legacy
+      .table('products')
+      .add(legacyProduct({ availability: TICKET_MESSAGE }));
+    await legacy.table('products').add(legacyProduct({ availability: 'In Stock' }));
+    await legacy.table('snapshots').add(legacySnapshot({ availability: TICKET_MESSAGE }));
+    legacy.close();
+
+    const upgraded = new PPHuntDB(CLEAN_NAME);
+    let writes = 0;
+    upgraded.products.hook('updating', () => {
+      writes += 1;
+    });
+    upgraded.snapshots.hook('updating', () => {
+      writes += 1;
+    });
+    await upgraded.open();
+    expect(upgraded.verno).toBe(3); // the upgrade DID run (2 → 3)
+    expect(writes).toBe(0); // …and wrote nothing: the fast path is a no-op
+    expect(await upgraded.products.count()).toBe(2);
+    expect(await upgraded.snapshots.count()).toBe(1);
+    upgraded.close();
+  });
+});
+
+describe('SAD-392 step 4: export pin (case 12)', () => {
+  it('a migrated row exports the clean message through the Availability column', () => {
+    // Post-migration data is clean at rest and no read hooks exist (D2), so
+    // the export must show the recovered message verbatim.
+    const cleaned = sanitizeAvailabilityText(reportedStoredBlob());
+    expect(cleaned).toBe(TICKET_MESSAGE); // control: this is the migrated value
+
+    expect(EXPORT_COLUMNS.Availability).toBe('availability');
+    const row = { asin: 'B0MIGRATE01', availability: cleaned } as unknown as AmazonProduct;
+    const csv = buildCSVContent([row], ['Availability'], false);
+    const [header, line] = csv.split('\n');
+    expect(header).toBe('Availability');
+    // Unquoted cell: the message holds periods but no comma/quote/newline,
+    // so escapeCSVCell passes it through verbatim.
+    expect(line).toBe(TICKET_MESSAGE);
   });
 });
