@@ -7,7 +7,8 @@
  * ticket's variant swaps the span for an AOD asset-loader <script> with the
  * delivery message as a bare text sibling. `el.textContent` serialized those
  * bytes into the stored value (1011 chars, reproduced end-to-end in plan
- * §1.1). `extractAmazonElementText` reads text the way the page renders it.
+ * §1.1). `extractCleanElementText` (SAD-390's stripper, unified per merge
+ * plan D-M4) reads text the way the page renders it.
  *
  * Step 2 pins (cases 5–7): the card stock read uses the same stripped text;
  * the structurally-safe leaf fallback stays untouched.
@@ -44,8 +45,8 @@ import {
 } from '@/engines/amazon/scraper/extraction-diagnostics';
 import {
   cleanAvailability,
-  extractAmazonElementText,
   extractCardDeliveryAndAvailability,
+  extractCleanElementText,
 } from '@/engines/amazon/scraper/field-parsers';
 import type { AmazonProduct, Product, ScrapedAmazonProduct } from '@/engines/amazon/types';
 import { sanitizeAvailabilityText } from '@/engines/amazon/utils/availability-text';
@@ -89,11 +90,19 @@ function fieldMap(report: ExtractionDiagnosticsReport): Map<string, (typeof repo
   return new Map(report.fields.map((entry) => [entry.field, entry]));
 }
 
-describe('SAD-392 step 1: extractAmazonElementText (DOM helper)', () => {
-  it('is byte-identical to textContent when no script/style/noscript exists', () => {
+describe('SAD-392 step 1 (unified): extractCleanElementText (DOM helper)', () => {
+  // Unified per merge plan D-M4: SAD-392's clone-based
+  // `extractAmazonElementText` was retired in favour of SAD-390's walk-based
+  // `extractCleanElementText`, a measured superset (U2 matrix: 1263 elements
+  // across every committed fixture of SAD-389/390/392/393; every divergence
+  // in a designed class — hidden/preload/template skips, block-boundary
+  // spacing, root script/style exclusion). The superset normalizes
+  // whitespace and maps empty input to ''; `cleanAvailability` normalized
+  // anyway, so every stored availability value is byte-identical — the
+  // end-to-end pins below (cases 1–11) are untouched.
+  it('reads only the rendered text of a clean shape, whitespace-normalized', () => {
     const el = doc('<div id="availability"><span> In Stock </span><br></div>').querySelector('div');
-    expect(extractAmazonElementText(el)).toBe(el?.textContent ?? null);
-    expect(extractAmazonElementText(el)).toBe(' In Stock ');
+    expect(extractCleanElementText(el)).toBe('In Stock');
   });
 
   it('strips script, style and noscript descendants, keeping rendered text', () => {
@@ -101,12 +110,12 @@ describe('SAD-392 step 1: extractAmazonElementText (DOM helper)', () => {
       `<div>Only 5 left in stock<script>P.when("A");</script><style>.x{color:#fff}</style>` +
         `<noscript>Enable JavaScript</noscript> — order now</div>`,
     ).querySelector('div');
-    expect(extractAmazonElementText(el)).toBe('Only 5 left in stock — order now');
+    expect(extractCleanElementText(el)).toBe('Only 5 left in stock — order now');
   });
 
-  it('is null-safe', () => {
-    expect(extractAmazonElementText(null)).toBeNull();
-    expect(extractAmazonElementText(undefined)).toBeNull();
+  it('is empty-safe', () => {
+    expect(extractCleanElementText(null)).toBe('');
+    expect(extractCleanElementText(undefined)).toBe('');
   });
 });
 

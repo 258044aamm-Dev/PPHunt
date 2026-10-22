@@ -326,12 +326,16 @@ Amazon embeds non-rendered nodes inside buybox containers: an `a-state` JSON
 delivery-restricted variant hosts an AOD asset-loader `<script>` next to the
 message. A raw `textContent` read serializes those bytes into the field — the
 reported row stored a 1011-character blob of `P.when(…)` code ahead of the real
-message. Availability reads therefore go through `extractAmazonElementText` in
-[`field-parsers.ts`](src/engines/amazon/scraper/field-parsers.ts): byte-identical
-to `textContent` whenever the element hosts no `script`/`style`/`noscript`
-descendant (every captured clean shape — that identity is why working extractions
-did not move), and read from a detached clone with those nodes stripped when one
-exists. Both the product-page availability loop (all three selectors, including
+message. Availability reads therefore go through SAD-390's
+`extractCleanElementText` in
+[`field-parsers.ts`](src/engines/amazon/scraper/field-parsers.ts) — merging
+SAD-392 into MergeBranch unified the two tickets' strippers: SAD-392's
+clone-based `extractAmazonElementText` was retired in favour of the walk-based
+survivor, a measured superset (it also skips `hidden`/`aok-hidden`/`a-hidden`/
+popover-preload/`template` subtrees, spaces block boundaries and normalizes,
+which the downstream `cleanAvailability` did anyway — equivalence measured
+element-wise over every committed fixture of both tickets). Both the
+product-page availability loop (all three selectors, including
 the `#outOfStock` fallback) and the listing card's stock read use it; the card's
 leaf-node fallback reads only childless nodes and is structurally immune — left
 untouched. Rows stored before this rule are cleaned **once** by database v3 (see

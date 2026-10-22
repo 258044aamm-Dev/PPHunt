@@ -18,12 +18,15 @@ first-write-wins, so a row first collected from a listing stayed `search` even
 after its product page was read.
 
 ### Fixed
-- **Availability reads the rendered page, not serialized scripts.** A new
-  `extractAmazonElementText` (mirroring the Temu engine's stripper) is used by
-  the product-page availability loop and the listing card's stock read:
-  byte-identical to `textContent` whenever no `script`/`style`/`noscript`
-  descendant exists — every captured clean shape is unchanged — and stripped
-  via a detached clone when one does. The reported variant now stores exactly
+- **Availability reads the rendered page, not serialized scripts.** The
+  product-page availability loop and the listing card's stock read go through
+  SAD-390's `extractCleanElementText`: merging into MergeBranch unified the
+  two tickets' strippers (SAD-392 shipped a clone-based
+  `extractAmazonElementText`, retired here — the walk-based survivor is a
+  measured superset, proven element-wise over every committed fixture of both
+  tickets, whose extra hidden/preload skips and block-boundary spacing cannot
+  reach a stored value). `script`/`style`/`noscript` bytes are never
+  serialized into the field. The reported variant now stores exactly
   `This item cannot be shipped to your selected delivery location. Please
   choose a different delivery location.`
 - **Source follows the PDP observation — upgrade-only.** The content-side

@@ -11,8 +11,8 @@
  *
  * Used ONLY by the one-time Dexie v3 upgrade (`db/database.ts`) and its
  * tests — not at write time (the write side removes the cause at the DOM via
- * `extractAmazonElementText`) and not at read/display time (D2 chose a
- * migration over read hooks). Pure, DOM-free, never throws.
+ * the unified `extractCleanElementText` read) and not at read/display time
+ * (D2 chose a migration over read hooks). Pure, DOM-free, never throws.
  */
 
 /**
