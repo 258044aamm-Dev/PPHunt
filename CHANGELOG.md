@@ -5,6 +5,43 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — The Deal field shows the page's own text (SAD-387)
+
+A card could show, instead of a deal message, Amazon's countdown template:
+
+> Limited time deal NO_OF_HOURS hours NO_OF_MINUTES minutes Limited time deal
+> NO_OF_MINUTES minutes Limited time deal NO_OF_MINUTES minutes NO_OF_SECONDS
+> seconds Limited time deal NO_OF_SECONDS seconds Limited time deal
+
+217 characters: the label five times plus six `NO_OF_*` placeholders. Amazon
+renders the badge as **one label per countdown granularity** and leaves the i18n
+templates in the markup, so a single `textContent` read concatenates all of them.
+
+### Fixed
+- **The Deal field holds the page's own wording.** Template segments are dropped
+  and exact repeats collapse, so the same card now stores `Limited time deal`.
+  Nothing is mapped to a constant: a page that really printed numbers keeps them
+  (`Ends in 15:00:26`, `2 hours 15 minutes`), and different variants are kept.
+- **Rows saved before this change are cleaned where they are shown** — the table
+  cell, its tooltip and expand modal, CSV/Excel/clipboard export, and table
+  search. The stored row is not rewritten.
+
+### Changed
+- The rule is applied on every write path: the search/category card, the
+  ad-attributes `dealString`, the product page's badge scan and the bounded
+  evidence scan, so no workflow can store the template.
+- The same rule runs when a stored value is **shown**, so rows saved before this
+  change display correctly without being rewritten: the table cell (its tooltip
+  and expand modal follow), CSV/Excel/clipboard export, and table search — which
+  now matches the label instead of the placeholder tokens.
+
+### Unchanged
+- Any badge without a `NO_OF_*` template keeps its exact bytes, including
+  `Limited time deal`, `Prime Big Deal` and `Amazon's Choice`.
+- The countdown badge (`Ends in 15:00:26`) already parsed correctly and still
+  does; the fix adds no vocabulary.
+- Temu: untouched.
+
 ## [Unreleased] — Availability holds the page's message; Source follows the PDP (SAD-392)
 
 Amazon product pages could store their own embedded script text as

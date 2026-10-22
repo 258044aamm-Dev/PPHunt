@@ -1,5 +1,6 @@
 import type { EnabledFieldsConfig } from '../types';
 import type { AmazonProduct } from '../types/product';
+import { dealBadgeForDisplay } from '../utils/deal-text';
 import {
   formatListingCategoryLabel,
   resolveListingCategory,
@@ -60,7 +61,8 @@ export const EXPORT_COLUMNS: Record<
   Price: 'price',
   'List Price': 'listPrice',
   Discount: (p) => p.discountPercentage || 'No',
-  Deal: (p) => p.dealBadge || 'No',
+  // SAD-387: same read-time cleanup as the table cell.
+  Deal: (p) => dealBadgeForDisplay(p.dealBadge) || 'No',
   Currency: 'currency',
   Rating: 'rating',
   Reviews: 'reviewCount',

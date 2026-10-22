@@ -12,6 +12,7 @@ import {
   upgradeAmazonImageUrl,
 } from '../utils/amazon-url';
 import { isIsoCurrency, resolvePageCurrency } from '../utils/currency';
+import { sanitizeDealBadge } from '../utils/deal-text';
 import { parsePrice, parsePriceFromElements } from '../utils/price-parser';
 import {
   DEAL_LABEL_PATTERN,
@@ -1293,7 +1294,9 @@ export function extractCardPricingAndDiscounts(
   for (const selector of AMAZON_SELECTORS.cardFields.dealBadge) {
     const els = safeQuerySelectorAll(card, selector);
     for (const el of els) {
-      const text = normalizeWhitespace(el?.textContent);
+      // SAD-387: Amazon leaves its countdown i18n templates in this text, so the
+      // badge can read "Limited time deal NO_OF_HOURS hours ..." five times over.
+      const text = sanitizeDealBadge(normalizeWhitespace(el?.textContent));
       // SAD-386: one shared vocabulary (was duplicated with the PDP path).
       if (text && DEAL_LABEL_PATTERN.test(text)) {
         dealBadge = text;
@@ -1306,7 +1309,9 @@ export function extractCardPricingAndDiscounts(
   if (dealBadge === undefined) {
     const adProps = parseAsinAdAttributesProps(card);
     if (adProps?.dealString) {
-      dealBadge = adProps.dealString;
+      // SAD-387: the ad payload is the same class of source and can carry the
+      // same template.
+      dealBadge = sanitizeDealBadge(adProps.dealString);
     }
   }
 

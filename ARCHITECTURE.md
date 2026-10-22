@@ -341,6 +341,23 @@ leaf-node fallback reads only childless nodes and is structurally immune — lef
 untouched. Rows stored before this rule are cleaned **once** by database v3 (see
 Database Schema): a migration, not display-time hooks.
 
+#### The Deal text comes from the page (SAD-387)
+
+[`deal-text.ts`](src/engines/amazon/utils/deal-text.ts) owns one rule: the stored
+Deal value is the page's own wording. Amazon renders a deal badge as one label per
+countdown granularity (hours, minutes twice for the plural/singular branches,
+seconds twice) and leaves its i18n templates (`NO_OF_MINUTES`) in the markup, so a
+single `textContent` read produced a 217-character blob repeating the label five
+times. The rule drops those template segments and folds exact repeats, and it
+changes nothing else — a substituted `Ends in 15:00:26` or `2 hours 15 minutes`
+is kept as printed, and text with no template is returned byte for byte.
+
+The module lives in `utils/`, not `scraper/`, because it runs on **both** sides:
+every write path (card loop, ad-attributes `dealString`, product-page badge scan,
+bounded evidence scan) and every read path (table cell, expand modal, export,
+table search). `dealBadge` is a fill-only field, so a row saved before this rule
+existed is cleaned when it is shown rather than rewritten — no migration.
+
 #### Deal and discount evidence (SAD-386)
 
 The two price-adjacent badge fields are read from **one** place:

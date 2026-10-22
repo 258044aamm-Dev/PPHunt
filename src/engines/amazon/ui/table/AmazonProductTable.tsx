@@ -12,6 +12,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { CellExpandModal, type ExpandedCellPayload } from '@/entrypoints/sidepanel/components/CellExpandModal';
+import { dealBadgeForDisplay } from '../../utils/deal-text';
 import { useConfirmDialog } from '@/entrypoints/sidepanel/components/ConfirmDialog';
 import { TableToolbar } from '@/entrypoints/sidepanel/components/TableToolbar';
 import { sortProducts } from '@/lib/sorting/product-sorter';
@@ -169,7 +170,8 @@ export function AmazonProductTable({
         (p.seller ?? '').toLowerCase().includes(lower) ||
         (p.availability ?? '').toLowerCase().includes(lower) ||
         (p.currency ?? '').toLowerCase().includes(lower) ||
-        (p.dealBadge ?? '').toLowerCase().includes(lower) ||
+        // SAD-387: search what the cell shows, not the stored template blob.
+        (dealBadgeForDisplay(p.dealBadge) ?? '').toLowerCase().includes(lower) ||
         (p.discountPercentage ?? '').toLowerCase().includes(lower) ||
         (p.bestSellersRank ?? '').toLowerCase().includes(lower) ||
         (p.pastMonthSales ?? '').toLowerCase().includes(lower) ||

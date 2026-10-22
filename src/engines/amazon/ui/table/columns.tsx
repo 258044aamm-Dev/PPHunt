@@ -11,6 +11,7 @@ import type { ExpandedCellPayload } from '@/entrypoints/sidepanel/components/Cel
 import type { ValidatedSettings } from '../../schemas/settings';
 import type { AmazonProduct } from '../../types/product';
 import { formatCurrency } from '../../utils/formatters';
+import { dealBadgeForDisplay } from '../../utils/deal-text';
 import {
   formatListingCategoryLabel,
   resolveListingCategory,
@@ -311,7 +312,9 @@ const discountPercentageColumn = columnHelper.accessor('discountPercentage', {
 const dealBadgeColumn = columnHelper.accessor('dealBadge', {
   header: 'Deal',
   cell: (info) => {
-    const deal = info.getValue();
+    // SAD-387: rows saved before the countdown fix still hold the template blob;
+    // clean them here rather than rewriting stored rows.
+    const deal = dealBadgeForDisplay(info.getValue());
     if (!deal) return <span className="text-ink-subtle">No</span>;
     const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
     const inner = (
