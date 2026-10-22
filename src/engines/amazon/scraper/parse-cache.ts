@@ -41,7 +41,6 @@ import { AMAZON_SELECTORS, safeQuerySelectorAll } from './selectors';
  * server-rendered in the no-JS HTML, so this guards the measured lazy-card
  * staleness of the cache itself, not a proven hydration sequence.)
  */
- */
 interface AmazonParseCacheEntry {
   product: ScrapedAmazonProduct;
   /** Descendant count + text length — changes when Amazon injects/removes a subtree. */
