@@ -19,6 +19,7 @@ import {
   readAmazonCoupon,
   isAmazonCouponRegion,
   extractCardPricingAndDiscounts,
+  extractCleanElementText,
   formatVariationDimensionsSummary,
   normalizeDiscountBadge,
   normalizeWarrantyDescription,
@@ -59,10 +60,42 @@ function isInsideExcludedDetailSubtree(el: Element): boolean {
   return false;
 }
 
+const SECONDARY_OFFER_SUBTREES = [
+  '#usedBuySection',
+  '#usedAccordionRow',
+  '#usedOnlyBuybox',
+  '#used_buybox_desktop',
+  '#usedbuyBox',
+  '#olpLinkWidget_feature_div',
+  '#moreBuyingChoices_feature_div',
+  '#snsAccordionRowMiddle',
+  '#snsDetailPage',
+  '#buyBoxAccordion [data-csa-c-is-in-initial-active-row="false"]',
+].join(', ');
+
+function isHiddenDetailCandidate(el: Element): boolean {
+  try {
+    return Boolean(
+      el.closest('[hidden], .aok-hidden, .a-hidden, .a-popover-preload'),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isInsideSecondaryOfferSubtree(el: Element): boolean {
+  try {
+    return Boolean(el.closest(SECONDARY_OFFER_SUBTREES));
+  } catch {
+    return false;
+  }
+}
+
 interface JsonLdProductMetadata {
   asin?: string;
   title?: string;
   brand?: string;
+  seller?: string;
   imageUrl?: string;
   description?: string;
   price?: number;
@@ -121,7 +154,10 @@ function extractProductJsonLd(doc: Document): JsonLdProductMetadata {
           result.description = normalizeWhitespace(rec.description);
         }
 
-        const offers = rec.offers as Record<string, unknown> | undefined;
+        const rawOffers = rec.offers;
+        const offers = (
+          Array.isArray(rawOffers) ? rawOffers[0] : rawOffers
+        ) as Record<string, unknown> | undefined;
         if (offers && typeof offers === 'object') {
           const rawPrice = offers.price ?? offers.lowPrice;
           if (
@@ -141,6 +177,19 @@ function extractProductJsonLd(doc: Document): JsonLdProductMetadata {
             isIsoCurrency(offers.priceCurrency)
           ) {
             result.currency = offers.priceCurrency.toUpperCase();
+          }
+          if (!result.seller && offers.seller) {
+            const rawSeller =
+              typeof offers.seller === 'string'
+                ? offers.seller
+                : typeof offers.seller === 'object'
+                  ? ((offers.seller as Record<string, unknown>).name as
+                      | string
+                      | undefined)
+                  : undefined;
+            if (typeof rawSeller === 'string') {
+              result.seller = cleanSeller(rawSeller) ?? undefined;
+            }
           }
         }
 
@@ -1315,16 +1364,26 @@ export function parseAmazonProductDetail(
     let delivery: string | undefined;
     let deliverySelector: string | undefined;
     let deliveryRejectedSelector: string | undefined;
-    for (const selector of AMAZON_SELECTORS.detail.delivery) {
-      const el = safeQuerySelector(doc, selector);
-      if (el && !isInsideExcludedDetailSubtree(el)) {
-        const text = normalizeWhitespace(el.textContent);
-        if (text) {
-          delivery = text;
-          deliverySelector = selector;
-          break;
+    for (const allowSecondaryOffer of [false, true]) {
+      if (delivery !== undefined) break;
+      for (const selector of AMAZON_SELECTORS.detail.delivery) {
+        const els = safeQuerySelectorAll(doc, selector);
+        for (const el of els) {
+          if (isInsideExcludedDetailSubtree(el) || isHiddenDetailCandidate(el)) {
+            continue;
+          }
+          if (!allowSecondaryOffer && isInsideSecondaryOfferSubtree(el)) {
+            continue;
+          }
+          const text = extractCleanElementText(el);
+          if (text) {
+            delivery = text;
+            deliverySelector = selector;
+            break;
+          }
+          deliveryRejectedSelector ??= selector;
         }
-        deliveryRejectedSelector ??= selector;
+        if (delivery !== undefined) break;
       }
     }
     if (delivery !== undefined) {
@@ -1341,25 +1400,50 @@ export function parseAmazonProductDetail(
     let seller: string | null = null;
     let sellerSelector: string | undefined;
     let sellerRejectedSelector: string | undefined;
-    for (const selector of AMAZON_SELECTORS.detail.seller) {
-      const el = safeQuerySelector(doc, selector);
-      if (el && !isInsideExcludedDetailSubtree(el)) {
-        seller = cleanSeller(el.textContent);
-        if (seller) {
-          sellerSelector = selector;
-          break;
+    for (const allowSecondaryOffer of [false, true]) {
+      if (seller) break;
+      for (const selector of AMAZON_SELECTORS.detail.seller) {
+        const els = safeQuerySelectorAll(doc, selector);
+        for (const el of els) {
+          if (isInsideExcludedDetailSubtree(el) || isHiddenDetailCandidate(el)) {
+            continue;
+          }
+          if (!allowSecondaryOffer && isInsideSecondaryOfferSubtree(el)) {
+            continue;
+          }
+          seller = cleanSeller(extractCleanElementText(el));
+          if (seller) {
+            sellerSelector = selector;
+            break;
+          }
+          sellerRejectedSelector ??= selector;
         }
-        sellerRejectedSelector ??= selector;
+        if (seller) break;
       }
     }
-    if (seller) {
+    if (seller && sellerSelector) {
       diag?.extracted('seller', { source: 'dom', selector: sellerSelector });
-    } else if (sellerRejectedSelector) {
-      diag?.parseFailed('seller', 'seller node present but rejected by the field parser', {
-        selector: sellerRejectedSelector,
-      });
-    } else {
-      diag?.missing('seller', 'no seller/merchant node in the fetched HTML', { source: 'dom' });
+    }
+    if (!seller && jsonLd.seller) {
+      seller = jsonLd.seller;
+      if (sellerRejectedSelector) {
+        diag?.rescued(
+          'seller',
+          'seller node present but rejected by the field parser; JSON-LD fallback used',
+          { source: 'json-ld', selector: sellerRejectedSelector },
+        );
+      } else {
+        diag?.extracted('seller', { source: 'json-ld' });
+      }
+    }
+    if (!seller) {
+      if (sellerRejectedSelector) {
+        diag?.parseFailed('seller', 'seller node present but rejected by the field parser', {
+          selector: sellerRejectedSelector,
+        });
+      } else {
+        diag?.missing('seller', 'no seller/merchant node in the fetched HTML', { source: 'dom' });
+      }
     }
 
     // Features
