@@ -247,18 +247,110 @@ export function cleanAvailability(raw: string | null | undefined): string | null
   return text || null;
 }
 
+const NON_CONTENT_TAG_NAMES = new Set([
+  'SCRIPT',
+  'STYLE',
+  'NOSCRIPT',
+  'TEMPLATE',
+]);
+
+const BLOCK_BOUNDARY_TAG_NAMES = new Set([
+  'DIV',
+  'P',
+  'LI',
+  'TR',
+  'BR',
+]);
+
+function isExcludedCleanTextElement(
+  el: Element,
+  extraExcludeClass?: string,
+): boolean {
+  if (NON_CONTENT_TAG_NAMES.has(el.tagName)) return true;
+  if (el.hasAttribute('hidden')) return true;
+  const cls = el.classList;
+  if (
+    cls &&
+    (cls.contains('aok-hidden') ||
+      cls.contains('a-hidden') ||
+      cls.contains('a-popover-preload') ||
+      (extraExcludeClass !== undefined && cls.contains(extraExcludeClass)))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * SAD-390: Extracts human-visible text from an element without cloning or
+ * mutating the DOM, skipping `<script>`, `<style>`, `<noscript>`, `<template>`,
+ * and hidden/preload subtrees while preserving whitespace across block rows.
+ */
+export function extractCleanElementText(
+  root: Element | null | undefined,
+  extraExcludeClass?: string,
+): string {
+  if (!root || isExcludedCleanTextElement(root, extraExcludeClass)) return '';
+  const parts: string[] = [];
+
+  const walk = (node: Node): void => {
+    if (node.nodeType === 3) {
+      if (node.nodeValue) parts.push(node.nodeValue);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const el = node as Element;
+    if (isExcludedCleanTextElement(el, extraExcludeClass)) return;
+
+    const isBlock = BLOCK_BOUNDARY_TAG_NAMES.has(el.tagName);
+    if (isBlock) parts.push(' ');
+    for (let child = el.firstChild; child; child = child.nextSibling) {
+      walk(child);
+    }
+    if (isBlock) parts.push(' ');
+  };
+
+  for (let child = root.firstChild; child; child = child.nextSibling) {
+    walk(child);
+  }
+
+  return normalizeWhitespace(parts.join(''));
+}
+
 export function cleanSeller(raw: string | null | undefined): string | null {
   const text = normalizeWhitespace(raw);
   if (!text) return null;
 
-  const cleaned = text
-    .replace(/^Ships from and sold by\s+/i, '')
-    .replace(/^Sold by\s+/i, '')
+  let cleaned = text;
+
+  // Handle combined abbreviated rows: "Ships from: Amazon.com Sold by: Amazon.com"
+  const soldByAfterShipsFrom =
+    /\b(?:Sold by|Verkauf durch|Vendu par|Vendido por)\s*:?\s+(.+)$/i.exec(
+      cleaned,
+    );
+  if (soldByAfterShipsFrom?.[1] && /\bShips from\b/i.test(cleaned)) {
+    cleaned = soldByAfterShipsFrom[1];
+  }
+
+  cleaned = cleaned
+    .replace(/^Ships from and sold by\s*:?\s*/i, '')
+    .replace(/^Shipper\s*\/\s*Seller\s*:?\s*/i, '')
+    .replace(/^(?:Sold by|Verkauf durch|Vendu par|Vendido por)\s*:?\s*/i, '')
     .replace(/\s+and\s+Fulfilled by Amazon\.?$/i, '')
+    .replace(/\s*\(\d+\s+used\s*&\s*new\s+offers?\)$/i, '')
     .replace(/\.$/, '')
     .trim();
 
-  return cleaned || null;
+  if (
+    !cleaned ||
+    /^(?:Fulfilled by Amazon|Ships from(?:\s+and\s+sold\s+by)?|Sold by|Shipper\s*\/\s*Seller)$/i.test(
+      cleaned,
+    )
+  ) {
+    return null;
+  }
+
+  return cleaned;
 }
 
 /** SAD-349: spelled-out quantities Amazon writes into warranty cells. */
@@ -1606,6 +1698,9 @@ export function extractCardBadge(card: Element): string | undefined {
   return undefined;
 }
 
+const DELIVERY_KEYWORD_RE =
+  /delivery|lieferung|livraison|entrega|consegna|bezorging|dostawa|leverans/i;
+
 export function extractCardDeliveryAndAvailability(card: Element): {
   delivery?: string;
   availability: string | null;
@@ -1621,19 +1716,41 @@ export function extractCardDeliveryAndAvailability(card: Element): {
       availability = stockText;
     }
 
-    const ariaEl = safeQuerySelector(deliveryBlock, '[aria-label]');
-    const ariaText = normalizeWhitespace(
-      ariaEl?.getAttribute('aria-label') || ariaEl?.textContent,
-    );
-    if (ariaText && /delivery|lieferung|livraison|entrega/i.test(ariaText)) {
-      delivery = ariaText;
-    } else if (!availability) {
-      const fallbackText = normalizeWhitespace(deliveryBlock.textContent);
-      if (
-        fallbackText &&
-        /delivery|lieferung|livraison|entrega/i.test(fallbackText)
-      ) {
+    for (const ariaEl of safeQuerySelectorAll(deliveryBlock, '[aria-label]')) {
+      if (ariaEl.closest('.a-color-price')) continue;
+      const ariaText = normalizeWhitespace(
+        ariaEl.getAttribute('aria-label') || extractCleanElementText(ariaEl),
+      );
+      if (ariaText && DELIVERY_KEYWORD_RE.test(ariaText)) {
+        delivery = ariaText;
+        break;
+      }
+    }
+
+    if (!delivery) {
+      const udmBlock =
+        safeQuerySelector(deliveryBlock, '[data-cy="delivery-block"]') ??
+        deliveryBlock;
+      const fallbackText = extractCleanElementText(udmBlock, 'a-color-price');
+      if (fallbackText && DELIVERY_KEYWORD_RE.test(fallbackText)) {
         delivery = fallbackText;
+      }
+    }
+  } else if (
+    DELIVERY_KEYWORD_RE.test(card.textContent ?? '') ||
+    /delivery/i.test(card.innerHTML)
+  ) {
+    for (const selector of AMAZON_SELECTORS.cardFields.delivery) {
+      if (selector.startsWith('[data-cy="delivery-recipe"]')) continue;
+      const el = safeQuerySelector(card, selector);
+      if (!el) continue;
+      const candidateText = normalizeWhitespace(
+        el.getAttribute('aria-label') ||
+          extractCleanElementText(el, 'a-color-price'),
+      );
+      if (candidateText && DELIVERY_KEYWORD_RE.test(candidateText)) {
+        delivery = candidateText;
+        break;
       }
     }
   }
@@ -1663,8 +1780,12 @@ export function extractCardSeller(card: Element): string | null {
     '[data-cy="secondary-offer-recipe"]',
   );
   if (offerBlock) {
-    const text = normalizeWhitespace(offerBlock.textContent);
-    if (/sold by/i.test(text)) {
+    const text = extractCleanElementText(offerBlock);
+    if (
+      /sold by|ships from and sold by|verkauf durch|vendu par|vendido por/i.test(
+        text,
+      )
+    ) {
       return cleanSeller(text);
     }
   }
@@ -1673,7 +1794,11 @@ export function extractCardSeller(card: Element): string | null {
   for (const node of leafNodes) {
     if (node.children.length > 0) continue;
     const text = normalizeWhitespace(node.textContent);
-    if (/^(?:Ships from and sold by|Sold by)\s+.+/i.test(text)) {
+    if (
+      /^(?:Ships from and sold by|Sold by|Verkauf durch|Vendu par|Vendido por)\s*:?\s+.+/i.test(
+        text,
+      )
+    ) {
       const cleaned = cleanSeller(text);
       if (cleaned) return cleaned;
     }
