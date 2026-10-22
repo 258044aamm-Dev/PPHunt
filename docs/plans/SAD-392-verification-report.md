@@ -148,3 +148,34 @@ built branch (`npx wxt build` → load `dist/chrome-mv3`, diagnostics toggle ON)
   + probe-E measurements (49/64 cards' delivery polluted with the `.prime-brand-color` CSS +
   Prime-signup ingress JS blob) — delivery/seller extraction deliberately untouched here (D5).
 * SAD-392 state → **In Review**.
+
+## 9. Merge into MergeBranch (2026-10-22)
+
+Merged as **`bca14d7`** (`--no-ff`, message `Merge fix/sad-392-availability-source (SAD-392
+availability & source fields) into MergeBranch`); `main` untouched. Full plan, probes and the
+commit map live in `docs/plans/SAD-392-merge-into-MergeBranch-plan.md`. Headlines, all measured:
+
+* **Gate 0 found MergeBranch red before us** — the `dee5255` merge resolution had botched the
+  hand-built union of SAD-389's parse-cache lane with SAD-393's badge freshness gate (a duplicated
+  comment terminator that broke compilation, a dropped signature-match branch, a settled path
+  bypassing the recovery lane, an invented badge-in-lane fill) plus two cross-ticket pin
+  stalenesses any correct union must reconcile (SAD-389's diagnostics count 24→25 once SAD-393's
+  `badge` joined the card report; SAD-393's parity baseline delivery blobs stale once SAD-390's
+  clean delivery landed). Repaired in three separately-attributed commits (`6723b04`, `3676dfc`,
+  `f3ffda9`) guided by both parents (each verified green on the affected suites) — base green at
+  **1549/1549** before any SAD-392 code was merged.
+* **Reconciliation on the fix branch** (`9d043d7` merge, CHANGELOG-only conflict resolved with
+  SAD-392 topmost; `53bc91d`; `e6f30cc`), exactly as the plan predicted: the merged suite failed
+  **only** the case-5 delivery pin (1574/1575) → re-recorded from the merged parser (1416-char
+  dirty blob → the measured 122-char clean sentence; availability:null and every other field held
+  byte-identical).
+* **Strippers unified (D-M4):** SAD-390's `extractCleanElementText` survives; SAD-392's
+  `extractAmazonElementText` retired after a measured equivalence matrix — 1263 elements across
+  all 17 committed fixtures of SAD-389/390/392/393 at both call-site contracts: 1082 identical,
+  181 divergent and every divergence in a designed superset class (98 hidden/preload/template
+  skips, 58 block-boundary spacing, 25 root-level script/style elements unreachable from either
+  call site). Zero unexplained divergences; behavior pins of both tickets unchanged.
+* **Gates on the merge commit `bca14d7`:** tsc green · dead-exports green · wxt build green
+  (2.05 MB) · **vitest 1575/1575** (137 files passed, 1 skipped) · npm audit 0 vulnerabilities.
+  Merged tree verified byte-identical to the reconciled fix-branch tip.
+* SAD-392 state stays **In Review** (D-M8); merge-record comment posted to Linear.
