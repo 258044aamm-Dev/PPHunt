@@ -159,7 +159,7 @@ describe('SAD-360 step 2 — full and minimal pages', () => {
     });
     expect(byField.get('features')).toMatchObject({
       status: 'MISSING',
-      reason: 'no feature/spec list nodes',
+      reason: 'no details section rendered',
     });
     expect(byField.get('listPrice')).toMatchObject({ status: 'MISSING' });
     expect(byField.get('discountPercentage')).toMatchObject({
@@ -245,12 +245,15 @@ describe('SAD-360 step 2 — failure causes are distinguishable', () => {
   it('distinguishes absent feature nodes from feature candidates that were rejected', () => {
     expect(
       parseWithDiagnostics(FEATURES_ABSENT_PDP).byField.get('features')
-    ).toMatchObject({ status: 'MISSING', reason: 'no feature/spec list nodes' });
+    ).toMatchObject({
+      status: 'MISSING',
+      reason: 'no feature rows in the details section',
+    });
     expect(
       parseWithDiagnostics(FEATURES_REJECTED_PDP).byField.get('features')
     ).toMatchObject({
       status: 'PARSE_FAILED',
-      reason: 'feature candidates rejected by length or dedup filters',
+      reason: 'feature candidates rejected by length, denylist or dedup',
     });
   });
 
@@ -408,5 +411,155 @@ describe('SAD-360 step 2 — parity and log hygiene', () => {
     expect(parseWithoutDiagnostics(FULL_PDP)).toStrictEqual(
       parseWithDiagnostics(FULL_PDP).product
     );
+  });
+});
+
+describe('SAD-381 — features & description evidence', () => {
+  function page(body: string): string {
+    return `<!doctype html><html><head></head><body>${body}</body></html>`;
+  }
+
+  /** A PDP shaped like Temu's real DOM: no JSON-LD, `data-id="module"` blocks. */
+  const DETAILS_PDP = page(`
+    <div id="goodsDetail">
+      <h2>Product details</h2>
+      <div data-id="module">
+        <div>Highlights</div>
+        <div>
+          <div aria-label="Breathable lining"></div>
+        </div>
+      </div>
+      <div>
+        <div>Season: Spring, Autumn</div>
+        <div>Pattern Type: Solid</div>
+        <div>Style: Business Casual</div>
+      </div>
+      <table>
+        <tr><th>Waist Type</th><td>Mid</td></tr>
+      </table>
+      <div>Compliance warning text that is not product data.</div>
+    </div>
+    <div id="rightContent">
+      <h1 aria-label="Mens Suit Set">Mens Suit Set</h1>
+      <div id="goods_price"><span data-type="price"><span class="srOnly">US$39.98</span></span></div>
+      <div data-id="module">
+        <div>Description</div>
+        <div role="button" aria-label="$Material: 95% Polyester"></div>
+        <div role="button" aria-label="$Fit: Regular"></div>
+      </div>
+    </div>
+  `);
+
+  it('extracts features and the Description module, and attributes both to the DOM', () => {
+    const { product, byField } = parseWithDiagnostics(DETAILS_PDP);
+
+    expect(product?.features).toEqual([
+      'Breathable lining',
+      'Season: Spring, Autumn',
+      'Pattern Type: Solid',
+      'Style: Business Casual',
+      'Waist Type: Mid',
+    ]);
+    expect(product?.description).toBe('Material: 95% Polyester · Fit: Regular');
+
+    expect(byField.get('features')).toMatchObject({
+      status: 'EXTRACTED',
+      source: 'dom',
+      selector: '#goodsDetail',
+      reason: 'highlights, spec rows and table rows',
+    });
+    expect(byField.get('description')).toMatchObject({
+      status: 'EXTRACTED',
+      source: 'dom',
+      selector: '#rightContent [data-id="module"]',
+      reason: 'description module rows',
+    });
+  });
+
+  it('never falls back to meta[name="description"]', () => {
+    const html = `<!doctype html><html><head>
+      <meta name="description" content=" deals on mens suit set on Temu. Shop on Temu to start saving." />
+      </head><body>
+      <div id="rightContent">
+        <h1 aria-label="Mens Suit Set">Mens Suit Set</h1>
+        <div id="goods_price"><span data-type="price"><span class="srOnly">US$39.98</span></span></div>
+      </div>
+    </body></html>`;
+
+    const { product, byField } = parseWithDiagnostics(html);
+    expect(product?.description).toBeNull();
+    expect(byField.get('description')).toMatchObject({
+      status: 'MISSING',
+      reason: 'no description module and no JSON-LD description',
+    });
+  });
+
+  it('reports a collapsed details section as PARTIAL, not EXTRACTED', () => {
+    const html = page(`
+      <div id="goodsDetail">
+        <div data-id="module">
+          <div>Highlights</div>
+          <div><div aria-label="Breathable lining"></div></div>
+        </div>
+        <div role="button" aria-label="See all details">See all details</div>
+      </div>
+      <div id="rightContent">
+        <h1 aria-label="Mens Suit Set">Mens Suit Set</h1>
+        <div id="goods_price"><span data-type="price"><span class="srOnly">US$39.98</span></span></div>
+      </div>
+    `);
+
+    const { product, byField } = parseWithDiagnostics(html);
+    expect(product?.features).toEqual(['Breathable lining']);
+    expect(byField.get('features')).toMatchObject({
+      status: 'PARTIAL',
+      source: 'dom',
+      reason: 'collapsed rows not expanded',
+    });
+  });
+
+  it('reports a collapsed Description module as PARTIAL, not EXTRACTED', () => {
+    const html = page(`
+      <div id="rightContent">
+        <h1 aria-label="Mens Suit Set">Mens Suit Set</h1>
+        <div id="goods_price"><span data-type="price"><span class="srOnly">US$39.98</span></span></div>
+        <div data-id="module">
+          <div>Description</div>
+          <div role="button" aria-label="$Material: 95% Polyester"></div>
+          <div role="button" aria-label="See more">See more</div>
+        </div>
+      </div>
+    `);
+
+    const { product, byField } = parseWithDiagnostics(html);
+    expect(product?.description).toBe('Material: 95% Polyester');
+    expect(byField.get('description')).toMatchObject({
+      status: 'PARTIAL',
+      source: 'dom',
+      reason: 'collapsed rows not expanded',
+    });
+  });
+
+  it('uses the right-column Highlights module only when the details section yields nothing', () => {
+    const html = page(`
+      <div id="goodsDetail"></div>
+      <div id="rightContent">
+        <h1 aria-label="Mens Suit Set">Mens Suit Set</h1>
+        <div id="goods_price"><span data-type="price"><span class="srOnly">US$39.98</span></span></div>
+        <div data-id="module">
+          <div>Highlights</div>
+          <div><div aria-label="Breathable lining"></div></div>
+        </div>
+      </div>
+    `);
+
+    const { product, byField } = parseWithDiagnostics(html);
+    expect(product?.features).toEqual(['Breathable lining']);
+    expect(byField.get('features')).toMatchObject({
+      status: 'EXTRACTED',
+      source: 'dom',
+      selector: '#rightContent',
+      reason: 'right-column highlights fallback',
+    });
   });
 });

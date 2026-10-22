@@ -91,7 +91,11 @@ describe('Dexie v2 snapshots store', () => {
     const upgraded = new PPHuntDB(LEGACY_NAME);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(2);
+    // SAD-392: the latest schema is v3 (data-only availability cleanup); this
+    // v1 database must land on it with every row preserved — the property
+    // this test has always pinned. The legacy product row carries no
+    // `availability` key, so the v3 pass leaves it untouched.
+    expect(upgraded.verno).toBe(3);
     expect(await upgraded.products.count()).toBe(1);
     expect(await upgraded.history.count()).toBe(1);
     expect(await upgraded.sessions.count()).toBe(1);

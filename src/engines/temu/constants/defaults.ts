@@ -56,6 +56,7 @@ export const DEFAULT_TEMU_SETTINGS: TemuUserSettings = {
   duplicateDetection: true,
   soundNotifications: false,
   autoSavePartial: true,
+  expandProductDetails: false,
 };
 
 /** Quick-select target count presets */

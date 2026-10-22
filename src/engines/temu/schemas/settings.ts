@@ -67,6 +67,8 @@ export const TemuSettingsSchema = z.object({
   soundNotifications: z.boolean().default(false),
 
   autoSavePartial: z.boolean().default(true),
+
+  expandProductDetails: z.boolean().default(false),
 });
 
 export type ValidatedTemuSettings = z.infer<typeof TemuSettingsSchema>;

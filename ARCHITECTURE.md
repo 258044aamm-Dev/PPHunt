@@ -257,7 +257,7 @@ PPHunt uses [Dexie.js](https://dexie.org) (IndexedDB wrapper) with 5 tables.
 The following files are authoritative; avoid copying partial interfaces into
 this document as if they were complete schemas:
 
-| Store | Indexes (database v2) | Data contract |
+| Store | Indexes (database v3) | Data contract |
 |---|---|---|
 | products | `++id, asin, sessionKey, collectedAt, [sessionKey+asin]` | [`Product`](src/types/product.ts), [`ProductSchema`](src/lib/schemas/product.ts) |
 | sessions | `id, tabId, status, startedAt, updatedAt` | [`SessionState`](src/types/session.ts) |
@@ -267,7 +267,16 @@ this document as if they were complete schemas:
 
 [`database.ts`](src/engines/amazon/db/database.ts) keeps v1 for existing-install
 upgrades; **v2 adds the `snapshots` store and nothing else** — the v1 stores are
-inherited untouched and no row is rewritten on upgrade.
+inherited untouched and no row is rewritten on upgrade. **v3 (SAD-392) is
+data-only**: `stores({})` inherits the v2 schema, and its upgrade pass cleans
+`availability` values in `products` and `snapshots` that were polluted by
+embedded-script text before the write-side fix, via the signature-gated
+`sanitizeAvailabilityText`
+([`availability-text.ts`](src/engines/amazon/utils/availability-text.ts)) —
+clean values pass byte-identical, malformed non-strings pass untouched, and
+only changed rows are written (Dexie 4's `Collection.modify` skips a write only
+on `return false`). The pass is fault-contained end to end: a throwing Dexie
+upgrade would block every DB open and take the extension down.
 
 > **The `[sessionKey+asin]` compound index on `products` was not removed and must
 > not be removed.** It is declared in v1 and is load-bearing:
@@ -309,6 +318,28 @@ See [`selectors.ts`](src/lib/scraper/selectors.ts) for the current selector
 arrays. Parsers also use metadata extraction and structural fallbacks; a markup
 change may require parser changes, not just edits to the shared tables.
 Live selector validity was not verified in this remediation.
+
+#### Availability text comes from the rendered page (SAD-392)
+
+Amazon embeds non-rendered nodes inside buybox containers: an `a-state` JSON
+`<script>` sits in the `#availability` div of every captured PDP, and the
+delivery-restricted variant hosts an AOD asset-loader `<script>` next to the
+message. A raw `textContent` read serializes those bytes into the field — the
+reported row stored a 1011-character blob of `P.when(…)` code ahead of the real
+message. Availability reads therefore go through SAD-390's
+`extractCleanElementText` in
+[`field-parsers.ts`](src/engines/amazon/scraper/field-parsers.ts) — merging
+SAD-392 into MergeBranch unified the two tickets' strippers: SAD-392's
+clone-based `extractAmazonElementText` was retired in favour of the walk-based
+survivor, a measured superset (it also skips `hidden`/`aok-hidden`/`a-hidden`/
+popover-preload/`template` subtrees, spaces block boundaries and normalizes,
+which the downstream `cleanAvailability` did anyway — equivalence measured
+element-wise over every committed fixture of both tickets). Both the
+product-page availability loop (all three selectors, including
+the `#outOfStock` fallback) and the listing card's stock read use it; the card's
+leaf-node fallback reads only childless nodes and is structurally immune — left
+untouched. Rows stored before this rule are cleaned **once** by database v3 (see
+Database Schema): a migration, not display-time hooks.
 
 #### The Deal text comes from the page (SAD-387)
 
@@ -353,11 +384,44 @@ similar-items carousel can never answer for the product.
 
 The parse cache never freezes a card before its price family exists. SAD-383
 already treated a card as settled only once `rating`/`reviewCount` were present;
-SAD-386 extends the same rule to `discountPercentage`/`dealBadge`/`listPrice`.
+SAD-386 extends the same rule to `discountPercentage`/`dealBadge`/`listPrice`,
+and SAD-393 to the status badge (`badge`) as its own family alongside — not
+inside — the price-family predicate.
 A card that is not settled is re-read **once per actual DOM change** (its
 subtree signature), and a settled card is re-read only when its text now carries
-a `%` or a deal label — so a badge injected after the first pass is picked up,
+a `%` or a deal label — or, for the badge, when the changed subtree shows a
+status-badge node — so a badge injected after the first pass is picked up,
 and a settled card is never re-parsed otherwise.
+
+#### Status badge and warranty provenance (SAD-393)
+
+`badge` (the **Badge** column) is a listing-card field with two live markup
+generations: the old `s-status-badge-component` (still how "Overall Pick"
+renders) and the `amazonBadges` rio capsule (`.rio-badge-label`, how
+"Best Seller" renders since Amazon's reskin — 14/14 live captures). The
+stored value is the label only; the capsule's supplementary category text
+repeats the BSR category and is never stored. Deal-badge subtrees are
+invisible to the status extractor (and vice versa), and candidate nodes are
+gated by the status vocabulary, apostrophe-folded for comparison only. The
+product-detail parser does not produce `badge` (no PDP specimen has ever
+been captured — listing-only is settled design unless one is), so
+enrichment can never backfill it; `DETAIL_FIELDS` keeps listing it for the
+shared merge, harmlessly.
+
+`warrantyDescription` is a PDP-only field (SAD-349). SAD-393 extends its
+reach to Amazon Devices PDPs: the row lives under `#tech` with the label
+`Warranty and Service` (Kindle/Echo/Fire TV captures). `#tech` is appended
+to `detail.warrantyContainers` **for the warranty walk only** — the weight
+waterfall keeps its own `weightContainers` (the pre-SAD-393 list), because
+`#tech` also carries `Weight` rows and no third field may change on a
+warranty fix. The normalizer stores the seller's exact fraction (`1.5-year`,
+never the pre-fix mid-number garble `5-year`), accepts parenthesized digits
+(`Five (5) Year`), and folds typographic dashes locally; lifetime-first and
+first-duration-wins semantics are unchanged, and a row without a duration
+still stores nothing. Over-budget collection rows whose `brand-and-rank`
+fallback already fetched the PDP also fill the warranty pair (fill-only,
+together) — zero extra requests, and a missing warranty never triggers
+that fetch.
 
 ### 3. Parsing
 
@@ -460,7 +524,9 @@ migration/version bump. "Restore defaults" resets the flag explicitly.
 Diagnostics are a **side channel**. Card and product-detail parsers only
 create collectors when a sink is supplied; the extracted object must remain
 byte-identical with and without that observer. The shared card recorder
-models all 24 fields: **20 card-extractable** fields and **4 card-inapplicable**
+models 25 fields — the detail stage's 24 plus card-only `badge` (SAD-393,
+built with `CARD_DIAGNOSTIC_FIELDS`; PDP reports stay at 24): **21
+card-extractable** fields and **4 card-inapplicable**
 fields (`description`, `features`, `weight`, `warrantyDescription`), which
 are `MISSING` with an explicit card-only reason (D4). Card cascade reports
 carry `tier`, not `selector`. The price cascade's additive
@@ -550,6 +616,16 @@ worse than a rare duplicate, and persistence is never affected.
 const dedup = new DeduplicationEngine(existingProducts);
 const unique = dedup.filterNew(scrapedProducts); // O(1) per check
 ```
+
+**Source follows the PDP, upgrade-only (SAD-392).** `source` says where a row
+was authoritatively observed. `mergeScrapedProductFields` promotes a
+`'search'`/`'category'` target to `'detail'` when a PDP observation merges onto
+it, and never downgrades on a listing re-observation. The rule sits **after**
+the SAD-357 variations upgrade, whose condition reads the pre-promotion
+`target.source !== 'detail'` — promoting first would silently kill the
+variations upgrade (pinned by test). `enrichStoredProductFields` (the
+`addProducts` background write) applies the same rule to its patch; the
+enrichment path (`mergeDetailIntoStored`) deliberately never carries `source`.
 
 ### 5. Price Parsing
 

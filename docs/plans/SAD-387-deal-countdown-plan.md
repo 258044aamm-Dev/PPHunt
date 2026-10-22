@@ -1,6 +1,8 @@
 # SAD-387 — the Deal field must hold the page's own text (not a template)
 
-> Branch `fix/sad-387-deal-countdown`, from `main@7dc713d`.
+> Branch `fix/sad-387-deal-countdown`, from `main@7dc713d`, merged with
+> `MergeBranch@c379da6` before landing (the integration branch, which already
+> carries SAD-388/389/390/392/393).
 >
 > **Revision history**
 > 1. First draft: canonicalise to a hard-coded `Limited time deal`. **Rejected by
@@ -265,7 +267,8 @@ Must stay green untouched: all six `tests/sad-386-*.test.ts`,
 
 Each step: `npx tsc --noEmit` → `npm run check:dead-exports` → `npx wxt build` →
 `npx vitest run` → `npm audit --omit=dev` → push → Linear comment.
-Baseline to beat: **1360 tests / 124 files** on `main@7dc713d`.
+Baseline to beat: **1360 tests / 124 files** on `main@7dc713d`; after the merge
+with `MergeBranch@c379da6` the same gate is **1597 tests / 139 files**.
 
 ---
 

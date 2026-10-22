@@ -461,17 +461,90 @@ export function extractTemuCardTitle(
   return null;
 }
 
+/**
+ * SAD-380: one shared reference-price vocabulary (was F5: four divergent lists).
+ * En wording is measured from Temu's own i18n bundle ("Original price {0}",
+ * "strikethrough price"); other locales keep degrading to the semantic
+ * selectors. Always test with a fresh literal — never share a /g regex.
+ */
+const TEMU_REFERENCE_PRICE_LABEL_SOURCE =
+  '\\b(?:original|regular|was|list|strikethrough)\\s+price\\b';
+const TEMU_CURRENT_PRICE_LABEL_SOURCE = '\\b(?:current|selling|sale)\\s+price\\b';
+const TEMU_CURRENCY_TOKEN_SOURCE =
+  '(?:US\\$|CA\\$|AU\\$|C\\$|A\\$|[\\$€£¥￥]|\\b(?:USD|EUR|GBP|CAD|AUD|JPY|CNY)\\b)';
+const TEMU_LABELLED_AMOUNT_SOURCE = `(${TEMU_CURRENCY_TOKEN_SOURCE}\\s*\\d[\\d,.]*|\\d[\\d,.]*\\s*(?:€|£|\\b(?:USD|EUR|GBP|CAD|AUD|JPY|CNY)\\b))`;
+
+function hasTemuCurrencyToken(raw: string): boolean {
+  return new RegExp(TEMU_CURRENCY_TOKEN_SOURCE, 'i').test(raw);
+}
+
+/**
+ * Extracts the amount of a labelled price segment ("original price is: $32.99"
+ * / "current price is: $11.49") so dual-price accessible strings never depend
+ * on first-token order (SAD-380 F3).
+ */
+function parseTemuLabelledPriceSegment(
+  text: string,
+  labelSource: string,
+  fallbackCurrency: string
+): { value: number | null; currency: string | null } {
+  const match = text.match(
+    new RegExp(
+      `${labelSource}\\s*(?:is)?\\s*[:：]?\\s*${TEMU_LABELLED_AMOUNT_SOURCE}`,
+      'i'
+    )
+  );
+  if (!match?.[1]) return { value: null, currency: null };
+  return parseTemuPrice(match[1], fallbackCurrency);
+}
+
+/** Removes one labelled segment (label + amount) from a dual-price string. */
+function stripTemuLabelledPriceSegment(text: string, labelSource: string): string {
+  return text
+    .replace(
+      new RegExp(
+        `${labelSource}\\s*(?:is)?\\s*[:：]?\\s*${TEMU_LABELLED_AMOUNT_SOURCE}`,
+        'i'
+      ),
+      ' '
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Presentation-semantic strike test (SAD-380): Temu's own term for the
+ * reference price is "strikethrough price", and the live capture showed the
+ * assumed `[data-type="priceText"]` hook carrying promo text instead. A node
+ * counts as struck via its inline style or the computed style in a real
+ * browser; `del`/`s`/`strike` tags are already selector candidates.
+ */
+function isTemuStruckPresentation(el: Element): boolean {
+  const inline = el.getAttribute('style') ?? '';
+  if (/text-decoration(?:-line)?\s*:[^;]*line-through/i.test(inline)) {
+    return true;
+  }
+  try {
+    const view = el.ownerDocument?.defaultView;
+    const computed = view?.getComputedStyle?.(el as HTMLElement);
+    const line = `${computed?.textDecorationLine ?? ''} ${computed?.textDecoration ?? ''}`;
+    return line.includes('line-through');
+  } catch {
+    return false;
+  }
+}
+
 function isTemuReferenceOrStrikePriceNode(el: Element | null): boolean {
   if (!el) return false;
   if (
     el.closest(
-      '[data-type="priceText"], [data-type="unitPrice"], [data-type="discount"], del, s, strike, [aria-label*="Original price" i], [aria-label*="Regular price" i]'
+      '[data-type="priceText"], [data-type="unitPrice"], [data-type="discount"], del, s, strike, [aria-label*="Original price" i], [aria-label*="Regular price" i], [aria-label*="List price" i]'
     )
   ) {
     return true;
   }
   const aria = el.getAttribute('aria-label') ?? '';
-  if (/\b(?:original|regular|was|list)\s+price\b/i.test(aria)) {
+  if (new RegExp(TEMU_REFERENCE_PRICE_LABEL_SOURCE, 'i').test(aria)) {
     return true;
   }
   return false;
@@ -504,6 +577,15 @@ export function extractTemuPricing(
   let sawListPriceNode = false;
   let sawDiscountNode = false;
 
+  // SAD-380: srOnly labelled segments join the list-price candidate pool in
+  // section 2 (they no longer assign `listPrice` directly, so one ranking —
+  // and one truthful provenance — decides every source).
+  let srOnlyListPrice: number | null = null;
+  let srOnlyListCurrency: string | null = null;
+  let listPriceSelectorUsed: string | null = null;
+  let sawRejectedAtOrBelowPrice = false;
+  let sawExcludedListCandidate = false;
+
   // 1. Current selling price via semantic `[data-type="price"]`
   const priceNodes = Array.from(
     container.querySelectorAll('[data-type="price"]')
@@ -515,21 +597,45 @@ export function extractTemuPricing(
     // Prefer accessible `.srOnly` or `aria-label` inside `[data-type="price"]`
     const srOnly = priceNode.querySelector('[class*="srOnly"], .sr-only');
     const srOnlyText = cleanTemuText(srOnly?.textContent);
-    if (srOnlyText) {
-      const origMatch = srOnlyText.match(
-        /\b(?:original|regular|was|list)\s+price\s*(?:is)?\s*[:：]?\s*((?:US\$|CA\$|AU\$|[\$€£¥])\s*\d[\d,.]*)/i
+    if (srOnlyText && srOnlyListPrice === null) {
+      // SAD-380 F3: capture the labelled reference segment for the pool;
+      // the selling parse below reads the labelled current segment or the
+      // string with the reference segment stripped — never first-token luck.
+      const origParsed = parseTemuLabelledPriceSegment(
+        srOnlyText,
+        TEMU_REFERENCE_PRICE_LABEL_SOURCE,
+        fallbackCurrency
       );
-      if (origMatch?.[1]) {
-        const origParsed = parseTemuPrice(origMatch[1], fallbackCurrency);
-        if (origParsed.value !== null) {
-          listPrice = origParsed.value;
-        }
+      if (origParsed.value !== null) {
+        srOnlyListPrice = origParsed.value;
+        srOnlyListCurrency = origParsed.currency;
+        sawListPriceNode = true;
       }
     }
-    const candidateText =
+    let candidateText =
       srOnlyText ??
       cleanTemuText(priceNode.getAttribute('aria-label')) ??
       extractTemuElementText(priceNode);
+
+    if (candidateText) {
+      const currentSegment = parseTemuLabelledPriceSegment(
+        candidateText,
+        TEMU_CURRENT_PRICE_LABEL_SOURCE,
+        fallbackCurrency
+      );
+      if (currentSegment.value !== null) {
+        price = currentSegment.value;
+        currency = currentSegment.currency;
+        priceSelector = '[data-type="price"]';
+        break;
+      }
+      if (srOnlyText && srOnlyListPrice !== null) {
+        candidateText = stripTemuLabelledPriceSegment(
+          candidateText,
+          TEMU_REFERENCE_PRICE_LABEL_SOURCE
+        );
+      }
+    }
 
     const parsed = parseTemuPrice(candidateText, fallbackCurrency);
     if (parsed.value !== null) {
@@ -582,7 +688,7 @@ export function extractTemuPricing(
       if (!text || text.length > 36) continue;
       if (
         /(?:US\$|CA\$|AU\$|[\$€£¥])\s*\d/.test(text) &&
-        !/\b(?:original|regular|was|save|coupon|unit)\b/i.test(text)
+        !/\b(?:original|regular|was|list|strikethrough|save|coupon|unit)\b/i.test(text)
       ) {
         sawPriceNode = true;
         const parsed = parseTemuPrice(text, fallbackCurrency);
@@ -596,24 +702,148 @@ export function extractTemuPricing(
     }
   }
 
-  // 2. Original / Reference List Price (`[data-type="priceText"]`, `aria-label*="Original price"`, `del`, `s`)
-  const listPriceCandidates = Array.from(
+  // 2. Original / Reference List Price — SAD-380 candidate pool (replaces
+  // first-match-wins): collect from every proven source, filter, rank, then
+  // assign at most one value. A candidate must carry a currency token (F7)
+  // and, when the selling price is known, be strictly above it (D4/F2).
+  interface ListPriceCandidate {
+    value: number;
+    currency: string | null;
+    rank: number;
+    selector: string;
+  }
+  const listCandidates: ListPriceCandidate[] = [];
+  const considerListCandidate = (
+    value: number | null,
+    candidateCurrency: string | null,
+    rank: number,
+    selector: string
+  ): void => {
+    if (value === null) return;
+    if (price !== null && value <= price) {
+      sawRejectedAtOrBelowPrice = true;
+      return;
+    }
+    listCandidates.push({ value, currency: candidateCurrency, rank, selector });
+  };
+  const inExcludedPriceScope = (el: Element): boolean =>
+    el.closest('[data-type="unitPrice"], [data-type="discount"]') !== null;
+
+  // 2a. Semantic selector candidates (priceText / original-price aria / del / s).
+  const selectorCandidates = Array.from(
     container.querySelectorAll(TEMU_SELECTORS.listing.listPrice)
   );
-  for (const el of listPriceCandidates) {
-    if (el.closest('[data-type="unitPrice"], [data-type="discount"]')) continue;
+  const seenCandidateEls = new Set<Element>();
+  for (const el of selectorCandidates) {
+    if (inExcludedPriceScope(el)) {
+      sawExcludedListCandidate = true;
+      continue;
+    }
     sawListPriceNode = true;
+    // F8: an ancestor that wraps another candidate (e.g. del > priceText) is
+    // a wrapper — the innermost node's own text is the candidate.
+    if (
+      selectorCandidates.some((other) => other !== el && el.contains(other))
+    ) {
+      continue;
+    }
+    seenCandidateEls.add(el);
     const raw =
       cleanTemuText(el.getAttribute('aria-label')) ??
       extractTemuElementText(el);
-    if (!raw) continue;
-    const parsed = parseTemuPrice(raw, currency ?? fallbackCurrency);
-    if (parsed.value !== null && (price === null || parsed.value !== price)) {
-      listPrice = parsed.value;
-      if (!currency && parsed.currency) {
-        currency = parsed.currency;
-      }
-      break;
+    if (!raw || !hasTemuCurrencyToken(raw)) continue;
+    // A labelled aria ("Original price $29.99, now $12.49") must contribute
+    // its labelled amount, never the first token of a dual-price string.
+    const labelled = parseTemuLabelledPriceSegment(
+      raw,
+      TEMU_REFERENCE_PRICE_LABEL_SOURCE,
+      currency ?? fallbackCurrency
+    );
+    const parsed =
+      labelled.value !== null
+        ? labelled
+        : parseTemuPrice(raw, currency ?? fallbackCurrency);
+    considerListCandidate(
+      parsed.value,
+      parsed.currency,
+      0,
+      TEMU_SELECTORS.listing.listPrice
+    );
+  }
+
+  // 2b. Reference-price aria labels anywhere in scope (unified vocabulary;
+  // covers "List price"/"Was price" nodes the selector's aria list misses).
+  const ariaCandidates = Array.from(container.querySelectorAll('[aria-label]'));
+  for (const el of ariaCandidates) {
+    if (seenCandidateEls.has(el)) continue;
+    if (inExcludedPriceScope(el)) continue;
+    const aria = cleanTemuText(el.getAttribute('aria-label'));
+    if (!aria || aria.length > 120) continue;
+    if (!new RegExp(TEMU_REFERENCE_PRICE_LABEL_SOURCE, 'i').test(aria)) {
+      continue;
+    }
+    sawListPriceNode = true;
+    seenCandidateEls.add(el);
+    const labelled = parseTemuLabelledPriceSegment(
+      aria,
+      TEMU_REFERENCE_PRICE_LABEL_SOURCE,
+      currency ?? fallbackCurrency
+    );
+    considerListCandidate(
+      labelled.value,
+      labelled.currency,
+      0,
+      TEMU_SELECTORS.listing.listPrice
+    );
+  }
+
+  // 2c. srOnly labelled reference segment captured in section 1.
+  if (srOnlyListPrice !== null) {
+    considerListCandidate(
+      srOnlyListPrice,
+      srOnlyListCurrency,
+      1,
+      'srOnly labelled segment'
+    );
+  }
+
+  // 2d. Presentation fallback: a struck (line-through), currency-bearing leaf
+  // inside this price scope — Temu's "strikethrough price" rendering when no
+  // semantic hook carries the value (step-1 capture). Scoped and filtered so
+  // it can never reach outside the container already given to this helper.
+  if (listCandidates.length === 0) {
+    const struckLeaves = Array.from(
+      container.querySelectorAll('span, div, b, strong, p')
+    );
+    for (const el of struckLeaves) {
+      if (seenCandidateEls.has(el)) continue;
+      if (inExcludedPriceScope(el)) continue;
+      if (el.closest('[data-type="price"]')) continue;
+      if (el.children.length > 4) continue;
+      if (!isTemuStruckPresentation(el)) continue;
+      const raw =
+        cleanTemuText(el.getAttribute('aria-label')) ??
+        extractTemuElementText(el);
+      if (!raw || raw.length > 40 || !hasTemuCurrencyToken(raw)) continue;
+      sawListPriceNode = true;
+      seenCandidateEls.add(el);
+      const parsed = parseTemuPrice(raw, currency ?? fallbackCurrency);
+      considerListCandidate(
+        parsed.value,
+        parsed.currency,
+        2,
+        'struck (line-through) price leaf'
+      );
+    }
+  }
+
+  listCandidates.sort((a, b) => a.rank - b.rank);
+  const winningListCandidate = listCandidates[0];
+  if (winningListCandidate) {
+    listPrice = winningListCandidate.value;
+    listPriceSelectorUsed = winningListCandidate.selector;
+    if (!currency && winningListCandidate.currency) {
+      currency = winningListCandidate.currency;
     }
   }
 
@@ -672,12 +902,26 @@ export function extractTemuPricing(
     if (listPrice !== null) {
       diagnostics.extracted('listPrice', {
         source: 'dom',
-        selector: TEMU_SELECTORS.listing.listPrice,
+        // SAD-380 F4: report the source that actually won the candidate pool.
+        selector: listPriceSelectorUsed ?? TEMU_SELECTORS.listing.listPrice,
       });
+    } else if (sawRejectedAtOrBelowPrice) {
+      // SAD-380 F9: distinguish "rejected by the >price rule" from unparseable.
+      diagnostics.parseFailed(
+        'listPrice',
+        'list-price candidates rejected: none above selling price',
+        { source: 'dom', selector: TEMU_SELECTORS.listing.listPrice }
+      );
     } else if (sawListPriceNode) {
       diagnostics.parseFailed(
         'listPrice',
         'list-price node present but no parseable value',
+        { source: 'dom', selector: TEMU_SELECTORS.listing.listPrice }
+      );
+    } else if (sawExcludedListCandidate) {
+      diagnostics.parseFailed(
+        'listPrice',
+        'list-price candidates only in excluded (unit/discount) nodes',
         { source: 'dom', selector: TEMU_SELECTORS.listing.listPrice }
       );
     } else {
@@ -1282,7 +1526,10 @@ export function validateAndNormalizeTemuScrapedProduct(
       typeof raw.listPrice === 'number' &&
       Number.isFinite(raw.listPrice) &&
       raw.listPrice >= 0 &&
-      (price === null || raw.listPrice !== price)
+      // SAD-380 D4: a reference/list price must sit strictly above the
+      // selling price (Amazon precedent); at-or-below means a different
+      // price was misassigned, and non-fabrication keeps it null.
+      (price === null || raw.listPrice > price)
         ? Math.round(raw.listPrice * 100) / 100
         : null;
 

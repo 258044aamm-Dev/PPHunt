@@ -122,4 +122,10 @@ export interface TemuUserSettings {
   duplicateDetection: boolean;
   soundNotifications: boolean;
   autoSavePartial: boolean;
+  /**
+   * SAD-381: click "See all details" on a PDP before parsing so collapsed
+   * Highlights / Description rows are included. Defaults to off: it mutates
+   * the user's page, and current behaviour must stay byte-identical.
+   */
+  expandProductDetails: boolean;
 }

@@ -1,6 +1,7 @@
 # SAD-387 — implementation record and verification
 
-> Branch `fix/sad-387-deal-countdown` from `main@7dc713d`.
+> Branch `fix/sad-387-deal-countdown` from `main@7dc713d`, merged with
+> `MergeBranch@c379da6` before landing.
 > Plan and root cause: [`SAD-387-deal-countdown-plan.md`](SAD-387-deal-countdown-plan.md).
 
 ## 1. The defect
@@ -103,6 +104,7 @@ pinned by a test instead.
 | `npx vitest run` | **1382 passed / 125 files** (baseline 1360 / 124) |
 | `npm audit --omit=dev` | 0 vulnerabilities |
 | Baseline on `main@7dc713d` | 1360 tests / 124 files |
+| After merging `MergeBranch@c379da6` | 1597 tests / 139 files (§9) |
 
 `tests/sad-387-deal-countdown.test.tsx` — 22 cases:
 

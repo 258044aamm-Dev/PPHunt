@@ -41,10 +41,22 @@ const FULL_JSON_LD = {
 /** Every supported PDP field is present. */
 export const FULL_PDP = page(`
   <div id="goodsDetail">
-    <ul>
-      <li>Bluetooth 5.3 with low-latency pairing</li>
-      <li>30 hour battery life with the charging case</li>
-    </ul>
+    <h2>Product details</h2>
+    <div data-id="module">
+      <div>Highlights</div>
+      <div>
+        <div aria-label="Bluetooth 5.3 with low-latency pairing"></div>
+        <div aria-label="30 hour battery life with the charging case"></div>
+      </div>
+    </div>
+    <div>
+      <div>Material: ABS</div>
+      <div>Connectivity: Bluetooth</div>
+      <div>Battery: 30 hours</div>
+    </div>
+    <table>
+      <tr><th>Warranty</th><td>1 year</td></tr>
+    </table>
   </div>
   <div id="leftContent">
     <img data-js-main-img="true" src="https://img.kwcdn.com/product/fancy/earbuds.jpg" alt="item picture Wireless Earbuds" />
@@ -161,7 +173,7 @@ export const LIST_PRICE_EQUAL_PDP = page(`
   })}
 `);
 
-/** No feature/spec list nodes at all. */
+/** The details section renders but carries no feature rows. */
 export const FEATURES_ABSENT_PDP = page(`
   <div id="goodsDetail"></div>
   <div id="rightContent">
@@ -170,10 +182,16 @@ export const FEATURES_ABSENT_PDP = page(`
   </div>
 `);
 
-/** Feature candidates exist but every one is rejected by the length filter. */
+/** Feature rows exist but every one is rejected by the length filter. */
 export const FEATURES_REJECTED_PDP = page(`
   <div id="goodsDetail">
-    <ul><li>ab</li><li>cd</li></ul>
+    <div data-id="module">
+      <div>Highlights</div>
+      <div>
+        <div aria-label="ab"></div>
+        <div aria-label="cd"></div>
+      </div>
+    </div>
   </div>
   <div id="rightContent">
     <h1 aria-label="Rejected Features Item">Rejected Features Item</h1>
