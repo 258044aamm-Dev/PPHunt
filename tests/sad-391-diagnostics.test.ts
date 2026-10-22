@@ -78,7 +78,7 @@ describe('search-card report', () => {
     );
     expect(product?.isSponsored).toBe(true);
     const fields = byField(sink.reports[0]!);
-    expect(sink.reports[0]!.fields).toHaveLength(25);
+    expect(sink.reports[0]!.fields).toHaveLength(26);
     expect(fields.get('isSponsored')).toMatchObject({ status: 'EXTRACTED', source: 'derived' });
     expect(fields.get('isPrime')).toMatchObject({
       status: 'MISSING',
@@ -124,7 +124,7 @@ describe('search-card report', () => {
     const report = sink.reports[0]!;
     expect(byField(report).get('isPrime')).toMatchObject({ status: 'EXTRACTED', reason: 'prime badge' });
     const counts = summarizeFieldDiagnostics(report.fields);
-    expect(counts.extracted + counts.missing + counts.parseFailed + counts.partial + counts.unknown).toBe(25);
+    expect(counts.extracted + counts.missing + counts.parseFailed + counts.partial + counts.unknown).toBe(26);
     expect(counts.unknown).toBe(0);
   });
 
@@ -137,7 +137,7 @@ describe('search-card report', () => {
 });
 
 describe('category-card report', () => {
-  it('carries the 25-field shape with the ad verdict recorded', () => {
+  it('carries the 26-field shape with the ad verdict recorded', () => {
     const sink = collectingSink();
     parseAmazonCategoryCard(
       cardFrom(`
@@ -149,7 +149,7 @@ describe('category-card report', () => {
       { diagnosticsSink: sink },
     );
     const report = sink.reports[0]!;
-    expect(report.fields).toHaveLength(25);
+    expect(report.fields).toHaveLength(26);
     expect(byField(report).get('isSponsored')).toMatchObject({ status: 'MISSING', source: 'derived' });
   });
 });

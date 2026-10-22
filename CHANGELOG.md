@@ -36,13 +36,15 @@ before/after tables are in `docs/plans/SAD-391-implementation-record.md`.
   alternative offer (live B0GPW3BJ6V: featured $695.00 non-Prime, secondary
   $709.99 Prime); the row's price and delivery describe the featured offer, so
   only the card's main delivery recipe is read.
-- **Delivery text is read structurally.** The unified delivery block
-  (`.udm-primary-delivery-message` / `.udm-secondary-delivery-message`) is read
-  through visible text only, so the inline `<style>`/`<script>` Amazon ships
-  with the Prime sign-up link can no longer end up in the **Delivery** column
-  (11 → 0 polluted values), and an *"Only N left in stock"* span no longer
-  pre-empts the delivery message (4 → 0 cards without delivery). Availability
-  is still stored separately, unchanged.
+- **Delivery text is read structurally.** On `MergeBranch` the delivery block
+  is read with SAD-390's `extractCleanElementText` (SAD-390 and SAD-392 fixed
+  the same inline `<style>`/`<script>` and stock-span defects independently);
+  SAD-391 adds the structural read of `.udm-primary-delivery-message` /
+  `.udm-secondary-delivery-message` ahead of the whole-block fallback, so a
+  signed-in card's Prime badge text (e.g. *One-Day*) never prefixes the
+  **Delivery** value. Measured capture: 11 → 0 polluted values, 4 → 0 cards
+  without delivery — unchanged after the merge. Availability is still stored
+  separately, unchanged.
 - **A sponsored product stays sponsored.** Saving a product a second time (icon
   save, context-menu save, collection re-run) used to overwrite `isSponsored`
   with `undefined` and relabel the row *organic*. `isSponsored` is now sticky
@@ -71,6 +73,8 @@ before/after tables are in `docs/plans/SAD-391-implementation-record.md`.
 - **`isSponsored` is the 25th modelled field** (24 → 25) on cards and product
   pages (D7). Cards report `EXTRACTED` / `MISSING "no Sponsored marker found"`
   with `source: 'derived'`; product pages report `source: 'url'`.
+  On `MergeBranch`, where SAD-393's card-only `badge` already exists, card
+  reports carry 26 fields and product-page reports 25.
 - **`isPrime` names its evidence:** the reason is `prime badge` or
   `prime ingress`; a missing value says `no Prime badge or Prime ingress found`.
 - Real fixtures captured from the live page under
@@ -95,6 +99,137 @@ before/after tables are in `docs/plans/SAD-391-implementation-record.md`.
   for products that carried neither flag before.
 
 ---
+
+## [Unreleased] — The Deal field shows the page's own text (SAD-387)
+
+A card could show, instead of a deal message, Amazon's countdown template:
+
+> Limited time deal NO_OF_HOURS hours NO_OF_MINUTES minutes Limited time deal
+> NO_OF_MINUTES minutes Limited time deal NO_OF_MINUTES minutes NO_OF_SECONDS
+> seconds Limited time deal NO_OF_SECONDS seconds Limited time deal
+
+217 characters: the label five times plus six `NO_OF_*` placeholders. Amazon
+renders the badge as **one label per countdown granularity** and leaves the i18n
+templates in the markup, so a single `textContent` read concatenates all of them.
+
+### Fixed
+- **The Deal field holds the page's own wording.** Template segments are dropped
+  and exact repeats collapse, so the same card now stores `Limited time deal`.
+  Nothing is mapped to a constant: a page that really printed numbers keeps them
+  (`Ends in 15:00:26`, `2 hours 15 minutes`), and different variants are kept.
+- **Rows saved before this change are cleaned where they are shown** — the table
+  cell, its tooltip and expand modal, CSV/Excel/clipboard export, and table
+  search. The stored row is not rewritten.
+
+### Changed
+- The rule is applied on every write path: the search/category card, the
+  ad-attributes `dealString`, the product page's badge scan and the bounded
+  evidence scan, so no workflow can store the template.
+- The same rule runs when a stored value is **shown**, so rows saved before this
+  change display correctly without being rewritten: the table cell (its tooltip
+  and expand modal follow), CSV/Excel/clipboard export, and table search — which
+  now matches the label instead of the placeholder tokens.
+
+### Unchanged
+- Any badge without a `NO_OF_*` template keeps its exact bytes, including
+  `Limited time deal`, `Prime Big Deal` and `Amazon's Choice`.
+- The countdown badge (`Ends in 15:00:26`) already parsed correctly and still
+  does; the fix adds no vocabulary.
+- Temu: untouched.
+
+## [Unreleased] — Availability holds the page's message; Source follows the PDP (SAD-392)
+
+Amazon product pages could store their own embedded script text as
+**Availability**: the buybox `#availability` div carries an `a-state` JSON
+`<script>` on every captured PDP, and the delivery-restricted variant hosts an
+AOD asset-loader `<script>` next to the message — `textContent` reads
+serialized both, so the reported row stored a 1011-character blob of
+`P.when(…)` code ahead of the real sentence. **Source** never followed the
+data: merge paths copied every field from a PDP observation but left `source`
+first-write-wins, so a row first collected from a listing stayed `search` even
+after its product page was read.
+
+### Fixed
+- **Availability reads the rendered page, not serialized scripts.** The
+  product-page availability loop and the listing card's stock read go through
+  SAD-390's `extractCleanElementText`: merging into MergeBranch unified the
+  two tickets' strippers (SAD-392 shipped a clone-based
+  `extractAmazonElementText`, retired here — the walk-based survivor is a
+  measured superset, proven element-wise over every committed fixture of both
+  tickets, whose extra hidden/preload skips and block-boundary spacing cannot
+  reach a stored value). `script`/`style`/`noscript` bytes are never
+  serialized into the field. The reported variant now stores exactly
+  `This item cannot be shipped to your selected delivery location. Please
+  choose a different delivery location.`
+- **Source follows the PDP observation — upgrade-only.** The content-side
+  dedup merge (which the quick-save volatile pass also rides) and the
+  background `addProducts` enrichment promote `search`/`category` rows to
+  `detail`; a listing re-observation never downgrades. The rule sits after the
+  SAD-357 variations upgrade and preserves its precondition.
+- **Rows stored before the fix are cleaned once (database v3).** A one-time,
+  data-only Dexie upgrade runs a signature-gated sanitizer over `products`
+  and `snapshots`: polluted values recover the page's message, clean values
+  pass byte-identical, malformed values pass untouched, only changed rows are
+  written, and the upgrade never throws.
+
+### Unchanged
+- The card's leaf-node availability fallback (reads only childless nodes),
+  delivery and seller extraction — the same `delivery-recipe` block pollution
+  is measured and handed to SAD-390 — `cleanAvailability`, the selector
+  tables, and the diagnostics contract (`EXTRACTED`/`PARSE_FAILED` outcomes
+  behave exactly as before; an empty-after-strip value takes the existing
+  reject branch). The Temu engine keeps its own stripper and its separate
+  database. Enrichment (`mergeDetailIntoStored`) still never carries
+  `source`, by design.
+## [Unreleased] — Warranty and badge fields (SAD-393)
+
+The **Badge** column was empty on most best sellers and **Warranty
+Description** was missing on whole product families. Live captures
+(`docs/plans/SAD-393-fixtures/`, step-0 evidence doc) showed Amazon moved
+Best Seller badges into an `amazonBadges` rio capsule the selectors never
+matched (14/14 lost, while old-markup "Overall Pick" cards kept working —
+the reported intermittency), and Amazon Devices PDPs publish their warranty
+row as `Warranty and Service` under `#tech`, outside both the container
+walk and the label pattern. A fractional warranty was worse than missing:
+`1.5 years` stored `5-year`.
+
+### Fixed
+- **Status badges are read in both markup generations.** `.rio-badge-label`
+  joins `cardFields.statusBadge`; the extractor scans every match (a deal
+  node sharing `.a-badge-label-inner` can no longer end the search), ignores
+  deal-badge subtrees, and stores the page's label only — never the
+  capsule's supplementary category text. Curly apostrophes match
+  ("Amazon's Choice" with U+2019) while the page's original text is stored.
+- **Amazon Devices warranties are reached.** `#tech` is appended to the
+  warranty container walk and the label pattern accepts `Warranty and
+  Service` (`and|& + support|service`). Kindle → `1-year`, Echo → `90-day`
+  (the included term, not the optional extensions the same cell offers),
+  with the seller's full sentence kept in `warrantyDescriptionRaw`.
+- **Fractional warranties are no longer garbled.** The duration matcher
+  cannot start mid-number, stores the printed fraction (`1.5-year`),
+  accepts parenthesized digits (`Five (5) Year` → `5-year`), and folds
+  typographic dashes inside the warranty normalizer only.
+
+### Added
+- `badge` in card diagnostics (EXTRACTED / PARSE_FAILED when a badge-shaped
+  node carries unknown text / MISSING). Card reports now carry 25 fields
+  (detail 24 + `badge`); PDP reports stay at 24.
+- Parse-cache freshness for the badge family: a card cached before its
+  badge exists is re-read once when badge evidence appears; an extracted
+  badge settles the card. Signature gating and the warm-pass performance
+  contract are unchanged.
+- The collection `brand-and-rank` fallback now also fills a missing
+  warranty pair (fill-only, together) from the product page it already
+  fetched. No extra requests; a missing warranty alone never triggers one.
+
+### Unchanged
+- Everything else: an A/B replay of the six verbatim captures against the
+  pre-fix baseline (`tests/sad-393-parity.test.ts`) proves only `badge` and
+  the warranty pair moved. The weight extractor deliberately keeps its
+  pre-SAD-393 container list, so `#tech` cannot widen it. Lifetime-first
+  and first-duration-wins warranty semantics, all SAD-349 boilerplate
+  rejections, and honest `No` where no duration is published (TOZO/AirPods
+  class) all stand. Temu diff and `src/lib` diff are empty.
 
 ## [Unreleased] — Temu features & description extraction (SAD-381)
 

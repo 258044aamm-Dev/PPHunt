@@ -158,3 +158,30 @@ for the reviewer, verbatim from plan Phase 6.
 - F10 frequency (how often the async Sponsored Products injection races the
   first parse) — mechanism handled by D8, frequency unmeasured.
 - F12 duplicated widget heading in `sectionLabel` — cosmetic, separate ticket.
+
+## Integration into MergeBranch
+
+Landed in two phases, following the SAD-392/SAD-387 precedent (plan:
+`docs/plans/SAD-391-merge-into-MergeBranch-plan.md`).
+
+- **Base:** `MergeBranch@36589c3` (SAD-387/388/389/390/392/393 plus the
+  parse-cache union repairs `6723b04`, `3676dfc`, `f3ffda9`) merged into this
+  branch on top of `450a6a0`.
+- **Conflicts (7 files / 12 hunks) and how they were resolved:**
+  - `field-parsers.ts` — SAD-390's `extractCardDeliveryAndAvailability` (with
+    SAD-392's clean stock-span read) is kept whole; SAD-391's structural read
+    of `.udm-primary-delivery-message` / `.udm-secondary-delivery-message` is
+    grafted ahead of its whole-block fallback so a signed-in card's badge text
+    (*One-Day*) never prefixes Delivery. `visibleTextContent` and its two
+    patterns are retired: `extractCleanElementText` is a tested superset.
+  - `product-detail.ts` — both helper blocks kept; SAD-390's two-pass delivery
+    loop (it already strips inline code, which is all the SAD-391 loop added).
+  - Diagnostics universe on the merged tree is **PDP 25 / card 26**
+    (`isSponsored` + SAD-393's card-only `badge`): pins and prose updated in
+    `card-diagnostics.ts`, eight test files and `ARCHITECTURE.md`.
+  - `CHANGELOG.md` — SAD-391 entry topmost above SAD-387/392/393; the
+    "Delivery text" and "25th modelled field" bullets reworded for the merged
+    tree.
+- **Behaviour check:** the live `/s?k=laptop` replay (33 rows) is identical
+  before and after the merge — Prime 12, Sponsored 17, 0 inline-code leaks,
+  0 lost deliveries.

@@ -11,6 +11,7 @@ import type { ExpandedCellPayload } from '@/entrypoints/sidepanel/components/Cel
 import type { ValidatedSettings } from '../../schemas/settings';
 import type { AmazonProduct } from '../../types/product';
 import { formatCurrency } from '../../utils/formatters';
+import { dealBadgeForDisplay } from '../../utils/deal-text';
 import {
   formatListingCategoryLabel,
   resolveListingCategory,
@@ -311,16 +312,18 @@ const discountPercentageColumn = columnHelper.accessor('discountPercentage', {
 const dealBadgeColumn = columnHelper.accessor('dealBadge', {
   header: 'Deal',
   cell: (info) => {
-    const deal = info.getValue();
+    // SAD-387: rows saved before the countdown fix still hold the template blob;
+    // clean them here rather than rewriting stored rows.
+    const deal = dealBadgeForDisplay(info.getValue());
     if (!deal) return <span className="text-ink-subtle">No</span>;
     const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
     const inner = (
       <span
-        className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-crimson/15 text-crimson line-clamp-1"
+        className="inline-block max-w-full px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-crimson/15 text-crimson"
         title={deal}
         data-testid={`product-deal-${info.row.original.asin}`}
       >
-        {deal}
+        <span className="line-clamp-1">{deal}</span>
       </span>
     );
     if (!meta?.onExpand) return inner;
@@ -462,11 +465,11 @@ const couponColumn = columnHelper.accessor('coupon', {
     const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
     const inner = (
       <span
-        className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-moss/15 text-moss line-clamp-1"
+        className="inline-block max-w-full px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-moss/15 text-moss"
         title={coupon}
         data-testid={`product-coupon-${info.row.original.asin}`}
       >
-        {coupon}
+        <span className="line-clamp-1">{coupon}</span>
       </span>
     );
     if (!meta?.onExpand) return inner;
@@ -491,11 +494,11 @@ const badgeColumn = columnHelper.accessor('badge', {
     const meta = info.table.options.meta as { onExpand?: (p: ExpandedCellPayload) => void } | undefined;
     const inner = (
       <span
-        className="inline-block px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-golden/15 text-golden line-clamp-1"
+        className="inline-block max-w-full px-1.5 py-0.5 rounded-sm font-sans text-xs font-medium bg-golden/15 text-golden"
         title={badge}
         data-testid={`product-badge-${info.row.original.asin}`}
       >
-        {badge}
+        <span className="line-clamp-1">{badge}</span>
       </span>
     );
     if (!meta?.onExpand) return inner;

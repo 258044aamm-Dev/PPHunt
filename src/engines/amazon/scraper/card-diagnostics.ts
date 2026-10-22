@@ -17,12 +17,29 @@
  *    the product-detail stage conventions in `product-detail.ts`.)
  */
 import type { AmazonExtractionTier } from '../types';
+import { DETAIL_DIAGNOSTIC_FIELDS } from './extraction-diagnostics';
 import type {
   ExtractionDiagnosticsReport,
   ExtractionDiagnosticsSink,
   FieldDiagnosticsCollector,
 } from './extraction-diagnostics';
 import type { CardPricingAndDiscounts, TieredValue } from './field-parsers';
+
+/**
+ * SAD-393 (amending SAD-369 D3): the card report's field universe is the
+ * detail report's 24 fields plus `badge`. The detail stage never extracts
+ * `badge` (it is a listing-card field — see `DETAIL_DIAGNOSTIC_FIELDS`), so
+ * cards build with this 25-field list; PDP reports stay at 24. `badge`
+ * sits after `dealBadge`, its field-family neighbour.
+ */
+export const CARD_DIAGNOSTIC_FIELDS: readonly string[] = (() => {
+  const after = DETAIL_DIAGNOSTIC_FIELDS.indexOf('dealBadge') + 1;
+  return [
+    ...DETAIL_DIAGNOSTIC_FIELDS.slice(0, after),
+    'badge',
+    ...DETAIL_DIAGNOSTIC_FIELDS.slice(after),
+  ];
+})();
 
 /** The 4 modelled fields a listing card can never carry (SAD-369 D4). */
 export const CARD_INAPPLICABLE_FIELDS = [
@@ -45,8 +62,14 @@ export interface CardDiagnosticsInput {
   // report. Optional on the type, so every existing caller still compiles.
   rating: TieredValue<number | null>;
   reviewCount: TieredValue<number | null>;
+  // SAD-393: card-only field (see CARD_DIAGNOSTIC_FIELDS). Optional on the
+  // type so existing callers still compile; when a caller supplies it, the
+  // outcome is recorded, otherwise `build()` pads UNKNOWN rather than the
+  // recorder inventing a MISSING it did not observe.
+  badge?: { value?: string; nodeSeen?: boolean };
   image: { value: string | null; tier: AmazonExtractionTier };
   pastMonthSales?: string;
+  pastMonthSalesNodeSeen?: boolean;
   delivery?: string;
   availability: string | null;
   seller: string | null;
@@ -66,10 +89,12 @@ export interface CardDiagnosticsInput {
 }
 
 /**
- * Records all 25 modelled fields from the card parser's already-computed
- * results. The caller invokes this only when the parse produced a product:
- * no report is emitted when the parser returns `null` (no ASIN/title) — there
- * is no product to ride along with, and an unreconciled report would mislead.
+ * Records all modelled card fields (the 25 detail fields plus card-only
+ * `badge`, SAD-393) from the card parser's already-computed results. The
+ * caller invokes this only when the parse produced a product: no report is
+ * emitted when the parser returns `null` (no ASIN/title) — there is no
+ * product to ride along with, and an unreconciled report would mislead.
+ * Callers build with `CARD_DIAGNOSTIC_FIELDS` so `badge` survives `build()`.
  */
 export function recordCardDiagnostics(
   collector: FieldDiagnosticsCollector,
@@ -148,8 +173,26 @@ export function recordCardDiagnostics(
     collector.missing('dealBadge', 'no deal badge present on the card', dom);
   }
 
+  // SAD-393: the status badge (`badge`, Badge column). Three honest states:
+  // extracted; a badge-shaped node existed but its text is not a known
+  // status badge (a reskin/rename — the exact signal the rio move lacked);
+  // or no badge node at all. Absent input records nothing (UNKNOWN padding).
+  if (input.badge?.value !== undefined) {
+    collector.extracted('badge', dom);
+  } else if (input.badge?.nodeSeen) {
+    collector.parseFailed(
+      'badge',
+      'a badge node is present on the card but its text is not a known status badge',
+      dom,
+    );
+  } else if (input.badge) {
+    collector.missing('badge', 'no status badge present on the card', dom);
+  }
+
   if (input.pricing.coupon !== undefined) {
     collector.extracted('coupon', dom);
+  } else if (input.pricing.unparseableCouponNode) {
+    collector.parseFailed('coupon', 'coupon node present but its offer text did not parse', dom);
   } else {
     collector.missing('coupon', 'no coupon present on the card', dom);
   }
@@ -222,6 +265,8 @@ export function recordCardDiagnostics(
 
   if (input.pastMonthSales !== undefined) {
     collector.extracted('pastMonthSales', dom);
+  } else if (input.pastMonthSalesNodeSeen) {
+    collector.parseFailed('pastMonthSales', 'monthly-sales node present but its text did not parse', dom);
   } else {
     collector.missing(
       'pastMonthSales',

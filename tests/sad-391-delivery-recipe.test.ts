@@ -14,7 +14,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractCardDeliveryAndAvailability,
-  visibleTextContent,
 } from '@/engines/amazon/scraper/field-parsers';
 
 const fixture = (name: string): string =>
@@ -32,24 +31,6 @@ function cardFrom(html: string): Element {
   if (!card) throw new Error('fixture has no s-search-result card');
   return card;
 }
-
-describe('visibleTextContent', () => {
-  it('skips inline <style>/<script>/<template>/<noscript> and keeps everything else byte-identical to textContent', () => {
-    const doc = new DOMParser().parseFromString(
-      '<div id="x">FREE delivery <span class="a-text-bold">Tomorrow, Oct 22</span></div>' +
-        '<div id="y"><a><style>.prime-brand-color {color: #0064f9; }</style><span>Join Prime</span></a>' +
-        '<script>(function(f){})();</script> to get FREE delivery <b>Fri, Oct 23</b>' +
-        '<template><p>never</p></template><noscript>no</noscript></div>',
-      'text/html',
-    );
-    const plain = doc.getElementById('x')!;
-    expect(visibleTextContent(plain)).toBe(plain.textContent);
-    expect(visibleTextContent(doc.getElementById('y'))).toBe(
-      'Join Prime to get FREE delivery Fri, Oct 23',
-    );
-    expect(visibleTextContent(null)).toBe('');
-  });
-});
 
 describe('extractCardDeliveryAndAvailability — unified delivery message (live 2025 markup)', () => {
   it('keeps the delivery message when a stock warning follows the UDM block, and strips the inline code of the Prime ingress', () => {

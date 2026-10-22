@@ -154,7 +154,7 @@ describe('resolveSaveCandidate', () => {
 
     expect(result?.product.asin).toBe('B0BBBBBBBB');
     expect(result?.extractionDiagnostics?.asin).toBe('B0BBBBBBBB');
-    expect(result?.extractionDiagnostics?.fields).toHaveLength(25);
+    expect(result?.extractionDiagnostics?.fields).toHaveLength(26);
 
     const fields = new Map(
       (result?.extractionDiagnostics?.fields ?? []).map((entry) => [

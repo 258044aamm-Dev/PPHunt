@@ -10,12 +10,12 @@ import {
   discoverStructuralProductCards,
   dropNestedCards,
   extractCardAsinWithTier,
-  extractCardBadge,
+  extractCardBadgeResult,
   extractCardDeliveryAndAvailability,
   extractCardImageWithTier,
   extractCardPrimeSignal,
   extractCardIsSponsored,
-  extractCardPastMonthSales,
+  readAmazonPastMonthSales,
   extractCardPricingAndDiscounts,
   extractCardRatingAndReviewsWithTier,
   extractCardSeller,
@@ -29,7 +29,10 @@ import {
   createFieldDiagnosticsCollector,
   type ExtractionDiagnosticsSink,
 } from './extraction-diagnostics';
-import { recordCardDiagnostics } from './card-diagnostics';
+import {
+  CARD_DIAGNOSTIC_FIELDS,
+  recordCardDiagnostics,
+} from './card-diagnostics';
 import {
   AmazonParseCache,
   defaultAmazonParseCache,
@@ -151,8 +154,10 @@ export function parseAmazonCategoryCard(
       extractCardRatingAndReviewsWithTier(card);
     const imageResult = extractCardImageWithTier(card);
     const bestSellersRank = extractCategoryCardBsr(card, options.categoryName);
-    const pastMonthSales = extractCardPastMonthSales(card);
-    const badge = extractCardBadge(card);
+    const salesResult = readAmazonPastMonthSales(card, asin);
+    const pastMonthSales = salesResult.value;
+    const badgeResult = extractCardBadgeResult(card);
+    const badge = badgeResult.badge;
     const { delivery, availability } = extractCardDeliveryAndAvailability(card);
     const seller = extractCardSeller(card);
     const primeSignal = extractCardPrimeSignal(card, delivery);
@@ -234,10 +239,12 @@ export function parseAmazonCategoryCard(
         title: titleResult,
         brand,
         pricing,
+        badge: { value: badge, nodeSeen: badgeResult.nodeSeen },
         rating: ratingResult,
         reviewCount: reviewResult,
         image: imageResult,
         pastMonthSales,
+        pastMonthSalesNodeSeen: salesResult.nodeSeen,
         delivery,
         availability,
         seller,
@@ -249,7 +256,7 @@ export function parseAmazonCategoryCard(
         url,
       });
       applyValidationResults(diagnostics, candidate, normalized);
-      options.diagnosticsSink!.accept(diagnostics.build());
+      options.diagnosticsSink!.accept(diagnostics.build(CARD_DIAGNOSTIC_FIELDS));
     }
     return normalized;
   } catch (err) {

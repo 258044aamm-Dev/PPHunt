@@ -109,6 +109,17 @@ export function mergeScrapedProductFields(
     changed = true;
   }
 
+  // SAD-392 (D1): a PDP observation is authoritative for provenance,
+  // mirroring the SAD-357 variations upgrade above — and it must stay AFTER
+  // it: that condition reads the pre-promotion `target.source !== 'detail'`,
+  // so promoting first would silently kill the variations upgrade (pinned by
+  // test). Upgrade-only: a listing re-observation never downgrades a row
+  // already proven on its PDP.
+  if (source.source === 'detail' && target.source !== 'detail') {
+    target.source = 'detail';
+    changed = true;
+  }
+
   if (
     source.price !== null &&
     source.price !== undefined &&

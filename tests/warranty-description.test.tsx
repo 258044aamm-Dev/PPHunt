@@ -16,9 +16,12 @@
  * information block, because the warranty row moves between them by category
  * and page age.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { normalizeWarrantyDescription } from '@/engines/amazon/scraper/field-parsers';
 import { parseAmazonProductDetail } from '@/engines/amazon/scraper/product-detail';
+import { createFieldDiagnosticsCollector } from '@/engines/amazon/scraper/extraction-diagnostics';
 
 const SHELL = (body: string) => new DOMParser().parseFromString(
   `<!doctype html><html><body>
@@ -45,6 +48,23 @@ describe('normalizeWarrantyDescription', () => {
     ['24 months', '24-month'],
     ['twenty-four year', '24-year'],
     ['Limited lifetime warranty', 'lifetime'],
+    // SAD-393 step 5 (P-W2 probe table): the fraction the seller printed is
+    // the token — '1.5 years' used to garble to '5-year' (matched mid-number).
+    ['1.5 years', '1.5-year'],
+    ['1.5-Year Limited Warranty', '1.5-year'],
+    ['12.5 years', '12.5-year'],
+    ['2.5 years', '2.5-year'],
+    // Parenthesized digit forms used to yield nothing.
+    ['Five (5) Year', '5-year'],
+    ['One (1) Year', '1-year'],
+    ['(3) Year Limited Warranty', '3-year'],
+    // Typographic dashes used to yield nothing (folded inside the
+    // normalizer only, never in the shared whitespace pass).
+    ['2 year', '2-year'],
+    ['2 year', '2-year'],
+    ['3-yr', '3-year'],
+    // A quantity never starts mid-number: no salvage from a version string.
+    ['Version 2.5.1 years', null],
     // the boilerplate + non-durations must yield nothing
     ['For warranty information about this product, please click here', null],
     ['Product Warranty: For warranty information about this product, please click here', null],
@@ -592,5 +612,82 @@ describe('Exports', () => {
     // And the omission actually reaches the CSV, not just the column list.
     const csv = buildCSVContent(exportSample, off, false);
     expect(csv.split('\n')[0]).not.toContain('Warranty');
+  });
+});
+
+describe('SAD-393 step 4 — Amazon Devices warranty reach (verbatim captures)', () => {
+  // Live captures 2026-10-21 (step-0 evidence). Wrappers restore the
+  // captured ancestry noted in each fixture's header comment; layout divs
+  // between the wrapper and the table are omitted, as they were in step 0.
+  const fixture = (name: string) =>
+    readFileSync(join(__dirname, '..', 'docs', 'plans', 'SAD-393-fixtures', name), 'utf8');
+
+  const pdpWith = (asin: string, body: string) =>
+    new DOMParser().parseFromString(
+      `<!doctype html><html><body>
+         <h1 id="productTitle">Fixture ${asin}</h1>
+         <input id="ASIN" value="${asin}" />
+         ${body}
+       </body></html>`,
+      'text/html',
+    );
+
+  it('Kindle Paperwhite: Warranty and Service row under #tech -> 1-year, Raw is the full cell', () => {
+    const p = parseAmazonProductDetail(
+      pdpWith('B0CFPJYX7P', `<div id="tech">${fixture('pdp-kindle-warranty-table.real.html')}</div>`),
+      'https://www.amazon.com/dp/B0CFPJYX7P',
+    );
+    // The cell also offers optional 1/2/3-year extensions; first-duration-
+    // wins keeps the INCLUDED term, Raw keeps the seller's full sentence.
+    expect(p?.warrantyDescription).toBe('1-year');
+    expect(p?.warrantyDescriptionRaw).toContain(
+      '1-year limited warranty and service included',
+    );
+  });
+
+  it('Echo Dot: Warranty and service row under #tech -> 90-day (not the optional 1-year extension)', () => {
+    const p = parseAmazonProductDetail(
+      pdpWith('B09B93ZDG4', `<div id="tech">${fixture('pdp-echo-warranty-table.real.html')}</div>`),
+      'https://www.amazon.com/dp/B09B93ZDG4',
+    );
+    expect(p?.warrantyDescription).toBe('90-day');
+    expect(p?.warrantyDescriptionRaw).toContain('90-day limited warranty and service');
+  });
+
+  it('diagnostics credits the container that actually held the row (#tech)', () => {
+    const collector = createFieldDiagnosticsCollector();
+    parseAmazonProductDetail(
+      pdpWith('B0CFPJYX7P', `<div id="tech">${fixture('pdp-kindle-warranty-table.real.html')}</div>`),
+      'https://www.amazon.com/dp/B0CFPJYX7P',
+      collector,
+    );
+    const entry = collector
+      .build()
+      .fields.find((f) => f.field === 'warrantyDescription');
+    expect(entry).toMatchObject({ status: 'EXTRACTED', selector: '#tech' });
+  });
+
+  it('Dewalt positive control: existing containers/labels unchanged -> 3-year', () => {
+    const p = parseAmazonProductDetail(
+      pdpWith(
+        'B00ET5VMTU',
+        `<div id="productDetails_expanderTables_depthRightSections">${fixture('pdp-dewalt-warranty-table.real.html')}</div>`,
+      ),
+      'https://www.amazon.com/dp/B00ET5VMTU',
+    );
+    expect(p?.warrantyDescription).toBe('3-year');
+    expect(p?.warrantyDescriptionRaw).toBe('3 Year Limited Warranty');
+  });
+
+  it('TOZO negative control: a warranty row without a duration stays honest undefined', () => {
+    const p = parseAmazonProductDetail(
+      pdpWith(
+        'B09FT58QQP',
+        `<div id="productDetails_expanderTables_depthLeftSections">${fixture('pdp-tozo-warranty-table.real.html')}</div>`,
+      ),
+      'https://www.amazon.com/dp/B09FT58QQP',
+    );
+    expect(p?.warrantyDescription).toBeUndefined();
+    expect(p?.warrantyDescriptionRaw).toBeUndefined();
   });
 });
