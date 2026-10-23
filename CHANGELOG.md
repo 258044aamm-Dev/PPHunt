@@ -5,6 +5,52 @@ All notable changes to PPHunt will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Preview table no longer flickers or jitters while scrolling (SAD-388)
+
+The preview table in both engines was told every row is `ROW_HEIGHT = 52`, and no
+row was ever measured. Measured in Chrome (dpr 1, ~64 products, separate sections
+off), real rows are **64 px** and some are **294 px**. Both spacers are derived
+from `getTotalSize() = 52 × N`, so the content height moved by up to 1617 px as
+tall rows entered and left the overscan window (the flicker: 9 distinct
+`scrollHeight` values, 4589 → 3333), and the rendered block re-anchored 12 px per
+normal row and 242 px per tall row (the jitter). Sections mode never consults the
+virtualizer, which is why it was immune.
+
+### Fixed
+- **Rows are measured instead of assumed.** `ref={virtualizer.measureElement}` on
+  the virtualized `<tr>` in `AmazonProductTable.tsx` and `TemuProductTable.tsx`;
+  both rows already carried `data-index`, which is the only other thing the
+  measurer needs. `estimateSize` is unchanged.
+- **No measured height still means the old estimate.** An explicit
+  `measureElement` returns `ROW_HEIGHT` when an element reports 0 (jsdom,
+  genuinely hidden rows). The library default would have made those rows 0 px
+  tall and changed the virtualizer's numbers under the test suite.
+- **The one-line clamp on the Deal, Coupon and Badge pills now applies.** Those
+  three cells in both engines carried `inline-block` and `line-clamp-1`, and both
+  utilities declare `display`; `inline-block` is emitted later and won, so
+  `-webkit-line-clamp` never took effect and long values wrapped without limit.
+  The clamp now sits on an inner `<span>`, with `max-w-full` keeping the pill
+  inside its cell. Short values render exactly as before, and the `data-testid`
+  attributes stay on the outer element.
+
+### Unchanged
+- Sorting, filtering, selection, export, cell-expand, columns and the sections
+  path; `ROW_HEIGHT`, `.preview-table-scroll` CSS, the sticky `<thead>` and
+  SAD-378's horizontal-scroll behaviour. Temu's markup is byte-identical to
+  Amazon's. No new dependency, no new state, no DB, schema or settings change.
+
+### Known, not fixed
+- Rows that reach 294 px are a separate content/typography defect, parked with
+  its evidence in `docs/plans/SAD-388-preview-scroll-jitter-plan.md` §4.1. The
+  jitter fix does not depend on it: the virtualizer now measures whatever height
+  it is given.
+
+See `docs/plans/SAD-388-scroll-verification.md` for the before/after measurement.
+No unit test can hold this fix — the suite is jsdom, where
+`getBoundingClientRect()` returns 0 and `ResizeObserver` does not exist.
+
+---
+
 ## [Unreleased] — Temu features & description extraction (SAD-381)
 
 Temu products were storing an empty **Features** list and a **Description** that
